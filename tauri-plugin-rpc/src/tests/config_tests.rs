@@ -14,7 +14,6 @@ proptest! {
     /// **Property 12: Configuration Defaults**
     /// *For any* RpcConfig created with `Default::default()`, all fields SHALL have
     /// sensible non-zero values that allow the plugin to function correctly.
-    /// **Validates: Requirements 11.3**
     /// **Feature: tauri-rpc-plugin-optimization, Property 12: Configuration Defaults**
     #[test]
     fn prop_configuration_defaults_are_valid(_dummy in 0..1i32) {

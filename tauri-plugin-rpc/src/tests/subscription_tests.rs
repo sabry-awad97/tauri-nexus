@@ -1,11 +1,12 @@
 //! Property-based tests for subscription/event iterator functionality
 //!
 //! These tests validate the correctness properties defined in the design document:
+//! - Property 1: Subscription Cleanup
 //! - Property 2: Subscription ID Uniqueness
-//! - Property 10: Subscription Cleanup
-//! - Property 36: Event Iterator Last Event ID Resumption
-//! - Property 37: Event Iterator Completion Signal
-//! - Property 38: EventPublisher Channel Isolation
+//! - Property 5: Subscription Cancellation Cleanup
+//! - Property 7: Bounded Channel Backpressure
+//! - Property 8: EventPublisher Graceful Empty Publish
+//! - Property 9: Lagged Subscriber Recovery
 
 use proptest::prelude::*;
 use std::collections::HashSet;
@@ -23,8 +24,7 @@ use crate::subscription::{
 proptest! {
     /// **Property 2: Subscription ID Uniqueness**
     /// *For any* number of subscription IDs generated (up to practical limits),
-    /// all generated IDs SHALL be unique.
-    /// **Validates: Requirements 2.1**
+    /// all generated IDs SHALL be unique, SHALL use UUID v7 format, and SHALL serialize with "sub_" prefix.
     /// **Feature: tauri-rpc-plugin-optimization, Property 2: Subscription ID Uniqueness**
     #[test]
     fn prop_subscription_id_uniqueness(count in 1usize..1000) {
@@ -55,14 +55,14 @@ proptest! {
 }
 
 // =============================================================================
-// Property 10: Subscription Cleanup
+// Property 1: Subscription Cleanup
 // =============================================================================
 
 proptest! {
-    /// **Property 10: Subscription Cleanup**
-    /// *For any* subscription that is unsubscribed, the subscription should be removed
-    /// and its cancellation signal should be triggered
-    /// **Validates: Requirements 5.6, 5.9**
+    /// **Property 1: Subscription Cleanup**
+    /// *For any* subscription that is unsubscribed, the subscription SHALL be removed
+    /// from the manager's registry AND its cancellation signal SHALL be triggered.
+    /// **Feature: tauri-rpc-plugin-optimization, Property 1: Subscription Cleanup**
     #[test]
     fn prop_subscription_cleanup(
         subscription_count in 1usize..50,
@@ -128,7 +128,7 @@ proptest! {
     /// **Property 5: Subscription Cancellation Cleanup**
     /// *For any* subscription that is cancelled, the associated task SHALL stop executing
     /// within a bounded time, and the subscription SHALL be removed from the manager.
-    /// **Validates: Requirements 4.1, 4.4**
+    /// On shutdown, ALL subscriptions SHALL be cancelled and ALL tracked tasks SHALL be aborted.
     /// **Feature: tauri-rpc-plugin-optimization, Property 5: Subscription Cancellation Cleanup**
     #[test]
     fn prop_subscription_cancellation_cleanup(
@@ -219,7 +219,6 @@ proptest! {
     /// **Property 5 (continued): Task Tracking Cleanup**
     /// *For any* set of spawned subscription tasks, shutdown SHALL abort all tasks
     /// and wait for them to complete.
-    /// **Validates: Requirements 4.1, 4.2, 4.5**
     /// **Feature: tauri-rpc-plugin-optimization, Property 5: Subscription Cancellation Cleanup**
     #[test]
     fn prop_task_tracking_cleanup(task_count in 1usize..10) {
@@ -283,7 +282,6 @@ proptest! {
 proptest! {
     /// **Property 37: Event Iterator Completion Signal**
     /// *For any* subscription context, when cancelled, is_cancelled() should return true
-    /// **Validates: Requirements 5.5**
     #[test]
     fn prop_completion_signal(
         last_event_id in proptest::option::of("[a-z0-9]{1,32}")
@@ -312,7 +310,6 @@ proptest! {
     /// **Property 36: Event Iterator Last Event ID Resumption**
     /// *For any* subscription context with a last_event_id, the ID should be preserved
     /// and accessible for resumption logic
-    /// **Validates: Requirements 5.4**
     #[test]
     fn prop_last_event_id_resumption(
         last_event_id in "[a-z0-9]{1,32}"
@@ -346,7 +343,6 @@ proptest! {
     /// **Property 38: EventPublisher Channel Isolation**
     /// *For any* set of channels, events published to one channel should not
     /// appear in other channels
-    /// **Validates: Requirements 5.7**
     #[test]
     fn prop_channel_isolation(
         channel_names in prop::collection::hash_set("[a-z]{3,8}", 2..5),
@@ -467,7 +463,6 @@ proptest! {
     /// *For any* subscription channel configured with a buffer size N, when N events
     /// are pending and unconsumed, subsequent sends SHALL either block (for async sends)
     /// or return a "full" indication, and the channel SHALL never exceed N pending events.
-    /// **Validates: Requirements 6.4, 7.1, 7.3**
     /// **Feature: tauri-rpc-plugin-optimization, Property 7: Bounded Channel Backpressure**
     #[test]
     fn prop_bounded_channel_backpressure(buffer_size in 2usize..16) {
@@ -510,7 +505,6 @@ proptest! {
     /// **Property 8: EventPublisher Graceful Empty Publish**
     /// *For any* EventPublisher with zero subscribers, calling publish SHALL return
     /// an error result (not panic) indicating no subscribers are available.
-    /// **Validates: Requirements 6.5**
     /// **Feature: tauri-rpc-plugin-optimization, Property 8: EventPublisher Graceful Empty Publish**
     #[test]
     fn prop_empty_publisher_graceful(
@@ -576,7 +570,6 @@ proptest! {
     /// *For any* subscriber that falls behind in a broadcast channel, when they resume
     /// receiving, they SHALL receive the most recent available messages (skipping lagged
     /// ones) rather than blocking indefinitely or receiving stale data.
-    /// **Validates: Requirements 7.4**
     /// **Feature: tauri-rpc-plugin-optimization, Property 9: Lagged Subscriber Recovery**
     #[test]
     fn prop_lagged_subscriber_recovery(

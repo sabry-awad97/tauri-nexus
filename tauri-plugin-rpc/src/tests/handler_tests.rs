@@ -141,7 +141,10 @@ fn test_handler_accepts_partial_object_for_optional_fields() {
 // =============================================================================
 
 proptest! {
-    /// Property: Any non-null JSON value should fail to deserialize as unit type
+    /// **Property 14: Unit Type Deserialization Rejection**
+    /// *For any* non-null JSON value (string, number, boolean, array, object),
+    /// attempting to deserialize it as unit type `()` SHALL fail with a deserialization error.
+    /// **Feature: tauri-rpc-plugin-optimization, Property 14: Unit Type Deserialization Rejection**
     #[test]
     fn prop_non_null_values_fail_for_unit_type(
         s in ".*",

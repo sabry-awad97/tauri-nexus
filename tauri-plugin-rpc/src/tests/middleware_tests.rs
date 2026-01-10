@@ -107,7 +107,6 @@ proptest! {
     /// **Property 10: Middleware Execution Order**
     /// *For any* router with middleware added in order [M1, M2, M3], when a request
     /// is processed, the middleware SHALL execute in the order M1 → M2 → M3 → Handler → M3 → M2 → M1 (onion model).
-    /// **Validates: Requirements 8.1, 8.2**
     /// **Feature: tauri-rpc-plugin-optimization, Property 10: Middleware Execution Order**
     #[test]
     fn prop_middleware_execution_order(middleware_count in 1usize..5) {
@@ -155,7 +154,6 @@ proptest! {
     /// **Property 11: Middleware Early Return**
     /// *For any* middleware that returns a response without calling `next`, the downstream
     /// middleware and handler SHALL NOT be invoked, and the returned response SHALL be the final response.
-    /// **Validates: Requirements 8.3**
     /// **Feature: tauri-rpc-plugin-optimization, Property 11: Middleware Early Return**
     #[test]
     fn prop_middleware_early_return(
@@ -224,7 +222,6 @@ proptest! {
     /// **Property 4: Middleware Error Propagation**
     /// *For any* middleware that returns an error, the caller SHALL receive that exact error
     /// (code and message preserved) without the downstream handler being invoked.
-    /// **Validates: Requirements 3.4**
     /// **Feature: tauri-rpc-plugin-optimization, Property 4: Middleware Error Propagation**
     #[test]
     fn prop_middleware_error_propagation(

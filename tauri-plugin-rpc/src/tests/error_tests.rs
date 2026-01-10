@@ -49,7 +49,6 @@ proptest! {
     /// *For any* RpcError returned by a handler, the serialized JSON output SHALL
     /// contain at minimum the `code` and `message` fields, and the error SHALL be
     /// deserializable back to an equivalent RpcError.
-    /// **Validates: Requirements 3.1, 9.2**
     /// **Feature: tauri-rpc-plugin-optimization, Property 3: Error Serialization Completeness**
     #[test]
     fn prop_error_serialization_roundtrip(error in arb_rpc_error()) {
@@ -79,8 +78,10 @@ proptest! {
         );
     }
 
-    /// Test that error codes serialize to SCREAMING_SNAKE_CASE strings
-    /// **Feature: tauri-rpc-plugin-optimization, Property 3: Error Serialization Completeness**
+    /// **Property 13: Error Code Serialization Format**
+    /// *For any* RpcErrorCode, when serialized to JSON, the code SHALL be represented
+    /// as a SCREAMING_SNAKE_CASE string (e.g., `NotFound` → `"NOT_FOUND"`).
+    /// **Feature: tauri-rpc-plugin-optimization, Property 13: Error Code Serialization Format**
     #[test]
     fn prop_error_code_serializes_to_screaming_snake_case(code in arb_error_code()) {
         let error = RpcError::new(code, "test message");

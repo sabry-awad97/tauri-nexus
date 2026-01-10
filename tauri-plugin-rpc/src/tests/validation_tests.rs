@@ -18,7 +18,6 @@ proptest! {
     /// *For any* input that violates validation rules (invalid path characters,
     /// exceeds size limit, invalid subscription ID format), the system SHALL
     /// reject the request with an appropriate error before processing.
-    /// **Validates: Requirements 5.1, 5.2, 5.3**
     /// **Feature: tauri-rpc-plugin-optimization, Property 6: Input Validation Rejection**
 
     // --- Path Validation Tests ---
