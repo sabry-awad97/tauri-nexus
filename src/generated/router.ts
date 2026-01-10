@@ -1,59 +1,65 @@
-// Auto-generated router - Types from ts-rs
+// =============================================================================
+// RPC Router
+// =============================================================================
+// Type-safe RPC client with path-based routing.
+// Calls go through plugin:rpc|rpc_call
 
 import { invoke } from '@tauri-apps/api/core';
 import type {
   User,
+  GetUserInput,
   CreateUserInput,
   UpdateUserInput,
-  PaginatedResponse,
+  DeleteUserInput,
+  GreetInput,
   SuccessResponse,
-  PaginationInput,
 } from './types';
 
-// Re-export types
-export type {
-  User,
-  CreateUserInput,
-  UpdateUserInput,
-  PaginatedResponse,
-  SuccessResponse,
-  PaginationInput,
-};
+// Re-export all types
+export * from './types';
 
-// Command definitions
-type Commands = {
-  greet: { input: { name: string }; output: string };
-  get_user: { input: { id: number }; output: User };
-  list_users: { input: { pagination?: PaginationInput }; output: PaginatedResponse };
-  create_user: { input: { input: CreateUserInput }; output: User };
-  update_user: { input: { input: UpdateUserInput }; output: User };
-  delete_user: { input: { id: number }; output: SuccessResponse };
-};
+// -----------------------------------------------------------------------------
+// RPC Call Helper
+// -----------------------------------------------------------------------------
 
-/** Type-safe invoke */
-async function rpcInvoke<K extends keyof Commands>(
-  cmd: K,
-  args: Commands[K]['input']
-): Promise<Commands[K]['output']> {
-  return invoke(cmd, args);
+async function call<T>(path: string, input: unknown = {}): Promise<T> {
+  return invoke<T>('plugin:rpc|rpc_call', { path, input });
 }
 
-// Command functions
-export const greet = (input: { name: string }) => rpcInvoke('greet', input);
-export const getUser = (input: { id: number }) => rpcInvoke('get_user', input);
-export const listUsers = (input: { pagination?: PaginationInput } = {}) => rpcInvoke('list_users', input);
-export const createUser = (input: { input: CreateUserInput }) => rpcInvoke('create_user', input);
-export const updateUser = (input: { input: UpdateUserInput }) => rpcInvoke('update_user', input);
-export const deleteUser = (input: { id: number }) => rpcInvoke('delete_user', input);
+/** Get available procedures from the router */
+export async function getProcedures(): Promise<string[]> {
+  return invoke<string[]>('plugin:rpc|rpc_procedures');
+}
 
-/** RPC client object */
-export const rpc = {
-  greet,
-  getUser,
-  listUsers,
-  createUser,
-  updateUser,
-  deleteUser,
+// -----------------------------------------------------------------------------
+// Procedures
+// -----------------------------------------------------------------------------
+
+/** Root-level procedures */
+export const greet = (input: GreetInput) => 
+  call<string>('greet', input);
+
+/** User procedures (user.*) */
+export const user = {
+  get: (input: GetUserInput) => call<User>('user.get', input),
+  list: () => call<User[]>('user.list', {}),
+  create: (input: CreateUserInput) => call<User>('user.create', input),
+  update: (input: UpdateUserInput) => call<User>('user.update', input),
+  delete: (input: DeleteUserInput) => call<SuccessResponse>('user.delete', input),
 } as const;
 
-export type CommandName = keyof typeof rpc;
+// -----------------------------------------------------------------------------
+// Flat API (for convenience)
+// -----------------------------------------------------------------------------
+
+export const rpc = {
+  greet,
+  getUser: user.get,
+  listUsers: user.list,
+  createUser: user.create,
+  updateUser: user.update,
+  deleteUser: user.delete,
+} as const;
+
+export type RpcCommands = typeof rpc;
+export type CommandName = keyof RpcCommands;

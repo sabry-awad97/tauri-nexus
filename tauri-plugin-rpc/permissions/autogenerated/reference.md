@@ -4,12 +4,7 @@ Default permissions for the RPC plugin
 
 #### This default permission set includes the following:
 
-- `allow-greet`
-- `allow-get-user`
-- `allow-list-users`
-- `allow-create-user`
-- `allow-update-user`
-- `allow-delete-user`
+- `allow-rpc-call`
 
 ## Permission Table
 
@@ -146,6 +141,32 @@ Enables the list_users command without any pre-configured scope.
 <td>
 
 Denies the list_users command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rpc:allow-rpc-call`
+
+</td>
+<td>
+
+Enables the rpc_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rpc:deny-rpc-call`
+
+</td>
+<td>
+
+Denies the rpc_call command without any pre-configured scope.
 
 </td>
 </tr>

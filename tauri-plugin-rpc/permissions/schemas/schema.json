@@ -355,6 +355,18 @@
           "markdownDescription": "Denies the list_users command without any pre-configured scope."
         },
         {
+          "description": "Enables the rpc_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-rpc-call",
+          "markdownDescription": "Enables the rpc_call command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the rpc_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-rpc-call",
+          "markdownDescription": "Denies the rpc_call command without any pre-configured scope."
+        },
+        {
           "description": "Enables the update_user command without any pre-configured scope.",
           "type": "string",
           "const": "allow-update-user",
@@ -367,10 +379,10 @@
           "markdownDescription": "Denies the update_user command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the RPC plugin\n#### This default permission set includes:\n\n- `allow-greet`\n- `allow-get-user`\n- `allow-list-users`\n- `allow-create-user`\n- `allow-update-user`\n- `allow-delete-user`",
+          "description": "Default permissions for the RPC plugin\n#### This default permission set includes:\n\n- `allow-rpc-call`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the RPC plugin\n#### This default permission set includes:\n\n- `allow-greet`\n- `allow-get-user`\n- `allow-list-users`\n- `allow-create-user`\n- `allow-update-user`\n- `allow-delete-user`"
+          "markdownDescription": "Default permissions for the RPC plugin\n#### This default permission set includes:\n\n- `allow-rpc-call`"
         }
       ]
     }

@@ -5,9 +5,9 @@ import {
   useListUsers,
   useCreateUser,
   useDeleteUser,
-} from './generated/hooks';
-import { rpc } from './generated';
-import type { User } from './generated';
+  rpc,
+  type User,
+} from './generated';
 import './App.css';
 
 // Example 1: Vanilla TypeScript usage
@@ -71,13 +71,9 @@ function ReactHooksExample() {
 
 // Example 3: User list with CRUD
 function UserListExample() {
-  const { data: usersData, isLoading, refetch } = useListUsers({});
-  const createUser = useCreateUser({
-    onSuccess: () => refetch(),
-  });
-  const deleteUser = useDeleteUser({
-    onSuccess: () => refetch(),
-  });
+  const { data: users, isLoading, refetch } = useListUsers();
+  const createUser = useCreateUser({ onSuccess: () => refetch() });
+  const deleteUser = useDeleteUser({ onSuccess: () => refetch() });
 
   const [newName, setNewName] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -92,7 +88,7 @@ function UserListExample() {
 
   return (
     <div className="example">
-      <h2>User Management (Generated Types)</h2>
+      <h2>User Management (ORPC-style Router)</h2>
       
       <div className="row" style={{ marginBottom: '1rem' }}>
         <input
@@ -114,11 +110,11 @@ function UserListExample() {
         <p>Loading users...</p>
       ) : (
         <div className="user-list">
-          {usersData?.data.map((user: User) => (
-            <div key={user.id} className="user-item">
-              <span>{user.name} ({user.email})</span>
+          {users?.map((u: User) => (
+            <div key={u.id} className="user-item">
+              <span>{u.name} ({u.email})</span>
               <button
-                onClick={() => deleteUser.mutate({ id: user.id })}
+                onClick={() => deleteUser.mutate({ id: u.id })}
                 disabled={deleteUser.isLoading}
                 style={{ marginLeft: '0.5rem', background: '#dc2626' }}
               >
@@ -127,7 +123,7 @@ function UserListExample() {
             </div>
           ))}
           <p style={{ fontSize: '0.8rem', color: '#888' }}>
-            Total: {usersData?.total} | Page: {usersData?.page}/{usersData?.totalPages}
+            Total: {users?.length ?? 0}
           </p>
         </div>
       )}
@@ -138,8 +134,8 @@ function UserListExample() {
 function AppContent() {
   return (
     <main className="container">
-      <h1>Tauri RPC Plugin Demo</h1>
-      <p>Type-safe communication with auto-generated types</p>
+      <h1>Tauri RPC - ORPC Style</h1>
+      <p>Type-safe router with context, middleware, and nested routes</p>
       <VanillaExample />
       <ReactHooksExample />
       <UserListExample />

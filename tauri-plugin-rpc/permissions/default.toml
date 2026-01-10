@@ -1,10 +1,3 @@
 [default]
 description = "Default permissions for the RPC plugin"
-permissions = [
-    "allow-greet",
-    "allow-get-user",
-    "allow-list-users",
-    "allow-create-user",
-    "allow-update-user",
-    "allow-delete-user",
-]
+permissions = ["allow-rpc-call"]

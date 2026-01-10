@@ -1,4 +1,6 @@
-// React hooks for generated RPC commands
+// =============================================================================
+// React Hooks for RPC
+// =============================================================================
 
 import {
   createContext,
@@ -9,13 +11,14 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import { rpc } from './router';
+import { rpc, user } from './router';
+import type { User, CreateUserInput, UpdateUserInput, GreetInput } from './types';
 
-type RpcFunctions = typeof rpc;
-type RpcKey = keyof RpcFunctions;
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
 
-// Query result type
-export interface UseQueryResult<T> {
+export interface QueryResult<T> {
   data: T | undefined;
   error: Error | null;
   isLoading: boolean;
@@ -24,8 +27,7 @@ export interface UseQueryResult<T> {
   refetch: () => Promise<void>;
 }
 
-// Mutation result type
-export interface UseMutationResult<TInput, TOutput> {
+export interface MutationResult<TInput, TOutput> {
   data: TOutput | undefined;
   error: Error | null;
   isLoading: boolean;
@@ -37,7 +39,15 @@ export interface UseMutationResult<TInput, TOutput> {
   reset: () => void;
 }
 
+export interface MutationOptions<TInput, TOutput> {
+  onSuccess?: (data: TOutput, input: TInput) => void;
+  onError?: (error: Error, input: TInput) => void;
+}
+
+// -----------------------------------------------------------------------------
 // Context
+// -----------------------------------------------------------------------------
+
 const RpcContext = createContext<typeof rpc>(rpc);
 
 export function RpcProvider({ children }: { children: ReactNode }) {
@@ -48,21 +58,20 @@ export function useRpc() {
   return useContext(RpcContext);
 }
 
-// Generic query hook
-export function useRpcQuery<K extends RpcKey>(
-  key: K,
-  input: Parameters<RpcFunctions[K]>[0],
+// -----------------------------------------------------------------------------
+// Generic Hooks
+// -----------------------------------------------------------------------------
+
+function useQuery<T>(
+  queryFn: () => Promise<T>,
+  deps: unknown[],
   options: { enabled?: boolean } = {}
-): UseQueryResult<Awaited<ReturnType<RpcFunctions[K]>>> {
-  type TOutput = Awaited<ReturnType<RpcFunctions[K]>>;
-  
+): QueryResult<T> {
   const { enabled = true } = options;
-  const [data, setData] = useState<TOutput>();
+  const [data, setData] = useState<T>();
   const [error, setError] = useState<Error | null>(null);
   const [isLoading, setIsLoading] = useState(enabled);
   const mountedRef = useRef(true);
-  const inputRef = useRef(input);
-  inputRef.current = input;
 
   const fetchData = useCallback(async () => {
     if (!enabled) return;
@@ -70,8 +79,7 @@ export function useRpcQuery<K extends RpcKey>(
     setError(null);
 
     try {
-      const fn = rpc[key] as (input: any) => Promise<TOutput>;
-      const result = await fn(inputRef.current);
+      const result = await queryFn();
       if (mountedRef.current) {
         setData(result);
         setIsLoading(false);
@@ -82,11 +90,12 @@ export function useRpcQuery<K extends RpcKey>(
         setIsLoading(false);
       }
     }
-  }, [key, enabled]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, ...deps]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData, JSON.stringify(input)]);
+  }, [fetchData]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -103,17 +112,10 @@ export function useRpcQuery<K extends RpcKey>(
   };
 }
 
-// Generic mutation hook
-export function useRpcMutation<K extends RpcKey>(
-  key: K,
-  options: {
-    onSuccess?: (data: Awaited<ReturnType<RpcFunctions[K]>>, input: Parameters<RpcFunctions[K]>[0]) => void;
-    onError?: (error: Error, input: Parameters<RpcFunctions[K]>[0]) => void;
-  } = {}
-): UseMutationResult<Parameters<RpcFunctions[K]>[0], Awaited<ReturnType<RpcFunctions[K]>>> {
-  type TInput = Parameters<RpcFunctions[K]>[0];
-  type TOutput = Awaited<ReturnType<RpcFunctions[K]>>;
-  
+function useMutation<TInput, TOutput>(
+  mutationFn: (input: TInput) => Promise<TOutput>,
+  options: MutationOptions<TInput, TOutput> = {}
+): MutationResult<TInput, TOutput> {
   const { onSuccess, onError } = options;
   const [data, setData] = useState<TOutput>();
   const [error, setError] = useState<Error | null>(null);
@@ -126,8 +128,7 @@ export function useRpcMutation<K extends RpcKey>(
       setError(null);
 
       try {
-        const fn = rpc[key] as (input: TInput) => Promise<TOutput>;
-        const result = await fn(input);
+        const result = await mutationFn(input);
         if (mountedRef.current) {
           setData(result);
           setStatus('success');
@@ -144,7 +145,7 @@ export function useRpcMutation<K extends RpcKey>(
         throw error;
       }
     },
-    [key, onSuccess, onError]
+    [mutationFn, onSuccess, onError]
   );
 
   const mutate = useCallback(
@@ -176,27 +177,30 @@ export function useRpcMutation<K extends RpcKey>(
   };
 }
 
-// Typed convenience hooks
-export function useGreet(input: { name: string }, options?: { enabled?: boolean }) {
-  return useRpcQuery('greet', input, options);
+// -----------------------------------------------------------------------------
+// Typed Hooks
+// -----------------------------------------------------------------------------
+
+export function useGreet(input: GreetInput, options?: { enabled?: boolean }) {
+  return useQuery(() => rpc.greet(input), [input.name], options);
 }
 
 export function useGetUser(input: { id: number }, options?: { enabled?: boolean }) {
-  return useRpcQuery('getUser', input, options);
+  return useQuery(() => user.get(input), [input.id], options);
 }
 
-export function useListUsers(input: Parameters<typeof rpc.listUsers>[0] = {}, options?: { enabled?: boolean }) {
-  return useRpcQuery('listUsers', input, options);
+export function useListUsers(options?: { enabled?: boolean }) {
+  return useQuery(() => user.list(), [], options);
 }
 
-export function useCreateUser(options?: Parameters<typeof useRpcMutation<'createUser'>>[1]) {
-  return useRpcMutation('createUser', options);
+export function useCreateUser(options?: MutationOptions<{ input: CreateUserInput }, User>) {
+  return useMutation((args: { input: CreateUserInput }) => user.create(args.input), options);
 }
 
-export function useUpdateUser(options?: Parameters<typeof useRpcMutation<'updateUser'>>[1]) {
-  return useRpcMutation('updateUser', options);
+export function useUpdateUser(options?: MutationOptions<{ input: UpdateUserInput }, User>) {
+  return useMutation((args: { input: UpdateUserInput }) => user.update(args.input), options);
 }
 
-export function useDeleteUser(options?: Parameters<typeof useRpcMutation<'deleteUser'>>[1]) {
-  return useRpcMutation('deleteUser', options);
+export function useDeleteUser(options?: MutationOptions<{ id: number }, unknown>) {
+  return useMutation((args: { id: number }) => user.delete(args), options);
 }
