@@ -1,35 +1,4 @@
-// Build script for Tauri app
-
-use std::path::PathBuf;
-
-fn main() {
-    tauri_build::build();
-    generate_files();
-}
-
-fn generate_files() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let output_dir = PathBuf::from(&manifest_dir)
-        .parent()
-        .unwrap()
-        .join("src")
-        .join("generated");
-
-    std::fs::create_dir_all(&output_dir).unwrap();
-    std::fs::create_dir_all(output_dir.join("types")).unwrap();
-
-    // Types index (re-exports ts-rs generated types)
-    let types_index = r#"// Re-export all ts-rs generated types
-export type { User } from './User';
-export type { CreateUserInput } from './CreateUserInput';
-export type { UpdateUserInput } from './UpdateUserInput';
-export type { PaginatedResponse } from './PaginatedResponse';
-export type { SuccessResponse } from './SuccessResponse';
-export type { PaginationInput } from './PaginationInput';
-"#;
-
-    // Router
-    let router = r#"// Auto-generated router - Types from ts-rs
+// Auto-generated router - Types from ts-rs
 
 import { invoke } from '@tauri-apps/api/core';
 import type {
@@ -88,19 +57,3 @@ export const rpc = {
 } as const;
 
 export type CommandName = keyof typeof rpc;
-"#;
-
-    // Index
-    let index = r#"// Auto-generated exports
-export * from './router';
-export * from './hooks';
-"#;
-
-    std::fs::write(output_dir.join("types").join("index.ts"), types_index).unwrap();
-    std::fs::write(output_dir.join("router.ts"), router).unwrap();
-    std::fs::write(output_dir.join("index.ts"), index).unwrap();
-
-    println!("cargo:warning=Generated TypeScript files");
-    println!("cargo:rerun-if-changed=src/rpc/types.rs");
-    println!("cargo:rerun-if-changed=src/rpc/commands.rs");
-}

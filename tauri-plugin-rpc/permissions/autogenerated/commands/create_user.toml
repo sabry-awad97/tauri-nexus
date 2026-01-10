@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-create-user"
+description = "Enables the create_user command without any pre-configured scope."
+commands.allow = ["create_user"]
+
+[[permission]]
+identifier = "deny-create-user"
+description = "Denies the create_user command without any pre-configured scope."
+commands.deny = ["create_user"]

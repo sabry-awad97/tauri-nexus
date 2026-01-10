@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-user"
+description = "Enables the get_user command without any pre-configured scope."
+commands.allow = ["get_user"]
+
+[[permission]]
+identifier = "deny-get-user"
+description = "Denies the get_user command without any pre-configured scope."
+commands.deny = ["get_user"]

@@ -21,12 +21,14 @@ h2 {
   border-radius: 8px;
   padding: 1.5rem;
   margin: 1.5rem 0;
+  text-align: left;
 }
 
 .row {
   display: flex;
   gap: 0.5rem;
   justify-content: center;
+  flex-wrap: wrap;
 }
 
 input {
@@ -36,6 +38,8 @@ input {
   background: #0f0f0f;
   color: #fff;
   font-size: 1rem;
+  flex: 1;
+  min-width: 120px;
 }
 
 button {
@@ -47,6 +51,7 @@ button {
   font-size: 1rem;
   cursor: pointer;
   transition: background 0.2s;
+  white-space: nowrap;
 }
 
 button:hover {
@@ -64,4 +69,19 @@ button:disabled {
   background: #0f0f0f;
   border-radius: 4px;
   color: #4ade80;
+  text-align: center;
+}
+
+.user-list {
+  margin-top: 1rem;
+}
+
+.user-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background: #0f0f0f;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
 }

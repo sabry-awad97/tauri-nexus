@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { rpc, RPCProvider, useQuery, useMutation } from './rpc';
+import {
+  RpcProvider,
+  useGreet,
+  useListUsers,
+  useCreateUser,
+  useDeleteUser,
+} from './generated/hooks';
+import { rpc } from './generated';
+import type { User } from './generated';
 import './App.css';
 
 // Example 1: Vanilla TypeScript usage
@@ -11,7 +19,6 @@ function VanillaExample() {
   async function handleGreet() {
     setLoading(true);
     try {
-      // Type-safe! TypeScript knows input is { name: string } and output is string
       const result = await rpc.greet({ name });
       setGreeting(result);
     } catch (error) {
@@ -42,12 +49,11 @@ function VanillaExample() {
 // Example 2: React hooks usage
 function ReactHooksExample() {
   const [name, setName] = useState('React');
-
-  const { data, isLoading, refetch } = useQuery('greet', { name }, { enabled: name.length > 0 });
+  const { data, isLoading, refetch } = useGreet({ name }, { enabled: name.length > 0 });
 
   return (
     <div className="example">
-      <h2>React Hooks</h2>
+      <h2>React Hooks (useGreet)</h2>
       <div className="row">
         <input
           value={name}
@@ -63,31 +69,68 @@ function ReactHooksExample() {
   );
 }
 
-// Example 3: Mutation usage
-function MutationExample() {
-  const [name, setName] = useState('');
-
-  const mutation = useMutation('greet', {
-    onSuccess: (data) => console.log('Success:', data),
+// Example 3: User list with CRUD
+function UserListExample() {
+  const { data: usersData, isLoading, refetch } = useListUsers({});
+  const createUser = useCreateUser({
+    onSuccess: () => refetch(),
   });
+  const deleteUser = useDeleteUser({
+    onSuccess: () => refetch(),
+  });
+
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+
+  const handleCreate = () => {
+    if (newName && newEmail) {
+      createUser.mutate({ input: { name: newName, email: newEmail } });
+      setNewName('');
+      setNewEmail('');
+    }
+  };
 
   return (
     <div className="example">
-      <h2>Mutation Pattern</h2>
-      <div className="row">
+      <h2>User Management (Generated Types)</h2>
+      
+      <div className="row" style={{ marginBottom: '1rem' }}>
         <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Enter name..."
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Name"
         />
-        <button
-          onClick={() => mutation.mutate({ name })}
-          disabled={mutation.isLoading}
-        >
-          {mutation.isLoading ? 'Sending...' : 'Send'}
+        <input
+          value={newEmail}
+          onChange={(e) => setNewEmail(e.target.value)}
+          placeholder="Email"
+        />
+        <button onClick={handleCreate} disabled={createUser.isLoading}>
+          {createUser.isLoading ? 'Creating...' : 'Add User'}
         </button>
       </div>
-      {mutation.data && <p className="result">{mutation.data}</p>}
+
+      {isLoading ? (
+        <p>Loading users...</p>
+      ) : (
+        <div className="user-list">
+          {usersData?.data.map((user: User) => (
+            <div key={user.id} className="user-item">
+              <span>{user.name} ({user.email})</span>
+              <button
+                onClick={() => deleteUser.mutate({ id: user.id })}
+                disabled={deleteUser.isLoading}
+                style={{ marginLeft: '0.5rem', background: '#dc2626' }}
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+          <p style={{ fontSize: '0.8rem', color: '#888' }}>
+            Total: {usersData?.total} | Page: {usersData?.page}/{usersData?.totalPages}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -95,19 +138,19 @@ function MutationExample() {
 function AppContent() {
   return (
     <main className="container">
-      <h1>Tauri RPC Demo</h1>
-      <p>Type-safe communication between React and Rust</p>
+      <h1>Tauri RPC Plugin Demo</h1>
+      <p>Type-safe communication with auto-generated types</p>
       <VanillaExample />
       <ReactHooksExample />
-      <MutationExample />
+      <UserListExample />
     </main>
   );
 }
 
 export default function App() {
   return (
-    <RPCProvider>
+    <RpcProvider>
       <AppContent />
-    </RPCProvider>
+    </RpcProvider>
   );
 }
