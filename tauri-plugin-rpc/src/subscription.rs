@@ -22,13 +22,104 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use std::sync::atomic::Ordering;
+use tokio::sync::{RwLock, broadcast, mpsc};
+use uuid::Uuid;
 
 use crate::{Context, RpcError, RpcResult};
+
+// =============================================================================
+// Subscription ID (UUID v7 Newtype)
+// =============================================================================
+
+/// A unique, time-ordered subscription identifier based on UUID v7.
+///
+/// UUID v7 provides:
+/// - Time-ordered IDs (sortable by creation time)
+/// - Cryptographically random bits for uniqueness
+/// - Standard UUID format for interoperability
+///
+/// # Example
+/// ```rust,ignore
+/// let id = SubscriptionId::new();
+/// println!("Subscription: {}", id); // sub_01234567-89ab-7cde-8f01-234567890abc
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SubscriptionId(Uuid);
+
+impl SubscriptionId {
+    /// Create a new subscription ID using UUID v7.
+    pub fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+
+    /// Create a subscription ID from an existing UUID.
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    /// Get the underlying UUID.
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+
+    /// Convert to the underlying UUID.
+    pub fn into_uuid(self) -> Uuid {
+        self.0
+    }
+
+    /// Parse a subscription ID from a string.
+    ///
+    /// Accepts both formats:
+    /// - With prefix: "sub_01234567-89ab-7cde-8f01-234567890abc"
+    /// - Without prefix: "01234567-89ab-7cde-8f01-234567890abc"
+    pub fn parse(s: &str) -> Result<Self, uuid::Error> {
+        let uuid_str = s.strip_prefix("sub_").unwrap_or(s);
+        Uuid::parse_str(uuid_str).map(Self)
+    }
+}
+
+impl Default for SubscriptionId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for SubscriptionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "sub_{}", self.0)
+    }
+}
+
+impl From<Uuid> for SubscriptionId {
+    fn from(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+impl From<SubscriptionId> for String {
+    fn from(id: SubscriptionId) -> Self {
+        id.to_string()
+    }
+}
+
+/// Generate a unique subscription ID using UUID v7.
+///
+/// This is a convenience function that creates a new [`SubscriptionId`].
+///
+/// # Example
+/// ```rust,ignore
+/// let id = generate_subscription_id();
+/// assert!(id.to_string().starts_with("sub_"));
+/// ```
+pub fn generate_subscription_id() -> SubscriptionId {
+    SubscriptionId::new()
+}
 
 // =============================================================================
 // Event Types
@@ -116,7 +207,7 @@ pub fn with_event_meta(id: impl Into<String>) -> EventMeta {
 #[derive(Debug, Clone)]
 pub struct SubscriptionContext {
     /// Unique subscription ID
-    pub subscription_id: String,
+    pub subscription_id: SubscriptionId,
     /// Last event ID for resumption (from client)
     pub last_event_id: Option<String>,
     /// Cancellation signal
@@ -125,7 +216,7 @@ pub struct SubscriptionContext {
 
 impl SubscriptionContext {
     /// Create a new subscription context
-    pub fn new(subscription_id: String, last_event_id: Option<String>) -> Self {
+    pub fn new(subscription_id: SubscriptionId, last_event_id: Option<String>) -> Self {
         Self {
             subscription_id,
             last_event_id,
@@ -219,8 +310,9 @@ pub type BoxedSubscriptionHandler<Ctx> = Arc<
             Context<Ctx>,
             SubscriptionContext,
             serde_json::Value,
-        ) -> Pin<Box<dyn Future<Output = RpcResult<mpsc::Receiver<Event<serde_json::Value>>>> + Send>>
-        + Send
+        ) -> Pin<
+            Box<dyn Future<Output = RpcResult<mpsc::Receiver<Event<serde_json::Value>>>> + Send>,
+        > + Send
         + Sync,
 >;
 
@@ -289,7 +381,6 @@ where
     })
 }
 
-
 // =============================================================================
 // Subscription Handle
 // =============================================================================
@@ -298,7 +389,7 @@ where
 #[derive(Debug)]
 pub struct SubscriptionHandle {
     /// Unique subscription ID
-    pub id: String,
+    pub id: SubscriptionId,
     /// Path of the subscription procedure
     pub path: String,
     /// Cancellation signal
@@ -309,7 +400,7 @@ pub struct SubscriptionHandle {
 
 impl SubscriptionHandle {
     /// Create a new subscription handle
-    pub fn new(id: String, path: String, signal: Arc<CancellationSignal>) -> Self {
+    pub fn new(id: SubscriptionId, path: String, signal: Arc<CancellationSignal>) -> Self {
         Self {
             id,
             path,
@@ -348,24 +439,11 @@ impl Drop for SubscriptionHandle {
 // Subscription Manager
 // =============================================================================
 
-/// Counter for generating unique subscription IDs
-static SUBSCRIPTION_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Generate a unique subscription ID
-pub fn generate_subscription_id() -> String {
-    let count = SUBSCRIPTION_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    format!("sub_{}_{}", timestamp, count)
-}
-
 /// Manages active subscriptions
 #[derive(Debug, Default)]
 pub struct SubscriptionManager {
     /// Active subscriptions by ID
-    subscriptions: RwLock<HashMap<String, SubscriptionHandle>>,
+    subscriptions: RwLock<HashMap<SubscriptionId, SubscriptionHandle>>,
 }
 
 impl SubscriptionManager {
@@ -377,14 +455,14 @@ impl SubscriptionManager {
     }
 
     /// Register a new subscription
-    pub async fn subscribe(&self, handle: SubscriptionHandle) -> String {
-        let id = handle.id.clone();
-        self.subscriptions.write().await.insert(id.clone(), handle);
+    pub async fn subscribe(&self, handle: SubscriptionHandle) -> SubscriptionId {
+        let id = handle.id;
+        self.subscriptions.write().await.insert(id, handle);
         id
     }
 
     /// Unsubscribe by ID
-    pub async fn unsubscribe(&self, id: &str) -> bool {
+    pub async fn unsubscribe(&self, id: &SubscriptionId) -> bool {
         if let Some(handle) = self.subscriptions.write().await.remove(id) {
             handle.cancel();
             true
@@ -399,7 +477,7 @@ impl SubscriptionManager {
     }
 
     /// Check if a subscription exists
-    pub async fn exists(&self, id: &str) -> bool {
+    pub async fn exists(&self, id: &SubscriptionId) -> bool {
         self.subscriptions.read().await.contains_key(id)
     }
 
@@ -412,8 +490,8 @@ impl SubscriptionManager {
     }
 
     /// Get all subscription IDs
-    pub async fn subscription_ids(&self) -> Vec<String> {
-        self.subscriptions.read().await.keys().cloned().collect()
+    pub async fn subscription_ids(&self) -> Vec<SubscriptionId> {
+        self.subscriptions.read().await.keys().copied().collect()
     }
 
     /// Clean up completed subscriptions
@@ -545,7 +623,10 @@ impl<T: Clone + Send + 'static> ChannelPublisher<T> {
         if let Some(publisher) = channels.get(channel) {
             publisher.publish(event)
         } else {
-            Err(RpcError::not_found(format!("Channel '{}' not found", channel)))
+            Err(RpcError::not_found(format!(
+                "Channel '{}' not found",
+                channel
+            )))
         }
     }
 

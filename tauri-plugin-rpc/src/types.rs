@@ -19,8 +19,17 @@ pub struct PaginatedResponse<T> {
 impl<T> PaginatedResponse<T> {
     /// Create a new paginated response
     pub fn new(data: Vec<T>, total: u32, page: u32, limit: u32) -> Self {
-        let total_pages = if limit > 0 { (total + limit - 1) / limit } else { 1 };
-        Self { data, total, page, total_pages }
+        let total_pages = if limit > 0 {
+            (total + limit - 1) / limit
+        } else {
+            1
+        };
+        Self {
+            data,
+            total,
+            page,
+            total_pages,
+        }
     }
 
     /// Check if there's a next page
@@ -47,17 +56,26 @@ pub struct SuccessResponse {
 impl SuccessResponse {
     /// Create a success response with a message
     pub fn ok(message: impl Into<String>) -> Self {
-        Self { success: true, message: Some(message.into()) }
+        Self {
+            success: true,
+            message: Some(message.into()),
+        }
     }
 
     /// Create a simple success response
     pub fn success() -> Self {
-        Self { success: true, message: None }
+        Self {
+            success: true,
+            message: None,
+        }
     }
 
     /// Create a failure response
     pub fn fail(message: impl Into<String>) -> Self {
-        Self { success: false, message: Some(message.into()) }
+        Self {
+            success: false,
+            message: Some(message.into()),
+        }
     }
 }
 
@@ -94,6 +112,9 @@ impl PaginationInput {
 
     /// Create pagination with specific values
     pub fn new(page: u32, limit: u32) -> Self {
-        Self { page: Some(page), limit: Some(limit) }
+        Self {
+            page: Some(page),
+            limit: Some(limit),
+        }
     }
 }

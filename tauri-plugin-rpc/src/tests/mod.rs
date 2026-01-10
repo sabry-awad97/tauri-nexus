@@ -8,3 +8,9 @@ pub mod subscription_tests;
 
 #[cfg(test)]
 pub mod handler_tests;
+
+#[cfg(test)]
+pub mod error_tests;
+
+#[cfg(test)]
+pub mod validation_tests;

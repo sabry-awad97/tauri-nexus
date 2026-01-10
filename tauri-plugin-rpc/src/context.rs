@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 /// Context wrapper providing access to application state
-/// 
+///
 /// The context is cloned for each request, so use `Arc` for shared state.
 #[derive(Clone)]
 pub struct Context<T: Clone + Send + Sync + 'static> {
@@ -13,7 +13,9 @@ pub struct Context<T: Clone + Send + Sync + 'static> {
 impl<T: Clone + Send + Sync + 'static> Context<T> {
     /// Create a new context wrapping the given value
     pub fn new(ctx: T) -> Self {
-        Self { inner: Arc::new(ctx) }
+        Self {
+            inner: Arc::new(ctx),
+        }
     }
 
     /// Get a reference to the inner context

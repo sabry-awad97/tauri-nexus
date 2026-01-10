@@ -26,6 +26,7 @@
 //!     .run(tauri::generate_context!())
 //! ```
 
+mod config;
 mod context;
 mod error;
 mod handler;
@@ -39,31 +40,57 @@ pub mod types;
 mod tests;
 
 // Public API
+pub use config::RpcConfig;
 pub use context::{Context, EmptyContext};
-pub use error::{RpcError, RpcResult};
+pub use error::{RpcError, RpcErrorCode, RpcResult};
 pub use handler::Handler;
-pub use middleware::{Middleware, Next, Request, ProcedureType};
-pub use plugin::{init, DynRouter};
+pub use middleware::{Middleware, Next, ProcedureType, Request};
+pub use plugin::{
+    DynRouter, init, init_with_config, validate_input_size, validate_path, validate_subscription_id,
+};
 pub use router::Router;
 pub use subscription::{
-    Event, EventMeta, EventPublisher, EventSender, EventStream, EventSubscriber,
-    SubscriptionContext, SubscriptionEvent, SubscriptionHandler, SubscriptionHandle,
-    SubscriptionManager, ChannelPublisher, CancellationSignal,
-    event_channel, generate_subscription_id, with_event_meta,
+    CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, EventSender,
+    EventStream, EventSubscriber, SubscriptionContext, SubscriptionEvent, SubscriptionHandle,
+    SubscriptionHandler, SubscriptionId, SubscriptionManager, event_channel,
+    generate_subscription_id, with_event_meta,
 };
 pub use types::*;
 
 /// Prelude for convenient imports
 pub mod prelude {
     pub use crate::{
-        Context, EmptyContext, Handler, Middleware, Next, 
-        ProcedureType, Request, RpcError, RpcResult, Router,
-        PaginatedResponse, PaginationInput, SuccessResponse,
+        ChannelPublisher,
+        Context,
+        EmptyContext,
         // Subscription types
-        Event, EventMeta, EventPublisher, EventSender, EventStream,
-        SubscriptionContext, SubscriptionEvent, SubscriptionHandler,
-        SubscriptionManager, ChannelPublisher,
-        event_channel, generate_subscription_id, with_event_meta,
+        Event,
+        EventMeta,
+        EventPublisher,
+        EventSender,
+        EventStream,
+        Handler,
+        Middleware,
+        Next,
+        PaginatedResponse,
+        PaginationInput,
+        ProcedureType,
+        Request,
+        Router,
+        RpcConfig,
+        RpcError,
+        RpcErrorCode,
+        RpcResult,
+        SubscriptionContext,
+        SubscriptionEvent,
+        SubscriptionHandler,
+        SubscriptionId,
+        SubscriptionManager,
+        SuccessResponse,
+        event_channel,
+        generate_subscription_id,
         init,
+        init_with_config,
+        with_event_meta,
     };
 }

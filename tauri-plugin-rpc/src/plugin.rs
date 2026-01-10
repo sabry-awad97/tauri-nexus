@@ -1,18 +1,103 @@
 //! Tauri plugin integration
 
+use crate::RpcError;
+use crate::config::RpcConfig;
 use crate::subscription::{
-    Event, SubscriptionContext, SubscriptionEvent, SubscriptionManager,
+    Event, SubscriptionContext, SubscriptionEvent, SubscriptionId, SubscriptionManager,
     generate_subscription_id,
 };
-use crate::RpcError;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tauri::{
-    plugin::{Builder, TauriPlugin},
     AppHandle, Emitter, Manager, Runtime, State,
+    plugin::{Builder, TauriPlugin},
 };
 use tokio::sync::mpsc;
+
+// =============================================================================
+// Input Validation
+// =============================================================================
+
+/// Validate procedure path format.
+///
+/// Valid paths contain only alphanumeric characters, underscores, and dots.
+/// Paths must not be empty and must not start or end with a dot.
+///
+/// # Examples
+/// - Valid: "users.get", "health_check", "api.v1.users"
+/// - Invalid: ".users", "users.", "users..get", "users/get", ""
+pub fn validate_path(path: &str) -> Result<(), RpcError> {
+    if path.is_empty() {
+        return Err(RpcError::validation("Procedure path cannot be empty"));
+    }
+
+    if path.starts_with('.') || path.ends_with('.') {
+        return Err(RpcError::validation(
+            "Procedure path cannot start or end with a dot",
+        ));
+    }
+
+    if path.contains("..") {
+        return Err(RpcError::validation(
+            "Procedure path cannot contain consecutive dots",
+        ));
+    }
+
+    // Check for valid characters: alphanumeric, underscore, dot
+    for ch in path.chars() {
+        if !ch.is_ascii_alphanumeric() && ch != '_' && ch != '.' {
+            return Err(RpcError::validation(format!(
+                "Procedure path contains invalid character: '{}'",
+                ch
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate input size against configuration limit.
+///
+/// Returns an error if the serialized input exceeds the maximum allowed size.
+pub fn validate_input_size(input: &serde_json::Value, config: &RpcConfig) -> Result<(), RpcError> {
+    // Estimate size by serializing to bytes
+    let size = serde_json::to_vec(input).map(|v| v.len()).unwrap_or(0);
+
+    if size > config.max_input_size {
+        return Err(RpcError::payload_too_large(format!(
+            "Input size {} bytes exceeds maximum {} bytes",
+            size, config.max_input_size
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validate subscription ID format when provided by client.
+///
+/// Accepts both formats:
+/// - With prefix: "sub_<uuid>"
+/// - Without prefix: "<uuid>"
+pub fn validate_subscription_id(id: &str) -> Result<SubscriptionId, RpcError> {
+    if id.is_empty() {
+        return Err(RpcError::validation("Subscription ID cannot be empty"));
+    }
+
+    SubscriptionId::parse(id)
+        .map_err(|e| RpcError::validation(format!("Invalid subscription ID '{}': {}", id, e)))
+}
+
+/// Validate all inputs for an RPC call.
+pub fn validate_rpc_input(
+    path: &str,
+    input: &serde_json::Value,
+    config: &RpcConfig,
+) -> Result<(), RpcError> {
+    validate_path(path)?;
+    validate_input_size(input, config)?;
+    Ok(())
+}
 
 /// Type-erased router trait for plugin storage
 pub trait DynRouter: Send + Sync {
@@ -35,7 +120,13 @@ pub trait DynRouter: Send + Sync {
         path: &'a str,
         input: serde_json::Value,
         ctx: SubscriptionContext,
-    ) -> Pin<Box<dyn Future<Output = Result<mpsc::Receiver<Event<serde_json::Value>>, RpcError>> + Send + 'a>>;
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<mpsc::Receiver<Event<serde_json::Value>>, RpcError>>
+                + Send
+                + 'a,
+        >,
+    >;
 }
 
 /// Router state wrapper
@@ -44,16 +135,26 @@ struct RouterState(Arc<dyn DynRouter>);
 /// Subscription manager state
 struct SubscriptionState(Arc<SubscriptionManager>);
 
+/// Configuration state
+struct ConfigState(RpcConfig);
+
 /// RPC call command
 #[tauri::command]
 async fn rpc_call(
     path: String,
     input: serde_json::Value,
     state: State<'_, RouterState>,
+    config: State<'_, ConfigState>,
 ) -> Result<serde_json::Value, String> {
-    state.0.call(&path, input).await.map_err(|e| {
-        serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())
-    })
+    // Validate input before processing
+    validate_rpc_input(&path, &input, &config.0)
+        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+
+    state
+        .0
+        .call(&path, input)
+        .await
+        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))
 }
 
 /// List available procedures
@@ -72,32 +173,36 @@ async fn rpc_subscribe<R: Runtime>(
     app: AppHandle<R>,
     router_state: State<'_, RouterState>,
     sub_state: State<'_, SubscriptionState>,
+    config: State<'_, ConfigState>,
 ) -> Result<String, String> {
-    // Generate subscription ID if not provided
+    // Validate path and input
+    validate_rpc_input(&path, &input, &config.0)
+        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+
+    // Generate subscription ID if not provided, or validate the provided one
     let subscription_id = if id.is_empty() {
         generate_subscription_id()
     } else {
-        id
+        validate_subscription_id(&id)
+            .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?
     };
 
     // Check if path is a subscription
     if !router_state.0.is_subscription(&path) {
-        return Err(serde_json::to_string(&RpcError::bad_request(
-            format!("'{}' is not a subscription procedure", path),
-        ))
+        return Err(serde_json::to_string(&RpcError::bad_request(format!(
+            "'{}' is not a subscription procedure",
+            path
+        )))
         .unwrap());
     }
 
     // Create subscription context
-    let sub_ctx = SubscriptionContext::new(subscription_id.clone(), last_event_id);
+    let sub_ctx = SubscriptionContext::new(subscription_id, last_event_id);
     let signal = sub_ctx.signal();
 
     // Create subscription handle
-    let handle = crate::subscription::SubscriptionHandle::new(
-        subscription_id.clone(),
-        path.clone(),
-        signal.clone(),
-    );
+    let handle =
+        crate::subscription::SubscriptionHandle::new(subscription_id, path.clone(), signal.clone());
 
     // Register subscription
     sub_state.0.subscribe(handle).await;
@@ -106,7 +211,6 @@ async fn rpc_subscribe<R: Runtime>(
     let event_name = format!("rpc:subscription:{}", subscription_id);
     let router = router_state.0.clone();
     let sub_manager = sub_state.0.clone();
-    let sub_id = subscription_id.clone();
 
     tokio::spawn(async move {
         match router.subscribe(&path, input, sub_ctx).await {
@@ -135,10 +239,10 @@ async fn rpc_subscribe<R: Runtime>(
         }
 
         // Cleanup
-        sub_manager.unsubscribe(&sub_id).await;
+        sub_manager.unsubscribe(&subscription_id).await;
     });
 
-    Ok(subscription_id)
+    Ok(subscription_id.to_string())
 }
 
 /// Unsubscribe from a streaming procedure
@@ -147,7 +251,9 @@ async fn rpc_unsubscribe(
     id: String,
     sub_state: State<'_, SubscriptionState>,
 ) -> Result<bool, String> {
-    Ok(sub_state.0.unsubscribe(&id).await)
+    let subscription_id = validate_subscription_id(&id)
+        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+    Ok(sub_state.0.unsubscribe(&subscription_id).await)
 }
 
 /// Get active subscription count
@@ -157,14 +263,40 @@ async fn rpc_subscription_count(sub_state: State<'_, SubscriptionState>) -> Resu
 }
 
 /// Initialize the RPC plugin with a router
-/// 
+///
 /// # Example
 /// ```rust,ignore
 /// tauri::Builder::default()
 ///     .plugin(tauri_plugin_rpc::init(create_router()))
 ///     .run(tauri::generate_context!())
 /// ```
-pub fn init<R, D>(router: D) -> TauriPlugin<R> where R: Runtime, D: DynRouter + 'static {
+pub fn init<R, D>(router: D) -> TauriPlugin<R>
+where
+    R: Runtime,
+    D: DynRouter + 'static,
+{
+    init_with_config(router, RpcConfig::default())
+}
+
+/// Initialize the RPC plugin with a router and custom configuration
+///
+/// # Example
+/// ```rust,ignore
+/// use tauri_plugin_rpc::RpcConfig;
+///
+/// let config = RpcConfig::new()
+///     .with_max_input_size(512 * 1024)
+///     .with_debug_logging(true);
+///
+/// tauri::Builder::default()
+///     .plugin(tauri_plugin_rpc::init_with_config(create_router(), config))
+///     .run(tauri::generate_context!())
+/// ```
+pub fn init_with_config<R, D>(router: D, config: RpcConfig) -> TauriPlugin<R>
+where
+    R: Runtime,
+    D: DynRouter + 'static,
+{
     let router: Arc<dyn DynRouter> = Arc::new(router);
     let subscription_manager = Arc::new(SubscriptionManager::new());
 
@@ -179,6 +311,7 @@ pub fn init<R, D>(router: D) -> TauriPlugin<R> where R: Runtime, D: DynRouter + 
         .setup(move |app, _api| {
             app.manage(RouterState(router.clone()));
             app.manage(SubscriptionState(subscription_manager.clone()));
+            app.manage(ConfigState(config.clone()));
             Ok(())
         })
         .build()

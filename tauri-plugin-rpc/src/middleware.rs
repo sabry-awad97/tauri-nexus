@@ -61,7 +61,11 @@ pub type Next<Ctx> = Arc<
 
 /// Middleware function type
 pub type MiddlewareFn<Ctx> = Arc<
-    dyn Fn(Context<Ctx>, Request, Next<Ctx>) -> Pin<Box<dyn Future<Output = RpcResult<Response>> + Send>>
+    dyn Fn(
+            Context<Ctx>,
+            Request,
+            Next<Ctx>,
+        ) -> Pin<Box<dyn Future<Output = RpcResult<Response>> + Send>>
         + Send
         + Sync,
 >;
@@ -78,7 +82,7 @@ pub trait Middleware<Ctx: Clone + Send + Sync + 'static>: Send + Sync {
 }
 
 /// Create middleware from an async function
-/// 
+///
 /// # Example
 /// ```rust,ignore
 /// async fn logging<Ctx>(ctx: Context<Ctx>, req: Request, next: Next<Ctx>) -> RpcResult<Response> {

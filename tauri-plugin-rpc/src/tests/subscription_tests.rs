@@ -1,7 +1,7 @@
 //! Property-based tests for subscription/event iterator functionality
 //!
 //! These tests validate the correctness properties defined in the design document:
-//! - Property 9: Subscription ID Uniqueness
+//! - Property 2: Subscription ID Uniqueness
 //! - Property 10: Subscription Cleanup
 //! - Property 36: Event Iterator Last Event ID Resumption
 //! - Property 37: Event Iterator Completion Signal
@@ -12,25 +12,42 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::subscription::{
-    generate_subscription_id, CancellationSignal, ChannelPublisher, Event, EventMeta,
-    EventPublisher, SubscriptionContext, SubscriptionManager,
+    CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, SubscriptionContext,
+    SubscriptionId, SubscriptionManager, generate_subscription_id,
 };
 
 // =============================================================================
-// Property 9: Subscription ID Uniqueness
+// Property 2: Subscription ID Uniqueness
 // =============================================================================
 
 proptest! {
-    /// **Property 9: Subscription ID Uniqueness**
-    /// *For any* number of subscription IDs generated, all IDs should be unique
-    /// **Validates: Requirements 5.2**
+    /// **Property 2: Subscription ID Uniqueness**
+    /// *For any* number of subscription IDs generated (up to practical limits),
+    /// all generated IDs SHALL be unique.
+    /// **Validates: Requirements 2.1**
+    /// **Feature: tauri-rpc-plugin-optimization, Property 2: Subscription ID Uniqueness**
     #[test]
     fn prop_subscription_id_uniqueness(count in 1usize..1000) {
         let mut ids = HashSet::new();
         for _ in 0..count {
             let id = generate_subscription_id();
+            let id_str = id.to_string();
+
+            // Verify format: should start with "sub_" followed by UUID
+            prop_assert!(id_str.starts_with("sub_"), "ID should start with 'sub_': {}", id_str);
+
+            // UUID v7 format: sub_ + 8-4-4-4-12 = sub_ + 36 chars = 40 total
+            prop_assert_eq!(id_str.len(), 40, "ID should be 40 chars (4 prefix + 36 UUID): {}", id_str);
+
+            // Verify UUID portion is valid
+            let uuid_part = &id_str[4..];
+            prop_assert!(
+                uuid::Uuid::parse_str(uuid_part).is_ok(),
+                "ID UUID portion should be valid UUID: {}", uuid_part
+            );
+
             // Each ID should be unique
-            prop_assert!(ids.insert(id.clone()), "Duplicate subscription ID generated: {}", id);
+            prop_assert!(ids.insert(id), "Duplicate subscription ID generated: {}", id_str);
         }
         // All IDs should be present
         prop_assert_eq!(ids.len(), count);
@@ -59,10 +76,10 @@ proptest! {
 
             // Create subscriptions
             for i in 0..subscription_count {
-                let id = format!("sub_{}", i);
+                let id = SubscriptionId::new();
                 let signal = Arc::new(CancellationSignal::new());
                 let handle = crate::subscription::SubscriptionHandle::new(
-                    id.clone(),
+                    id,
                     format!("path.{}", i),
                     signal.clone(),
                 );
@@ -81,10 +98,10 @@ proptest! {
                     let id = &handles[idx];
                     let result = manager.unsubscribe(id).await;
                     prop_assert!(result, "Unsubscribe should succeed for existing subscription");
-                    
+
                     // Signal should be cancelled
                     prop_assert!(signals[idx].is_cancelled(), "Signal should be cancelled after unsubscribe");
-                    
+
                     unsubscribed.insert(idx);
                 }
             }
@@ -113,18 +130,18 @@ proptest! {
     /// **Validates: Requirements 5.5**
     #[test]
     fn prop_completion_signal(
-        subscription_id in "[a-z0-9]{8,16}",
         last_event_id in proptest::option::of("[a-z0-9]{1,32}")
     ) {
-        let ctx = SubscriptionContext::new(subscription_id.clone(), last_event_id.clone());
-        
+        let subscription_id = SubscriptionId::new();
+        let ctx = SubscriptionContext::new(subscription_id, last_event_id.clone());
+
         // Initially not cancelled
         prop_assert!(!ctx.is_cancelled());
-        
+
         // After cancel, should be cancelled
         ctx.signal().cancel();
         prop_assert!(ctx.is_cancelled());
-        
+
         // Verify context fields
         prop_assert_eq!(ctx.subscription_id, subscription_id);
         prop_assert_eq!(ctx.last_event_id, last_event_id);
@@ -142,15 +159,15 @@ proptest! {
     /// **Validates: Requirements 5.4**
     #[test]
     fn prop_last_event_id_resumption(
-        subscription_id in "[a-z0-9]{8,16}",
         last_event_id in "[a-z0-9]{1,32}"
     ) {
+        let subscription_id = SubscriptionId::new();
         let ctx = SubscriptionContext::new(subscription_id, Some(last_event_id.clone()));
-        
+
         // Last event ID should be preserved
         prop_assert_eq!(ctx.last_event_id, Some(last_event_id));
     }
-    
+
     /// Test that events can carry IDs for resumption
     #[test]
     fn prop_event_id_preservation(
@@ -158,7 +175,7 @@ proptest! {
         event_id in "[a-z0-9]{1,32}"
     ) {
         let event = Event::with_id(data, event_id.clone());
-        
+
         prop_assert_eq!(event.data, data);
         prop_assert_eq!(event.id, Some(event_id));
         prop_assert_eq!(event.retry, None);
@@ -183,14 +200,14 @@ proptest! {
         rt.block_on(async {
             let publisher: ChannelPublisher<String> = ChannelPublisher::new(64);
             let channel_names: Vec<_> = channel_names.into_iter().collect();
-            
+
             // Subscribe to all channels
             let mut subscribers = Vec::new();
             for name in &channel_names {
                 let sub = publisher.subscribe(name).await;
                 subscribers.push((name.clone(), sub));
             }
-            
+
             // Publish events to each channel with channel-specific data
             for (_i, name) in channel_names.iter().enumerate() {
                 for j in 0..events_per_channel {
@@ -198,16 +215,16 @@ proptest! {
                     let _ = publisher.publish_data(name, data).await;
                 }
             }
-            
+
             // Note: In a real test, we'd verify that each subscriber only receives
             // events from their channel. This is a simplified structural test.
-            
+
             // Verify channels exist
             let channels = publisher.channels().await;
             for name in &channel_names {
                 prop_assert!(channels.contains(name), "Channel {} should exist", name);
             }
-            
+
             Ok(())
         })?;
     }
@@ -229,14 +246,14 @@ proptest! {
         prop_assert_eq!(event.data, data.clone());
         prop_assert_eq!(event.id, None);
         prop_assert_eq!(event.retry, None);
-        
+
         // Create new event with metadata
         let meta = EventMeta {
             id: id.clone(),
             retry,
         };
         let event_with_meta = Event::new(data.clone()).with_meta(meta);
-        
+
         prop_assert_eq!(event_with_meta.id, id);
         prop_assert_eq!(event_with_meta.retry, retry);
     }
@@ -251,12 +268,12 @@ proptest! {
     #[test]
     fn prop_publisher_subscriber_count(subscriber_count in 1usize..20) {
         let publisher: EventPublisher<i32> = EventPublisher::new(64);
-        
+
         // Create subscribers
         let _subscribers: Vec<_> = (0..subscriber_count)
             .map(|_| publisher.subscribe())
             .collect();
-        
+
         // Verify count
         prop_assert_eq!(publisher.subscriber_count(), subscriber_count);
     }
@@ -271,14 +288,14 @@ proptest! {
     #[test]
     fn prop_cancellation_signal_state(_dummy in 0..100) {
         let signal = CancellationSignal::new();
-        
+
         // Initially not cancelled
         prop_assert!(!signal.is_cancelled());
-        
+
         // After cancel
         signal.cancel();
         prop_assert!(signal.is_cancelled());
-        
+
         // Multiple cancels should be idempotent
         signal.cancel();
         prop_assert!(signal.is_cancelled());

@@ -1,20 +1,23 @@
 //! Handler traits and utilities
 
 use crate::{Context, RpcResult};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
 /// Boxed handler for type erasure
 pub(crate) type BoxedHandler<Ctx> = Arc<
-    dyn Fn(Context<Ctx>, serde_json::Value) -> Pin<Box<dyn Future<Output = RpcResult<serde_json::Value>> + Send>>
+    dyn Fn(
+            Context<Ctx>,
+            serde_json::Value,
+        ) -> Pin<Box<dyn Future<Output = RpcResult<serde_json::Value>> + Send>>
         + Send
         + Sync,
 >;
 
 /// Trait for handler functions
-/// 
+///
 /// Automatically implemented for async functions with the signature:
 /// `async fn(Context<Ctx>, Input) -> RpcResult<Output>`
 pub trait Handler<Ctx, Input, Output>: Clone + Send + Sync + 'static
