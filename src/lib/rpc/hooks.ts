@@ -3,13 +3,10 @@
 // =============================================================================
 
 import {
-  createContext,
-  useContext,
   useState,
   useEffect,
   useCallback,
   useRef,
-  type ReactNode,
 } from 'react';
 import type { 
   RpcError, 
@@ -18,7 +15,6 @@ import type {
   EventIterator,
   InferInput,
   InferOutput,
-  ProcedureDef,
   QueryDef,
   MutationDef,
   SubscriptionDef,

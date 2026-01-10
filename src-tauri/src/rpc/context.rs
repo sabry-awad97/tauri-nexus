@@ -12,7 +12,9 @@ pub struct AppContext {
 
 impl AppContext {
     pub fn new() -> Self {
-        Self { db: DbService::new() }
+        Self {
+            db: DbService::new(),
+        }
     }
 }
 
@@ -45,7 +47,11 @@ impl DbService {
     }
 
     pub fn list_users(&self) -> Vec<User> {
-        self.users.lock().ok().map(|u| u.clone()).unwrap_or_default()
+        self.users
+            .lock()
+            .ok()
+            .map(|u| u.clone())
+            .unwrap_or_default()
     }
 
     pub fn create_user(&self, name: &str, email: &str) -> Option<User> {
@@ -62,18 +68,26 @@ impl DbService {
         let mut users = self.users.lock().ok()?;
         let user = users.iter_mut().find(|u| u.id == id)?;
 
-        if let Some(n) = name { user.name = n.to_string(); }
-        if let Some(e) = email { user.email = e.to_string(); }
+        if let Some(n) = name {
+            user.name = n.to_string();
+        }
+        if let Some(e) = email {
+            user.email = e.to_string();
+        }
 
         Some(user.clone())
     }
 
     pub fn delete_user(&self, id: u32) -> bool {
-        self.users.lock().ok().map(|mut users| {
-            let len = users.len();
-            users.retain(|u| u.id != id);
-            users.len() < len
-        }).unwrap_or(false)
+        self.users
+            .lock()
+            .ok()
+            .map(|mut users| {
+                let len = users.len();
+                users.retain(|u| u.id != id);
+                users.len() < len
+            })
+            .unwrap_or(false)
     }
 
     pub fn count_users(&self) -> u32 {

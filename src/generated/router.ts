@@ -24,7 +24,7 @@ export { configure, getProcedures, isRpcError, hasErrorCode } from './client';
 // -----------------------------------------------------------------------------
 
 /** Health check */
-export const health = () => call<HealthResponse>('health', {});
+export const health = () => call<HealthResponse>('health', null);
 
 /** Greet a user */
 export const greet = (input: GreetInput) => call<string>('greet', input);
@@ -38,7 +38,7 @@ export const user = {
   get: (input: GetUserInput) => call<User>('user.get', input),
   
   /** List all users */
-  list: () => call<User[]>('user.list', {}),
+  list: () => call<User[]>('user.list', null),
   
   /** Create a new user */
   create: (input: CreateUserInput) => call<User>('user.create', input),

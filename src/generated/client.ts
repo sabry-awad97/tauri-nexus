@@ -46,7 +46,7 @@ function parseError(error: unknown): RpcError {
 }
 
 /** Make an RPC call */
-export async function call<T>(path: string, input: unknown = {}): Promise<T> {
+export async function call<T>(path: string, input: unknown = null): Promise<T> {
   config.onRequest?.(path, input);
 
   try {

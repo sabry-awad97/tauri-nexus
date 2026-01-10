@@ -5,3 +5,6 @@
 
 #[cfg(test)]
 pub mod subscription_tests;
+
+#[cfg(test)]
+pub mod handler_tests;

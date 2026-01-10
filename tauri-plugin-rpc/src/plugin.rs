@@ -164,7 +164,7 @@ async fn rpc_subscription_count(sub_state: State<'_, SubscriptionState>) -> Resu
 ///     .plugin(tauri_plugin_rpc::init(create_router()))
 ///     .run(tauri::generate_context!())
 /// ```
-pub fn init<R: Runtime>(router: impl DynRouter + 'static) -> TauriPlugin<R> {
+pub fn init<R, D>(router: D) -> TauriPlugin<R> where R: Runtime, D: DynRouter + 'static {
     let router: Arc<dyn DynRouter> = Arc::new(router);
     let subscription_manager = Arc::new(SubscriptionManager::new());
 
