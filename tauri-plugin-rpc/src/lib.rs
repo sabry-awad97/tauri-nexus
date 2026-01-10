@@ -137,8 +137,8 @@ pub use error::{RpcError, RpcErrorCode, RpcResult};
 pub use handler::Handler;
 pub use middleware::{Middleware, Next, ProcedureType, Request};
 pub use plugin::{
-    DynRouter, SubscribeRequest, SubscriptionFuture, init, init_with_config, 
-    validate_input_size, validate_path, validate_subscription_id,
+    DynRouter, SubscribeRequest, SubscriptionFuture, init, init_with_config, validate_input_size,
+    validate_path, validate_subscription_id,
 };
 pub use router::{CompiledRouter, Router};
 pub use subscription::{
@@ -160,40 +160,41 @@ pub mod prelude {
     pub use crate::{
         // Configuration
         BackpressureStrategy,
+        // Subscription types
+        ChannelPublisher,
+        // Router
+        CompiledRouter,
         ConfigValidationError,
-        RpcConfig,
         // Context
         Context,
         EmptyContext,
-        // Router
-        CompiledRouter,
-        Router,
-        // Handler
-        Handler,
-        // Middleware
-        Middleware,
-        Next,
-        ProcedureType,
-        Request,
-        // Error handling
-        RpcError,
-        RpcErrorCode,
-        RpcResult,
-        // Subscription types
-        ChannelPublisher,
         Event,
         EventMeta,
         EventPublisher,
         EventSender,
         EventStream,
+        // Handler
+        Handler,
+        // Middleware
+        Middleware,
+        Next,
+        // Common types
+        NoInput,
+        PaginatedResponse,
+        PaginationInput,
+        ProcedureType,
+        Request,
+        Router,
+        RpcConfig,
+        // Error handling
+        RpcError,
+        RpcErrorCode,
+        RpcResult,
         SubscriptionContext,
         SubscriptionEvent,
         SubscriptionHandler,
         SubscriptionId,
         SubscriptionManager,
-        // Common types
-        PaginatedResponse,
-        PaginationInput,
         SuccessResponse,
         // Functions
         event_channel,

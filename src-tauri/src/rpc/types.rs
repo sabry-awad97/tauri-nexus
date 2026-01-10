@@ -151,11 +151,3 @@ pub struct StockPrice {
     pub change_percent: f64,
     pub timestamp: String,
 }
-
-/// Empty input type for subscriptions that don't need parameters
-/// Accepts `{}` from JSON (empty object)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct EmptyInput {
-    #[serde(skip)]
-    _private: (),
-}

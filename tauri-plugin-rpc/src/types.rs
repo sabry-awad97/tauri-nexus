@@ -1,6 +1,105 @@
 //! Common types for RPC operations
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+// =============================================================================
+// NoInput - Empty Input Type with Good DX
+// =============================================================================
+
+/// A type representing no input for RPC handlers.
+///
+/// This type accepts both `null` and `{}` from JSON, making it flexible for
+/// frontend callers. Use this instead of `()` for handlers that don't need input.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tauri_plugin_rpc::prelude::*;
+///
+/// // Handler with no input
+/// async fn health_check(_ctx: Context<AppContext>, _: NoInput) -> RpcResult<String> {
+///     Ok("healthy".to_string())
+/// }
+///
+/// // Subscription with no input
+/// async fn time_stream(
+///     _ctx: Context<AppContext>,
+///     sub_ctx: SubscriptionContext,
+///     _: NoInput,
+/// ) -> RpcResult<EventStream<String>> {
+///     // ...
+/// }
+/// ```
+///
+/// # Frontend Usage
+///
+/// Both of these work:
+/// ```typescript
+/// await rpc.health();           // sends null
+/// await rpc.health({});         // sends {}
+/// await subscribe('stream.time', {});
+/// await subscribe('stream.time', null);
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NoInput;
+
+impl Serialize for NoInput {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_none()
+    }
+}
+
+impl<'de> Deserialize<'de> for NoInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct NoInputVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for NoInputVisitor {
+            type Value = NoInput;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("null, unit, or empty object")
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(NoInput)
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(NoInput)
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                // Consume any fields in the map (ignore them)
+                while map
+                    .next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?
+                    .is_some()
+                {}
+                Ok(NoInput)
+            }
+        }
+
+        deserializer.deserialize_any(NoInputVisitor)
+    }
+}
+
+// =============================================================================
+// Paginated Response
+// =============================================================================
 
 /// Paginated response wrapper
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,11 +118,7 @@ pub struct PaginatedResponse<T> {
 impl<T> PaginatedResponse<T> {
     /// Create a new paginated response
     pub fn new(data: Vec<T>, total: u32, page: u32, limit: u32) -> Self {
-        let total_pages = if limit > 0 {
-            total.div_ceil(limit)
-        } else {
-            1
-        };
+        let total_pages = if limit > 0 { total.div_ceil(limit) } else { 1 };
         Self {
             data,
             total,

@@ -352,7 +352,7 @@ async fn chat_subscription(
 async fn time_subscription(
     _ctx: Context<AppContext>,
     sub_ctx: SubscriptionContext,
-    _input: EmptyInput,
+    _input: NoInput,
 ) -> RpcResult<EventStream<String>> {
     let (tx, rx) = event_channel(32);
 
