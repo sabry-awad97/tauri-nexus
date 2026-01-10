@@ -1,3 +1,9 @@
 [default]
 description = "Default permissions for the RPC plugin"
-permissions = ["allow-rpc-call"]
+permissions = [
+    "allow-rpc-call",
+    "allow-rpc-procedures",
+    "allow-rpc-subscribe",
+    "allow-rpc-unsubscribe",
+    "allow-rpc-subscription-count",
+]

@@ -6,8 +6,8 @@ use super::*;
 use async_stream::stream;
 use std::pin::pin;
 use tauri_plugin_rpc::middleware::{Next, Request, Response};
-use tauri_plugin_rpc::subscription::{event_channel, Event, EventStream, SubscriptionContext};
-use tokio::time::{interval, Duration};
+use tauri_plugin_rpc::subscription::{Event, EventStream, SubscriptionContext, event_channel};
+use tokio::time::{Duration, interval};
 use tokio_stream::StreamExt;
 
 // =============================================================================
@@ -121,16 +121,14 @@ async fn create_user(ctx: Context<AppContext>, input: CreateUserInput) -> RpcRes
         return Err(RpcError::validation("Invalid email format"));
     }
 
-    ctx.db
-        .create_user(&input.name, &input.email)
-        .await
+    ctx.db.create_user(&input.name, &input.email).await
 }
 
 async fn update_user(ctx: Context<AppContext>, input: UpdateUserInput) -> RpcResult<User> {
-    if let Some(ref email) = input.email {
-        if !email.contains('@') {
-            return Err(RpcError::validation("Invalid email format"));
-        }
+    if let Some(ref email) = input.email
+        && !email.contains('@')
+    {
+        return Err(RpcError::validation("Invalid email format"));
     }
 
     ctx.db
@@ -354,7 +352,7 @@ async fn chat_subscription(
 async fn time_subscription(
     _ctx: Context<AppContext>,
     sub_ctx: SubscriptionContext,
-    _input: (),
+    _input: EmptyInput,
 ) -> RpcResult<EventStream<String>> {
     let (tx, rx) = event_channel(32);
 

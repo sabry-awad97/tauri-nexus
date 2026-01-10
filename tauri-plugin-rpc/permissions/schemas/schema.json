@@ -35,17 +35,25 @@
     "DefaultPermission": {
       "description": "The default permission set of the plugin.\n\nWorks similarly to a permission with the \"default\" identifier.",
       "type": "object",
-      "required": ["permissions"],
+      "required": [
+        "permissions"
+      ],
       "properties": {
         "version": {
           "description": "The version of the permission.",
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "format": "uint64",
           "minimum": 1.0
         },
         "description": {
           "description": "Human-readable description of what the permission does. Tauri convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "permissions": {
           "description": "All permissions this set contains.",
@@ -59,7 +67,11 @@
     "PermissionSet": {
       "description": "A set of direct permissions grouped together under a new name.",
       "type": "object",
-      "required": ["description", "identifier", "permissions"],
+      "required": [
+        "description",
+        "identifier",
+        "permissions"
+      ],
       "properties": {
         "identifier": {
           "description": "A unique identifier for the permission.",
@@ -81,11 +93,16 @@
     "Permission": {
       "description": "Descriptions of explicit privileges of commands.\n\nIt can enable commands to be accessible in the frontend of the application.\n\nIf the scope is defined it can be used to fine grain control the access of individual or multiple commands.",
       "type": "object",
-      "required": ["identifier"],
+      "required": [
+        "identifier"
+      ],
       "properties": {
         "version": {
           "description": "The version of the permission.",
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "format": "uint64",
           "minimum": 1.0
         },
@@ -95,7 +112,10 @@
         },
         "description": {
           "description": "Human-readable description of what the permission does. Tauri internal convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "commands": {
           "description": "Allowed or denied commands when using this permission.",
@@ -119,7 +139,10 @@
         },
         "platforms": {
           "description": "Target platforms this permission applies. By default all platforms are affected by this permission.",
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "$ref": "#/definitions/Target"
           }
@@ -154,14 +177,20 @@
       "properties": {
         "allow": {
           "description": "Data that defines what is allowed by the scope.",
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "$ref": "#/definitions/Value"
           }
         },
         "deny": {
           "description": "Data that defines what is denied by the scope. This should be prioritized by validation logic.",
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "$ref": "#/definitions/Value"
           }
@@ -228,27 +257,37 @@
         {
           "description": "MacOS.",
           "type": "string",
-          "enum": ["macOS"]
+          "enum": [
+            "macOS"
+          ]
         },
         {
           "description": "Windows.",
           "type": "string",
-          "enum": ["windows"]
+          "enum": [
+            "windows"
+          ]
         },
         {
           "description": "Linux.",
           "type": "string",
-          "enum": ["linux"]
+          "enum": [
+            "linux"
+          ]
         },
         {
           "description": "Android.",
           "type": "string",
-          "enum": ["android"]
+          "enum": [
+            "android"
+          ]
         },
         {
           "description": "iOS.",
           "type": "string",
-          "enum": ["iOS"]
+          "enum": [
+            "iOS"
+          ]
         }
       ]
     },
@@ -328,6 +367,54 @@
           "markdownDescription": "Denies the rpc_call command without any pre-configured scope."
         },
         {
+          "description": "Enables the rpc_procedures command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-rpc-procedures",
+          "markdownDescription": "Enables the rpc_procedures command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the rpc_procedures command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-rpc-procedures",
+          "markdownDescription": "Denies the rpc_procedures command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the rpc_subscribe command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-rpc-subscribe",
+          "markdownDescription": "Enables the rpc_subscribe command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the rpc_subscribe command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-rpc-subscribe",
+          "markdownDescription": "Denies the rpc_subscribe command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the rpc_subscription_count command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-rpc-subscription-count",
+          "markdownDescription": "Enables the rpc_subscription_count command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the rpc_subscription_count command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-rpc-subscription-count",
+          "markdownDescription": "Denies the rpc_subscription_count command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the rpc_unsubscribe command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-rpc-unsubscribe",
+          "markdownDescription": "Enables the rpc_unsubscribe command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the rpc_unsubscribe command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-rpc-unsubscribe",
+          "markdownDescription": "Denies the rpc_unsubscribe command without any pre-configured scope."
+        },
+        {
           "description": "Enables the update_user command without any pre-configured scope.",
           "type": "string",
           "const": "allow-update-user",
@@ -340,10 +427,10 @@
           "markdownDescription": "Denies the update_user command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the RPC plugin\n#### This default permission set includes:\n\n- `allow-rpc-call`",
+          "description": "Default permissions for the RPC plugin\n#### This default permission set includes:\n\n- `allow-rpc-call`\n- `allow-rpc-procedures`\n- `allow-rpc-subscribe`\n- `allow-rpc-unsubscribe`\n- `allow-rpc-subscription-count`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the RPC plugin\n#### This default permission set includes:\n\n- `allow-rpc-call`"
+          "markdownDescription": "Default permissions for the RPC plugin\n#### This default permission set includes:\n\n- `allow-rpc-call`\n- `allow-rpc-procedures`\n- `allow-rpc-subscribe`\n- `allow-rpc-unsubscribe`\n- `allow-rpc-subscription-count`"
         }
       ]
     }

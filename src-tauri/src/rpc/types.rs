@@ -81,6 +81,7 @@ pub struct HealthResponse {
 
 /// Input for counter subscription
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CounterInput {
     /// Starting value
     #[serde(default)]
@@ -149,4 +150,12 @@ pub struct StockPrice {
     pub change: f64,
     pub change_percent: f64,
     pub timestamp: String,
+}
+
+/// Empty input type for subscriptions that don't need parameters
+/// Accepts `{}` from JSON (empty object)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EmptyInput {
+    #[serde(skip)]
+    _private: (),
 }
