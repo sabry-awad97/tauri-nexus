@@ -46,7 +46,8 @@ pub use error::{RpcError, RpcErrorCode, RpcResult};
 pub use handler::Handler;
 pub use middleware::{Middleware, Next, ProcedureType, Request};
 pub use plugin::{
-    DynRouter, init, init_with_config, validate_input_size, validate_path, validate_subscription_id,
+    DynRouter, SubscribeRequest, SubscriptionFuture, init, init_with_config, 
+    validate_input_size, validate_path, validate_subscription_id,
 };
 pub use router::Router;
 pub use subscription::{

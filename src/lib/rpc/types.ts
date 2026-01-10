@@ -24,6 +24,18 @@ export interface SubscriptionOptions {
   signal?: AbortSignal;
 }
 
+/** Subscribe request payload (matches Rust SubscribeRequest) */
+export interface SubscribeRequest {
+  /** Optional subscription ID (generated if empty) */
+  id?: string;
+  /** Procedure path */
+  path: string;
+  /** Input data */
+  input: unknown;
+  /** Last event ID for resumption */
+  lastEventId?: string;
+}
+
 /** Call options */
 export interface CallOptions {
   /** Abort signal for cancellation */

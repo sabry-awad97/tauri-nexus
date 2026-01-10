@@ -20,7 +20,7 @@ impl<T> PaginatedResponse<T> {
     /// Create a new paginated response
     pub fn new(data: Vec<T>, total: u32, page: u32, limit: u32) -> Self {
         let total_pages = if limit > 0 {
-            (total + limit - 1) / limit
+            total.div_ceil(limit)
         } else {
             1
         };
@@ -102,7 +102,7 @@ impl PaginationInput {
 
     /// Get limit (defaults to 10, max 100)
     pub fn limit(&self) -> u32 {
-        self.limit.unwrap_or(10).min(100).max(1)
+        self.limit.unwrap_or(10).clamp(1, 100)
     }
 
     /// Get offset for database queries

@@ -55,10 +55,12 @@ export async function createEventIterator<T>(
 
   // Start subscription on backend
   await invoke('plugin:rpc|rpc_subscribe', {
-    id: subscriptionId,
-    path,
-    input,
-    lastEventId: options?.lastEventId,
+    request: {
+      id: subscriptionId,
+      path,
+      input,
+      lastEventId: options?.lastEventId,
+    }
   });
 
   // Handle abort signal

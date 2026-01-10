@@ -6,6 +6,7 @@ use crate::subscription::{
     Event, SubscriptionContext, SubscriptionEvent, SubscriptionId, SubscriptionManager,
     generate_subscription_id,
 };
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -16,74 +17,60 @@ use tauri::{
 use tokio::sync::mpsc;
 
 // =============================================================================
+// Type Aliases
+// =============================================================================
+
+/// Future type for subscription results
+pub type SubscriptionFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<mpsc::Receiver<Event<serde_json::Value>>, RpcError>> + Send + 'a>,
+>;
+
+// =============================================================================
 // Input Validation
 // =============================================================================
 
 /// Validate procedure path format.
-///
-/// Valid paths contain only alphanumeric characters, underscores, and dots.
-/// Paths must not be empty and must not start or end with a dot.
-///
-/// # Examples
-/// - Valid: "users.get", "health_check", "api.v1.users"
-/// - Invalid: ".users", "users.", "users..get", "users/get", ""
 pub fn validate_path(path: &str) -> Result<(), RpcError> {
     if path.is_empty() {
         return Err(RpcError::validation("Procedure path cannot be empty"));
     }
-
     if path.starts_with('.') || path.ends_with('.') {
         return Err(RpcError::validation(
             "Procedure path cannot start or end with a dot",
         ));
     }
-
     if path.contains("..") {
         return Err(RpcError::validation(
             "Procedure path cannot contain consecutive dots",
         ));
     }
-
-    // Check for valid characters: alphanumeric, underscore, dot
     for ch in path.chars() {
         if !ch.is_ascii_alphanumeric() && ch != '_' && ch != '.' {
             return Err(RpcError::validation(format!(
-                "Procedure path contains invalid character: '{}'",
-                ch
+                "Procedure path contains invalid character: '{}'", ch
             )));
         }
     }
-
     Ok(())
 }
 
 /// Validate input size against configuration limit.
-///
-/// Returns an error if the serialized input exceeds the maximum allowed size.
 pub fn validate_input_size(input: &serde_json::Value, config: &RpcConfig) -> Result<(), RpcError> {
-    // Estimate size by serializing to bytes
     let size = serde_json::to_vec(input).map(|v| v.len()).unwrap_or(0);
-
     if size > config.max_input_size {
         return Err(RpcError::payload_too_large(format!(
             "Input size {} bytes exceeds maximum {} bytes",
             size, config.max_input_size
         )));
     }
-
     Ok(())
 }
 
 /// Validate subscription ID format when provided by client.
-///
-/// Accepts both formats:
-/// - With prefix: "sub_<uuid>"
-/// - Without prefix: "<uuid>"
 pub fn validate_subscription_id(id: &str) -> Result<SubscriptionId, RpcError> {
     if id.is_empty() {
         return Err(RpcError::validation("Subscription ID cannot be empty"));
     }
-
     SubscriptionId::parse(id)
         .map_err(|e| RpcError::validation(format!("Invalid subscription ID '{}': {}", id, e)))
 }
@@ -98,6 +85,11 @@ pub fn validate_rpc_input(
     validate_input_size(input, config)?;
     Ok(())
 }
+
+
+// =============================================================================
+// Router Trait
+// =============================================================================
 
 /// Type-erased router trait for plugin storage
 pub trait DynRouter: Send + Sync {
@@ -120,25 +112,41 @@ pub trait DynRouter: Send + Sync {
         path: &'a str,
         input: serde_json::Value,
         ctx: SubscriptionContext,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<mpsc::Receiver<Event<serde_json::Value>>, RpcError>>
-                + Send
-                + 'a,
-        >,
-    >;
+    ) -> SubscriptionFuture<'a>;
 }
 
-/// Router state wrapper
+// =============================================================================
+// Plugin State
+// =============================================================================
+
 struct RouterState(Arc<dyn DynRouter>);
-
-/// Subscription manager state
 struct SubscriptionState(Arc<SubscriptionManager>);
-
-/// Configuration state
 struct ConfigState(RpcConfig);
 
-/// RPC call command
+// =============================================================================
+// Request Types
+// =============================================================================
+
+/// Request payload for subscription operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscribeRequest {
+    /// Optional subscription ID (generated if empty)
+    #[serde(default)]
+    pub id: String,
+    /// Procedure path
+    pub path: String,
+    /// Input data
+    pub input: serde_json::Value,
+    /// Last event ID for resumption
+    #[serde(default)]
+    pub last_event_id: Option<String>,
+}
+
+// =============================================================================
+// Tauri Commands
+// =============================================================================
+
 #[tauri::command]
 async fn rpc_call(
     path: String,
@@ -146,40 +154,30 @@ async fn rpc_call(
     state: State<'_, RouterState>,
     config: State<'_, ConfigState>,
 ) -> Result<serde_json::Value, String> {
-    // Validate input before processing
     validate_rpc_input(&path, &input, &config.0)
         .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
-
-    state
-        .0
-        .call(&path, input)
-        .await
+    state.0.call(&path, input).await
         .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))
 }
 
-/// List available procedures
 #[tauri::command]
 fn rpc_procedures(state: State<'_, RouterState>) -> Vec<String> {
     state.0.procedures()
 }
 
-/// Subscribe to a streaming procedure
 #[tauri::command]
 async fn rpc_subscribe<R: Runtime>(
-    id: String,
-    path: String,
-    input: serde_json::Value,
-    last_event_id: Option<String>,
+    request: SubscribeRequest,
     app: AppHandle<R>,
     router_state: State<'_, RouterState>,
     sub_state: State<'_, SubscriptionState>,
     config: State<'_, ConfigState>,
 ) -> Result<String, String> {
-    // Validate path and input
+    let SubscribeRequest { id, path, input, last_event_id } = request;
+    
     validate_rpc_input(&path, &input, &config.0)
         .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
 
-    // Generate subscription ID if not provided, or validate the provided one
     let subscription_id = if id.is_empty() {
         generate_subscription_id()
     } else {
@@ -187,27 +185,19 @@ async fn rpc_subscribe<R: Runtime>(
             .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?
     };
 
-    // Check if path is a subscription
     if !router_state.0.is_subscription(&path) {
         return Err(serde_json::to_string(&RpcError::bad_request(format!(
-            "'{}' is not a subscription procedure",
-            path
-        )))
-        .unwrap());
+            "'{}' is not a subscription procedure", path
+        ))).unwrap());
     }
 
-    // Create subscription context
     let sub_ctx = SubscriptionContext::new(subscription_id, last_event_id);
     let signal = sub_ctx.signal();
-
-    // Create subscription handle
-    let handle =
-        crate::subscription::SubscriptionHandle::new(subscription_id, path.clone(), signal.clone());
-
-    // Register subscription
+    let handle = crate::subscription::SubscriptionHandle::new(
+        subscription_id, path.clone(), signal.clone()
+    );
     sub_state.0.subscribe(handle).await;
 
-    // Start the subscription
     let event_name = format!("rpc:subscription:{}", subscription_id);
     let router = router_state.0.clone();
     let sub_manager = sub_state.0.clone();
@@ -215,37 +205,25 @@ async fn rpc_subscribe<R: Runtime>(
     tokio::spawn(async move {
         match router.subscribe(&path, input, sub_ctx).await {
             Ok(mut stream) => {
-                // Stream events to frontend
                 while let Some(event) = stream.recv().await {
-                    if signal.is_cancelled() {
-                        break;
-                    }
-
+                    if signal.is_cancelled() { break; }
                     let sub_event = SubscriptionEvent::data(event);
-                    if app.emit(&event_name, &sub_event).is_err() {
-                        break;
-                    }
+                    if app.emit(&event_name, &sub_event).is_err() { break; }
                 }
-
-                // Send completion event
                 if !signal.is_cancelled() {
                     let _ = app.emit(&event_name, &SubscriptionEvent::completed());
                 }
             }
             Err(err) => {
-                // Send error event
                 let _ = app.emit(&event_name, &SubscriptionEvent::error(err));
             }
         }
-
-        // Cleanup
         sub_manager.unsubscribe(&subscription_id).await;
     });
 
     Ok(subscription_id.to_string())
 }
 
-/// Unsubscribe from a streaming procedure
 #[tauri::command]
 async fn rpc_unsubscribe(
     id: String,
@@ -256,14 +234,18 @@ async fn rpc_unsubscribe(
     Ok(sub_state.0.unsubscribe(&subscription_id).await)
 }
 
-/// Get active subscription count
 #[tauri::command]
 async fn rpc_subscription_count(sub_state: State<'_, SubscriptionState>) -> Result<usize, String> {
     Ok(sub_state.0.count().await)
 }
 
+
+// =============================================================================
+// Plugin Initialization
+// =============================================================================
+
 /// Initialize the RPC plugin with a router
-///
+/// 
 /// # Example
 /// ```rust,ignore
 /// tauri::Builder::default()
@@ -279,7 +261,7 @@ where
 }
 
 /// Initialize the RPC plugin with a router and custom configuration
-///
+/// 
 /// # Example
 /// ```rust,ignore
 /// use tauri_plugin_rpc::RpcConfig;

@@ -45,7 +45,7 @@ impl Request {
 
     /// Get the procedure name (last part of path)
     pub fn procedure(&self) -> &str {
-        self.path.split('.').last().unwrap_or(&self.path)
+        self.path.split('.').next_back().unwrap_or(&self.path)
     }
 }
 
