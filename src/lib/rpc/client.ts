@@ -3,7 +3,7 @@
 // =============================================================================
 // Type-safe RPC client with middleware support and automatic path generation.
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from "@tauri-apps/api/core";
 import type {
   RouterClient,
   RpcError,
@@ -12,8 +12,8 @@ import type {
   SubscriptionOptions,
   Middleware,
   RequestContext,
-} from './types';
-import { createEventIterator } from './event-iterator';
+} from "./types";
+import { createEventIterator } from "./event-iterator";
 
 // =============================================================================
 // Client Configuration
@@ -54,23 +54,32 @@ export function getConfig(): RpcClientConfig {
 /**
  * Validate procedure path format.
  * Matches the Rust `validate_path` function in plugin.rs.
- * 
+ *
  * Valid paths: "health", "user.get", "api.v1.users.list"
  * Invalid: "", ".path", "path.", "path..name", "path/name"
  */
 export function validatePath(path: string): void {
   if (!path) {
-    throw createError('VALIDATION_ERROR', 'Procedure path cannot be empty');
+    throw createError("VALIDATION_ERROR", "Procedure path cannot be empty");
   }
-  if (path.startsWith('.') || path.endsWith('.')) {
-    throw createError('VALIDATION_ERROR', 'Procedure path cannot start or end with a dot');
+  if (path.startsWith(".") || path.endsWith(".")) {
+    throw createError(
+      "VALIDATION_ERROR",
+      "Procedure path cannot start or end with a dot",
+    );
   }
-  if (path.includes('..')) {
-    throw createError('VALIDATION_ERROR', 'Procedure path cannot contain consecutive dots');
+  if (path.includes("..")) {
+    throw createError(
+      "VALIDATION_ERROR",
+      "Procedure path cannot contain consecutive dots",
+    );
   }
   for (const ch of path) {
     if (!/[a-zA-Z0-9_.]/.test(ch)) {
-      throw createError('VALIDATION_ERROR', `Procedure path contains invalid character: '${ch}'`);
+      throw createError(
+        "VALIDATION_ERROR",
+        `Procedure path contains invalid character: '${ch}'`,
+      );
     }
   }
 }
@@ -80,42 +89,61 @@ export function validatePath(path: string): void {
 // =============================================================================
 
 /** Parse RPC error from backend response */
-function parseError(error: unknown): RpcError {
-  if (typeof error === 'string') {
-    try {
-      return JSON.parse(error) as RpcError;
-    } catch {
-      return { code: 'UNKNOWN', message: error };
-    }
-  }
+function parseError(error: unknown, timeoutMs?: number): RpcError {
+  // Handle AbortError (from timeout or manual cancellation)
   if (error instanceof Error) {
-    if (error.name === 'AbortError') {
-      return { code: 'CANCELLED', message: 'Request was cancelled' };
+    if (error.name === "AbortError") {
+      // If we have a timeout value, this was a timeout
+      if (timeoutMs !== undefined) {
+        return {
+          code: "TIMEOUT",
+          message: `Request timed out after ${timeoutMs}ms`,
+          details: { timeoutMs },
+        };
+      }
+      return { code: "CANCELLED", message: "Request was cancelled" };
     }
-    return { code: 'UNKNOWN', message: error.message };
+    return { code: "UNKNOWN", message: error.message };
   }
+
+  // Handle JSON string errors from backend
+  if (typeof error === "string") {
+    try {
+      const parsed = JSON.parse(error);
+      if (isRpcError(parsed)) {
+        return parsed;
+      }
+      return { code: "UNKNOWN", message: error };
+    } catch {
+      return { code: "UNKNOWN", message: error };
+    }
+  }
+
+  // Handle RpcError objects directly
   if (isRpcError(error)) {
     return error;
   }
-  return { code: 'UNKNOWN', message: String(error) };
+
+  // Fallback for unknown error types
+  return { code: "UNKNOWN", message: String(error) };
 }
 
 /** Check if error is an RPC error */
 export function isRpcError(error: unknown): error is RpcError {
   return (
-    typeof error === 'object' &&
+    typeof error === "object" &&
     error !== null &&
-    'code' in error &&
-    'message' in error &&
-    typeof (error as RpcError).code === 'string' &&
-    typeof (error as RpcError).message === 'string'
+    "code" in error &&
+    "message" in error &&
+    typeof (error as RpcError).code === "string" &&
+    typeof (error as RpcError).message === "string"
   );
 }
 
 /** Check if error has a specific code */
 export function hasErrorCode(
   error: unknown,
-  code: RpcErrorCode | string
+  code: RpcErrorCode | string,
 ): boolean {
   return isRpcError(error) && error.code === code;
 }
@@ -124,7 +152,7 @@ export function hasErrorCode(
 export function createError(
   code: RpcErrorCode | string,
   message: string,
-  details?: unknown
+  details?: unknown,
 ): RpcError {
   return { code, message, details };
 }
@@ -133,10 +161,10 @@ export function createError(
 // Middleware Execution
 // =============================================================================
 
-/** Execute middleware chain */
+/** Execute middleware chain with error wrapping */
 async function executeWithMiddleware<T>(
   ctx: RequestContext,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
 ): Promise<T> {
   const middleware = globalConfig.middleware ?? [];
 
@@ -145,7 +173,25 @@ async function executeWithMiddleware<T>(
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
     const currentNext = next;
-    next = () => mw(ctx, currentNext);
+    const middlewareIndex = i;
+    next = async () => {
+      try {
+        return await mw(ctx, currentNext);
+      } catch (error) {
+        // Wrap non-RpcError middleware errors
+        if (!isRpcError(error)) {
+          throw createError(
+            "MIDDLEWARE_ERROR",
+            error instanceof Error ? error.message : String(error),
+            {
+              middlewareIndex,
+              originalError: error instanceof Error ? error.message : error,
+            },
+          );
+        }
+        throw error;
+      }
+    };
   }
 
   return next();
@@ -159,7 +205,7 @@ async function executeWithMiddleware<T>(
 export async function call<T>(
   path: string,
   input: unknown = null,
-  options?: CallOptions
+  options?: CallOptions,
 ): Promise<T> {
   // Validate path format (matches Rust validation)
   validatePath(path);
@@ -167,22 +213,27 @@ export async function call<T>(
   const ctx: RequestContext = {
     path,
     input,
-    type: 'query', // Will be determined by path in practice
+    type: "query", // Will be determined by path in practice
     meta: options?.meta,
     signal: options?.signal,
   };
 
   globalConfig.onRequest?.(ctx);
 
+  const timeoutMs = options?.timeout;
+
   try {
     const result = await executeWithMiddleware(ctx, async () => {
       // Handle timeout
-      if (options?.timeout) {
+      if (timeoutMs) {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), options.timeout);
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         try {
-          const result = await invoke<T>('plugin:rpc|rpc_call', { path, input });
+          const result = await invoke<T>("plugin:rpc|rpc_call", {
+            path,
+            input,
+          });
           clearTimeout(timeoutId);
           return result;
         } catch (error) {
@@ -191,13 +242,13 @@ export async function call<T>(
         }
       }
 
-      return invoke<T>('plugin:rpc|rpc_call', { path, input });
+      return invoke<T>("plugin:rpc|rpc_call", { path, input });
     });
 
     globalConfig.onResponse?.(ctx, result);
     return result;
   } catch (error) {
-    const rpcError = parseError(error);
+    const rpcError = parseError(error, timeoutMs);
     globalConfig.onError?.(ctx, rpcError);
     throw rpcError;
   }
@@ -207,7 +258,7 @@ export async function call<T>(
 export async function subscribe<T>(
   path: string,
   input: unknown = null,
-  options?: SubscriptionOptions
+  options?: SubscriptionOptions,
 ): Promise<ReturnType<typeof createEventIterator<T>>> {
   // Validate path format (matches Rust validation)
   validatePath(path);
@@ -215,7 +266,7 @@ export async function subscribe<T>(
   const ctx: RequestContext = {
     path,
     input,
-    type: 'subscription',
+    type: "subscription",
     meta: options?.meta,
     signal: options?.signal,
   };
@@ -236,7 +287,7 @@ export async function subscribe<T>(
 // =============================================================================
 
 /** Symbol to identify the client proxy */
-const CLIENT_PROXY = Symbol('rpc-client-proxy');
+const CLIENT_PROXY = Symbol("rpc-client-proxy");
 
 /** Check if path is a subscription */
 function isSubscriptionPath(path: string): boolean {
@@ -245,18 +296,20 @@ function isSubscriptionPath(path: string): boolean {
 }
 
 /** Create a proxy that builds paths and calls the appropriate function */
-function createClientProxy<T>(
-  pathParts: string[]
-): RouterClient<T> {
+function createClientProxy<T>(pathParts: string[]): RouterClient<T> {
   const handler = function (
     inputOrOptions?: unknown,
-    maybeOptions?: CallOptions | SubscriptionOptions
+    maybeOptions?: CallOptions | SubscriptionOptions,
   ) {
-    const fullPath = pathParts.join('.');
+    const fullPath = pathParts.join(".");
 
     // Determine if this is a subscription
     if (isSubscriptionPath(fullPath)) {
-      return subscribe(fullPath, inputOrOptions, maybeOptions as SubscriptionOptions);
+      return subscribe(
+        fullPath,
+        inputOrOptions,
+        maybeOptions as SubscriptionOptions,
+      );
     }
 
     return call(fullPath, inputOrOptions, maybeOptions as CallOptions);
@@ -265,11 +318,11 @@ function createClientProxy<T>(
   return new Proxy(handler as unknown as RouterClient<T>, {
     get(_target, prop: string | symbol) {
       if (prop === CLIENT_PROXY) return true;
-      if (typeof prop === 'symbol') return undefined;
+      if (typeof prop === "symbol") return undefined;
       return createClientProxy([...pathParts, prop]);
     },
     apply(_, __, args: unknown[]) {
-      const fullPath = pathParts.join('.');
+      const fullPath = pathParts.join(".");
 
       if (isSubscriptionPath(fullPath)) {
         return subscribe(fullPath, args[0], args[1] as SubscriptionOptions);
@@ -310,9 +363,7 @@ function createClientProxy<T>(
  * const stream = await rpc.stream.events();
  * ```
  */
-export function createClient<T>(
-  config?: RpcClientConfig
-): RouterClient<T> {
+export function createClient<T>(config?: RpcClientConfig): RouterClient<T> {
   if (config) {
     configureRpc(config);
   }
@@ -332,7 +383,7 @@ export function createClient<T>(
  * ```
  */
 export function createClientWithSubscriptions<T>(
-  config: RpcClientConfig & { subscriptionPaths: string[] }
+  config: RpcClientConfig & { subscriptionPaths: string[] },
 ): RouterClient<T> {
   configureRpc(config);
   return createClientProxy<T>([]);
@@ -344,13 +395,13 @@ export function createClientWithSubscriptions<T>(
 
 /** Get list of available procedures from backend */
 export async function getProcedures(): Promise<string[]> {
-  return invoke<string[]>('plugin:rpc|rpc_procedures');
+  return invoke<string[]>("plugin:rpc|rpc_procedures");
 }
 
 /** Get current subscription count from backend */
 export async function getSubscriptionCount(): Promise<number> {
-  return invoke<number>('plugin:rpc|rpc_subscription_count');
+  return invoke<number>("plugin:rpc|rpc_subscription_count");
 }
 
 // Re-export for convenience
-export { createEventIterator } from './event-iterator';
+export { createEventIterator } from "./event-iterator";

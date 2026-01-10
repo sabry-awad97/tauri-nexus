@@ -3,4 +3,4 @@
 /**
  * Greet input
  */
-export type GreetInput = { name: string, };
+export type GreetInput = { name: string };

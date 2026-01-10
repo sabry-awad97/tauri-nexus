@@ -3,8 +3,8 @@
 // =============================================================================
 // Low-level RPC client for making calls to the Tauri backend.
 
-import { invoke } from '@tauri-apps/api/core';
-import type { RpcError } from './types';
+import { invoke } from "@tauri-apps/api/core";
+import type { RpcError } from "./types";
 
 // -----------------------------------------------------------------------------
 // Client Configuration
@@ -32,17 +32,17 @@ export function configure(options: RpcClientConfig): void {
 
 /** Parse RPC error from string */
 function parseError(error: unknown): RpcError {
-  if (typeof error === 'string') {
+  if (typeof error === "string") {
     try {
       return JSON.parse(error) as RpcError;
     } catch {
-      return { code: 'UNKNOWN', message: error };
+      return { code: "UNKNOWN", message: error };
     }
   }
   if (error instanceof Error) {
-    return { code: 'UNKNOWN', message: error.message };
+    return { code: "UNKNOWN", message: error.message };
   }
-  return { code: 'UNKNOWN', message: String(error) };
+  return { code: "UNKNOWN", message: String(error) };
 }
 
 /** Make an RPC call */
@@ -50,7 +50,7 @@ export async function call<T>(path: string, input: unknown = null): Promise<T> {
   config.onRequest?.(path, input);
 
   try {
-    const result = await invoke<T>('plugin:rpc|rpc_call', { path, input });
+    const result = await invoke<T>("plugin:rpc|rpc_call", { path, input });
     config.onResponse?.(path, result);
     return result;
   } catch (error) {
@@ -62,7 +62,7 @@ export async function call<T>(path: string, input: unknown = null): Promise<T> {
 
 /** Get list of available procedures */
 export async function getProcedures(): Promise<string[]> {
-  return invoke<string[]>('plugin:rpc|rpc_procedures');
+  return invoke<string[]>("plugin:rpc|rpc_procedures");
 }
 
 // -----------------------------------------------------------------------------
@@ -72,10 +72,10 @@ export async function getProcedures(): Promise<string[]> {
 /** Check if error is an RPC error */
 export function isRpcError(error: unknown): error is RpcError {
   return (
-    typeof error === 'object' &&
+    typeof error === "object" &&
     error !== null &&
-    'code' in error &&
-    'message' in error
+    "code" in error &&
+    "message" in error
   );
 }
 

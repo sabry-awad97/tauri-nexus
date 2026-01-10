@@ -11,7 +11,7 @@ import {
   createClientWithSubscriptions,
   createHooks,
   type ContractRouter,
-} from '../lib/rpc';
+} from "../lib/rpc";
 
 // =============================================================================
 // Domain Types
@@ -114,30 +114,42 @@ export interface StockPrice {
 
 export interface AppContract extends ContractRouter {
   // Root-level procedures
-  health: { type: 'query'; input: void; output: HealthResponse };
-  greet: { type: 'query'; input: { name: string }; output: string };
+  health: { type: "query"; input: void; output: HealthResponse };
+  greet: { type: "query"; input: { name: string }; output: string };
 
   // User namespace - CRUD operations
   user: {
-    get: { type: 'query'; input: { id: number }; output: User };
-    list: { type: 'query'; input: void; output: User[] };
-    create: { type: 'mutation'; input: CreateUserInput; output: User };
-    update: { type: 'mutation'; input: UpdateUserInput; output: User };
-    delete: { type: 'mutation'; input: { id: number }; output: SuccessResponse };
+    get: { type: "query"; input: { id: number }; output: User };
+    list: { type: "query"; input: void; output: User[] };
+    create: { type: "mutation"; input: CreateUserInput; output: User };
+    update: { type: "mutation"; input: UpdateUserInput; output: User };
+    delete: {
+      type: "mutation";
+      input: { id: number };
+      output: SuccessResponse;
+    };
   };
 
   // Stream namespace - real-time subscriptions
   stream: {
-    counter: { type: 'subscription'; input: CounterInput; output: CounterEvent };
-    stocks: { type: 'subscription'; input: StockInput; output: StockPrice };
-    chat: { type: 'subscription'; input: ChatRoomInput; output: ChatMessage };
-    time: { type: 'subscription'; input: void; output: string };
+    counter: {
+      type: "subscription";
+      input: CounterInput;
+      output: CounterEvent;
+    };
+    stocks: { type: "subscription"; input: StockInput; output: StockPrice };
+    chat: { type: "subscription"; input: ChatRoomInput; output: ChatMessage };
+    time: { type: "subscription"; input: void; output: string };
   };
 
   // Chat namespace - chat operations
   chat: {
-    send: { type: 'mutation'; input: SendMessageInput; output: ChatMessage };
-    history: { type: 'query'; input: { roomId: string; limit?: number }; output: ChatMessage[] };
+    send: { type: "mutation"; input: SendMessageInput; output: ChatMessage };
+    history: {
+      type: "query";
+      input: { roomId: string; limit?: number };
+      output: ChatMessage[];
+    };
   };
 }
 
@@ -148,10 +160,10 @@ export interface AppContract extends ContractRouter {
 // This is required because TypeScript types are erased at runtime.
 
 const SUBSCRIPTION_PATHS = [
-  'stream.counter',
-  'stream.stocks',
-  'stream.chat',
-  'stream.time',
+  "stream.counter",
+  "stream.stocks",
+  "stream.chat",
+  "stream.time",
 ] as const;
 
 // =============================================================================
@@ -168,7 +180,8 @@ export const rpc = createClientWithSubscriptions<AppContract>({
 // =============================================================================
 // Create typed React hooks bound to the client.
 
-export const { useRpcQuery, useRpcMutation, useRpcSubscription } = createHooks(rpc);
+export const { useRpcQuery, useRpcMutation, useRpcSubscription } =
+  createHooks(rpc);
 
 // =============================================================================
 // Namespace Exports

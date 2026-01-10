@@ -3,4 +3,4 @@
 /**
  * Input for deleting a user
  */
-export type DeleteUserInput = { id: number, };
+export type DeleteUserInput = { id: number };

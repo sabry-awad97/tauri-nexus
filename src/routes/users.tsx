@@ -1,25 +1,43 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useState } from 'react';
-import { useUsers, useCreateUser, useDeleteUser, type User } from '../generated';
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import {
+  useUsers,
+  useCreateUser,
+  useDeleteUser,
+  type User,
+} from "../generated";
 
-function UserCard({ user, onDelete, isDeleting }: { 
-  user: User; 
+function UserCard({
+  user,
+  onDelete,
+  isDeleting,
+}: {
+  user: User;
   onDelete: () => void;
   isDeleting: boolean;
 }) {
   const initials = user.name
-    .split(' ')
-    .map(n => n[0])
-    .join('')
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
     .toUpperCase()
     .slice(0, 2);
 
-  const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#14b8a6'];
+  const colors = [
+    "#6366f1",
+    "#8b5cf6",
+    "#ec4899",
+    "#f43f5e",
+    "#f97316",
+    "#eab308",
+    "#22c55e",
+    "#14b8a6",
+  ];
   const colorIndex = user.id % colors.length;
   const bgColor = colors[colorIndex];
 
   return (
-    <div className={`user-card ${isDeleting ? 'deleting' : ''}`}>
+    <div className={`user-card ${isDeleting ? "deleting" : ""}`}>
       <div className="user-avatar" style={{ backgroundColor: bgColor }}>
         {initials}
       </div>
@@ -27,30 +45,31 @@ function UserCard({ user, onDelete, isDeleting }: {
         <span className="user-name">{user.name}</span>
         <span className="user-email">{user.email}</span>
         <span className="user-meta">
-          ID: {user.id} • Created: {new Date(user.createdAt).toLocaleDateString()}
+          ID: {user.id} • Created:{" "}
+          {new Date(user.createdAt).toLocaleDateString()}
         </span>
       </div>
-      <button 
+      <button
         onClick={onDelete}
         disabled={isDeleting}
         className="user-delete-btn"
         title="Delete user"
       >
-        {isDeleting ? <span className="spinner small" /> : '🗑️'}
+        {isDeleting ? <span className="spinner small" /> : "🗑️"}
       </button>
     </div>
   );
 }
 
 function CreateUserForm({ onSuccess }: { onSuccess: () => void }) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const createUser = useCreateUser({ 
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const createUser = useCreateUser({
     onSuccess: () => {
-      setName('');
-      setEmail('');
+      setName("");
+      setEmail("");
       onSuccess();
-    }
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -59,12 +78,12 @@ function CreateUserForm({ onSuccess }: { onSuccess: () => void }) {
     createUser.mutate({ name, email });
   };
 
-  const isValidEmail = email.includes('@') && email.includes('.');
+  const isValidEmail = email.includes("@") && email.includes(".");
 
   return (
     <form onSubmit={handleSubmit} className="create-user-form">
       <h3>Add New User</h3>
-      
+
       <div className="form-field">
         <label htmlFor="name">Name</label>
         <input
@@ -85,7 +104,7 @@ function CreateUserForm({ onSuccess }: { onSuccess: () => void }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="john@example.com"
-          className={`form-input ${email && !isValidEmail ? 'invalid' : ''}`}
+          className={`form-input ${email && !isValidEmail ? "invalid" : ""}`}
         />
         {email && !isValidEmail && (
           <span className="field-error">Please enter a valid email</span>
@@ -98,9 +117,11 @@ function CreateUserForm({ onSuccess }: { onSuccess: () => void }) {
         </div>
       )}
 
-      <button 
+      <button
         type="submit"
-        disabled={createUser.isLoading || !name.trim() || !email.trim() || !isValidEmail}
+        disabled={
+          createUser.isLoading || !name.trim() || !email.trim() || !isValidEmail
+        }
         className="submit-btn"
       >
         {createUser.isLoading ? (
@@ -157,8 +178,12 @@ function UsersPage() {
         <section className="users-list-section">
           <div className="section-header">
             <h2>All Users</h2>
-            <button onClick={() => refetch()} className="refresh-btn" disabled={isLoading}>
-              {isLoading ? <span className="spinner small" /> : '🔄'} Refresh
+            <button
+              onClick={() => refetch()}
+              className="refresh-btn"
+              disabled={isLoading}
+            >
+              {isLoading ? <span className="spinner small" /> : "🔄"} Refresh
             </button>
           </div>
 
@@ -173,7 +198,9 @@ function UsersPage() {
             <div className="error-state">
               <span className="error-icon">⚠️</span>
               <span>{error.message}</span>
-              <button onClick={() => refetch()} className="retry-btn">Retry</button>
+              <button onClick={() => refetch()} className="retry-btn">
+                Retry
+              </button>
             </div>
           )}
 
@@ -203,6 +230,6 @@ function UsersPage() {
   );
 }
 
-export const Route = createFileRoute('/users')({
+export const Route = createFileRoute("/users")({
   component: UsersPage,
 });

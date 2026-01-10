@@ -1,13 +1,13 @@
 // =============================================================================
 // Subscription Demo Component
 // =============================================================================
-// 
+//
 // Demonstrates the Event Iterator / Streaming functionality
 
-import { useState, useEffect, useRef } from 'react';
-import { subscribe } from '../lib/rpc';
-import { useSubscription } from '../lib/rpc/hooks';
-import type { CounterEvent, StockPrice, ChatMessage } from '../rpc/contract';
+import { useState, useEffect, useRef } from "react";
+import { subscribe } from "../lib/rpc";
+import { useSubscription } from "../lib/rpc/hooks";
+import type { CounterEvent, StockPrice, ChatMessage } from "../rpc/contract";
 
 // =============================================================================
 // Counter Demo - Simple incrementing counter
@@ -21,24 +21,24 @@ export function CounterDemo() {
   const startCounter = async () => {
     setIsRunning(true);
     setCount(null);
-    
+
     try {
-      const stream = await subscribe<CounterEvent>('stream.counter', {
+      const stream = await subscribe<CounterEvent>("stream.counter", {
         start: 0,
         maxCount: 20,
         intervalMs: 500,
       });
-      
+
       // Store cancel function
       cancelRef.current = async () => {
         await stream.return();
       };
-      
+
       for await (const event of stream) {
         setCount(event.count);
       }
     } catch (err) {
-      console.error('Counter error:', err);
+      console.error("Counter error:", err);
     } finally {
       setIsRunning(false);
       cancelRef.current = null;
@@ -54,9 +54,7 @@ export function CounterDemo() {
   return (
     <div className="demo-card">
       <h3>🔢 Counter Stream</h3>
-      <div className="counter-display">
-        {count !== null ? count : '—'}
-      </div>
+      <div className="counter-display">{count !== null ? count : "—"}</div>
       <div className="button-group">
         <button onClick={startCounter} disabled={isRunning}>
           Start
@@ -65,7 +63,7 @@ export function CounterDemo() {
           Stop
         </button>
       </div>
-      <p className="status">{isRunning ? '🟢 Running' : '⚪ Stopped'}</p>
+      <p className="status">{isRunning ? "🟢 Running" : "⚪ Stopped"}</p>
     </div>
   );
 }
@@ -77,32 +75,35 @@ export function CounterDemo() {
 export function StockTickerDemo() {
   const [prices, setPrices] = useState<Map<string, StockPrice>>(new Map());
   const { isConnected } = useSubscription<StockPrice>(
-    async () => subscribe<StockPrice>('stream.stocks', { 
-      symbols: ['AAPL', 'GOOGL', 'MSFT'] 
-    }),
+    async () =>
+      subscribe<StockPrice>("stream.stocks", {
+        symbols: ["AAPL", "GOOGL", "MSFT"],
+      }),
     [],
     {
       onEvent: (price) => {
-        setPrices(prev => new Map(prev).set(price.symbol, price));
+        setPrices((prev) => new Map(prev).set(price.symbol, price));
       },
-    }
+    },
   );
 
   return (
     <div className="demo-card">
       <h3>📈 Stock Ticker</h3>
-      <p className="status">{isConnected ? '🟢 Live' : '🔴 Disconnected'}</p>
+      <p className="status">{isConnected ? "🟢 Live" : "🔴 Disconnected"}</p>
       <div className="stock-list">
-        {['AAPL', 'GOOGL', 'MSFT'].map(symbol => {
+        {["AAPL", "GOOGL", "MSFT"].map((symbol) => {
           const price = prices.get(symbol);
           return (
             <div key={symbol} className="stock-item">
               <span className="symbol">{symbol}</span>
-              <span className="price">
-                ${price?.price.toFixed(2) ?? '—'}
-              </span>
-              <span className={`change ${(price?.change ?? 0) >= 0 ? 'up' : 'down'}`}>
-                {price ? `${price.change >= 0 ? '+' : ''}${price.change.toFixed(2)}` : '—'}
+              <span className="price">${price?.price.toFixed(2) ?? "—"}</span>
+              <span
+                className={`change ${(price?.change ?? 0) >= 0 ? "up" : "down"}`}
+              >
+                {price
+                  ? `${price.change >= 0 ? "+" : ""}${price.change.toFixed(2)}`
+                  : "—"}
               </span>
             </div>
           );
@@ -119,28 +120,30 @@ export function StockTickerDemo() {
 export function ChatDemo() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+
   const { isConnected } = useSubscription<ChatMessage>(
-    async () => subscribe<ChatMessage>('stream.chat', { roomId: 'general' }),
+    async () => subscribe<ChatMessage>("stream.chat", { roomId: "general" }),
     [],
     {
       onEvent: (message) => {
-        setMessages(prev => [...prev.slice(-19), message]); // Keep last 20
+        setMessages((prev) => [...prev.slice(-19), message]); // Keep last 20
       },
       autoReconnect: true,
-    }
+    },
   );
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   return (
     <div className="demo-card chat-card">
       <h3>💬 Chat Room</h3>
-      <p className="status">{isConnected ? '🟢 Connected' : '🔴 Reconnecting...'}</p>
+      <p className="status">
+        {isConnected ? "🟢 Connected" : "🔴 Reconnecting..."}
+      </p>
       <div className="chat-messages">
-        {messages.map(msg => (
+        {messages.map((msg) => (
           <div key={msg.id} className="chat-message">
             <span className="user">{msg.userId}</span>
             <span className="text">{msg.text}</span>
@@ -160,34 +163,32 @@ export function ChatDemo() {
 // =============================================================================
 
 export function TimeDemo() {
-  const [time, setTime] = useState<string>('');
-  
+  const [time, setTime] = useState<string>("");
+
   const { isConnected } = useSubscription<string>(
-    async () => subscribe<string>('stream.time', {}),
+    async () => subscribe<string>("stream.time", {}),
     [],
     {
       onEvent: (t) => setTime(t),
-    }
+    },
   );
 
   const formatTime = (iso: string) => {
-    if (!iso) return '—';
+    if (!iso) return "—";
     const date = new Date(iso);
-    return date.toLocaleTimeString('en-US', { 
+    return date.toLocaleTimeString("en-US", {
       hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
     });
   };
 
   return (
     <div className="demo-card">
       <h3>⏰ Server Time</h3>
-      <div className="time-display">
-        {formatTime(time)}
-      </div>
-      <p className="status">{isConnected ? '🟢 Synced' : '🔴 Disconnected'}</p>
+      <div className="time-display">{formatTime(time)}</div>
+      <p className="status">{isConnected ? "🟢 Synced" : "🔴 Disconnected"}</p>
     </div>
   );
 }
@@ -204,14 +205,14 @@ export function SubscriptionDemo() {
         These examples demonstrate real-time streaming from Rust to TypeScript
         using the Event Iterator pattern (SSE-style).
       </p>
-      
+
       <div className="demo-grid">
         <CounterDemo />
         <TimeDemo />
         <StockTickerDemo />
         <ChatDemo />
       </div>
-      
+
       <style>{`
         .subscription-demo {
           padding: 20px;

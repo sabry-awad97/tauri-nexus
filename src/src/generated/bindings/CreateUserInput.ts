@@ -3,4 +3,4 @@
 /**
  * Input for creating a user
  */
-export type CreateUserInput = { name: string, email: string, };
+export type CreateUserInput = { name: string; email: string };

@@ -3,4 +3,4 @@
 /**
  * Input for getting a user
  */
-export type GetUserInput = { id: number, };
+export type GetUserInput = { id: number };

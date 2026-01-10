@@ -3,15 +3,15 @@
 // =============================================================================
 // Type-safe React hooks for queries, mutations, and subscriptions.
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type {
   RpcError,
   RouterClient,
   EventIterator,
   CallOptions,
   SubscriptionOptions as BaseSubscriptionOptions,
-} from './types';
-import { isRpcError } from './client';
+} from "./types";
+import { isRpcError } from "./client";
 
 // =============================================================================
 // Query Hook Types
@@ -54,7 +54,10 @@ export interface MutationState<T> {
   isIdle: boolean;
 }
 
-export interface MutationResult<TInput, TOutput> extends MutationState<TOutput> {
+export interface MutationResult<
+  TInput,
+  TOutput,
+> extends MutationState<TOutput> {
   mutate: (input: TInput) => void;
   mutateAsync: (input: TInput) => Promise<TOutput>;
   reset: () => void;
@@ -63,7 +66,11 @@ export interface MutationResult<TInput, TOutput> extends MutationState<TOutput> 
 export interface MutationOptions<TInput, TOutput> {
   onSuccess?: (data: TOutput, input: TInput) => void;
   onError?: (error: RpcError, input: TInput) => void;
-  onSettled?: (data: TOutput | undefined, error: RpcError | null, input: TInput) => void;
+  onSettled?: (
+    data: TOutput | undefined,
+    error: RpcError | null,
+    input: TInput,
+  ) => void;
   onMutate?: (input: TInput) => void | Promise<void>;
 }
 
@@ -123,9 +130,14 @@ export interface SubscriptionHookOptions<T> extends BaseSubscriptionOptions {
 export function useQuery<T>(
   queryFn: () => Promise<T>,
   deps: unknown[] = [],
-  options: QueryOptions = {}
+  options: QueryOptions = {},
 ): QueryResult<T> {
-  const { enabled = true, refetchInterval, keepPreviousData = false, initialData } = options;
+  const {
+    enabled = true,
+    refetchInterval,
+    keepPreviousData = false,
+    initialData,
+  } = options;
 
   const [state, setState] = useState<QueryState<T>>({
     data: initialData as T | undefined,
@@ -138,9 +150,13 @@ export function useQuery<T>(
 
   const mountedRef = useRef(true);
   const previousDataRef = useRef<T | undefined>(undefined);
+  const requestIdRef = useRef(0);
 
   const fetchData = useCallback(async () => {
     if (!enabled || !mountedRef.current) return;
+
+    // Increment request ID to track this specific request
+    const currentRequestId = ++requestIdRef.current;
 
     setState((s) => ({
       ...s,
@@ -152,7 +168,8 @@ export function useQuery<T>(
     try {
       const result = await queryFn();
 
-      if (mountedRef.current) {
+      // Only update state if this is still the latest request and component is mounted
+      if (mountedRef.current && currentRequestId === requestIdRef.current) {
         previousDataRef.current = result;
         setState({
           data: result,
@@ -164,8 +181,11 @@ export function useQuery<T>(
         });
       }
     } catch (err) {
-      if (mountedRef.current) {
-        const error = isRpcError(err) ? err : { code: 'UNKNOWN', message: String(err) };
+      // Only update state if this is still the latest request and component is mounted
+      if (mountedRef.current && currentRequestId === requestIdRef.current) {
+        const error = isRpcError(err)
+          ? err
+          : { code: "UNKNOWN", message: String(err) };
         setState((s) => ({
           ...s,
           data: keepPreviousData ? previousDataRef.current : undefined,
@@ -229,7 +249,7 @@ export function useQuery<T>(
  */
 export function useMutation<TInput, TOutput>(
   mutationFn: (input: TInput) => Promise<TOutput>,
-  options: MutationOptions<TInput, TOutput> = {}
+  options: MutationOptions<TInput, TOutput> = {},
 ): MutationResult<TInput, TOutput> {
   const { onSuccess, onError, onSettled, onMutate } = options;
 
@@ -267,7 +287,9 @@ export function useMutation<TInput, TOutput>(
 
         return result;
       } catch (err) {
-        const error = isRpcError(err) ? err : { code: 'UNKNOWN', message: String(err) };
+        const error = isRpcError(err)
+          ? err
+          : { code: "UNKNOWN", message: String(err) };
 
         if (mountedRef.current) {
           setState((s) => ({
@@ -284,14 +306,14 @@ export function useMutation<TInput, TOutput>(
         throw error;
       }
     },
-    [mutationFn, onSuccess, onError, onSettled, onMutate]
+    [mutationFn, onSuccess, onError, onSettled, onMutate],
   );
 
   const mutate = useCallback(
     (input: TInput) => {
       mutateAsync(input).catch(() => {});
     },
-    [mutateAsync]
+    [mutateAsync],
   );
 
   const reset = useCallback(() => {
@@ -337,7 +359,7 @@ export function useMutation<TInput, TOutput>(
 export function useSubscription<T>(
   subscribeFn: () => Promise<EventIterator<T>>,
   deps: unknown[] = [],
-  options: SubscriptionHookOptions<T> = {}
+  options: SubscriptionHookOptions<T> = {},
 ): SubscriptionResult<T> {
   const {
     enabled = true,
@@ -366,14 +388,34 @@ export function useSubscription<T>(
   const iteratorRef = useRef<EventIterator<T> | null>(null);
   const reconnectCountRef = useRef(0);
   const manualDisconnectRef = useRef(false);
+  const connectionIdRef = useRef(0);
 
   const connect = useCallback(async () => {
     if (!enabled || !mountedRef.current || manualDisconnectRef.current) return;
 
-    setState((s) => ({ ...s, isConnecting: true, error: null, isError: false }));
+    // Increment connection ID to track this specific connection
+    const currentConnectionId = ++connectionIdRef.current;
+
+    setState((s) => ({
+      ...s,
+      isConnecting: true,
+      error: null,
+      isError: false,
+    }));
 
     try {
       const iterator = await subscribeFn();
+
+      // Check if this connection is still the current one
+      if (
+        currentConnectionId !== connectionIdRef.current ||
+        !mountedRef.current
+      ) {
+        // Stale connection - clean up and return
+        await iterator.return();
+        return;
+      }
+
       iteratorRef.current = iterator;
 
       if (mountedRef.current) {
@@ -388,7 +430,12 @@ export function useSubscription<T>(
       }
 
       for await (const event of iterator) {
-        if (!mountedRef.current) break;
+        // Check if this is still the current connection
+        if (
+          !mountedRef.current ||
+          currentConnectionId !== connectionIdRef.current
+        )
+          break;
 
         setState((s) => {
           const newData = [...s.data, event];
@@ -406,13 +453,22 @@ export function useSubscription<T>(
       }
 
       // Stream completed normally
-      if (mountedRef.current && !manualDisconnectRef.current) {
+      if (
+        mountedRef.current &&
+        !manualDisconnectRef.current &&
+        currentConnectionId === connectionIdRef.current
+      ) {
         setState((s) => ({ ...s, isConnected: false, isConnecting: false }));
         onComplete?.();
         onDisconnect?.();
       }
     } catch (err) {
-      const error = isRpcError(err) ? err : { code: 'UNKNOWN', message: String(err) };
+      // Only handle error if this is still the current connection
+      if (currentConnectionId !== connectionIdRef.current) return;
+
+      const error = isRpcError(err)
+        ? err
+        : { code: "UNKNOWN", message: String(err) };
 
       if (mountedRef.current) {
         setState((s) => ({
@@ -426,15 +482,27 @@ export function useSubscription<T>(
         onDisconnect?.();
 
         // Auto-reconnect logic
-        if (autoReconnect && !manualDisconnectRef.current && reconnectCountRef.current < maxReconnects) {
+        if (
+          autoReconnect &&
+          !manualDisconnectRef.current &&
+          reconnectCountRef.current < maxReconnects
+        ) {
           reconnectCountRef.current++;
-          const delay = reconnectDelay * Math.pow(2, reconnectCountRef.current - 1);
+          const delay =
+            reconnectDelay * Math.pow(2, reconnectCountRef.current - 1);
           setTimeout(connect, delay);
         }
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, maxEvents, autoReconnect, reconnectDelay, maxReconnects, ...deps]);
+  }, [
+    enabled,
+    maxEvents,
+    autoReconnect,
+    reconnectDelay,
+    maxReconnects,
+    ...deps,
+  ]);
 
   // Connect on mount / deps change
   useEffect(() => {
@@ -501,7 +569,7 @@ export function createHooks<T>(client: RouterClient<T>) {
     useRpcQuery: <TOutput>(
       queryFn: (client: RouterClient<T>) => Promise<TOutput>,
       deps: unknown[] = [],
-      options?: QueryOptions
+      options?: QueryOptions,
     ): QueryResult<TOutput> => {
       const fn = useMemo(() => () => queryFn(client), [queryFn]);
       return useQuery(fn, deps, options);
@@ -511,8 +579,10 @@ export function createHooks<T>(client: RouterClient<T>) {
      * Mutation hook with automatic type inference
      */
     useRpcMutation: <TInput, TOutput>(
-      getMutationFn: (client: RouterClient<T>) => (input: TInput) => Promise<TOutput>,
-      options?: MutationOptions<TInput, TOutput>
+      getMutationFn: (
+        client: RouterClient<T>,
+      ) => (input: TInput) => Promise<TOutput>,
+      options?: MutationOptions<TInput, TOutput>,
     ): MutationResult<TInput, TOutput> => {
       const fn = useMemo(() => getMutationFn(client), [getMutationFn]);
       return useMutation(fn, options);
@@ -524,7 +594,7 @@ export function createHooks<T>(client: RouterClient<T>) {
     useRpcSubscription: <TOutput>(
       subscribeFn: (client: RouterClient<T>) => Promise<EventIterator<TOutput>>,
       deps: unknown[] = [],
-      options?: SubscriptionHookOptions<TOutput>
+      options?: SubscriptionHookOptions<TOutput>,
     ): SubscriptionResult<TOutput> => {
       const fn = useMemo(() => () => subscribeFn(client), [subscribeFn]);
       return useSubscription(fn, deps, options);

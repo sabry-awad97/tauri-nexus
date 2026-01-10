@@ -76,7 +76,7 @@ async fn create_user(ctx: Context<AppContext>, input: CreateUserInput) -> RpcRes
     if input.name.is_empty() {
         return Err(RpcError::validation("Name is required"));
     }
-    
+
     ctx.db.create_user(&input.name, &input.email)
         .ok_or_else(|| RpcError::internal("Failed to create user"))
 }
@@ -152,17 +152,18 @@ export interface CreateUserInput {
 
 ```typescript
 // src/generated/router.ts
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from "@tauri-apps/api/core";
 
 async function call<T>(path: string, input: unknown = {}): Promise<T> {
-  return invoke<T>('plugin:rpc|rpc_call', { path, input });
+  return invoke<T>("plugin:rpc|rpc_call", { path, input });
 }
 
 export const user = {
-  get: (input: { id: number }) => call<User>('user.get', input),
-  list: () => call<User[]>('user.list', {}),
-  create: (input: CreateUserInput) => call<User>('user.create', input),
-  delete: (input: { id: number }) => call<SuccessResponse>('user.delete', input),
+  get: (input: { id: number }) => call<User>("user.get", input),
+  list: () => call<User[]>("user.list", {}),
+  create: (input: CreateUserInput) => call<User>("user.create", input),
+  delete: (input: { id: number }) =>
+    call<SuccessResponse>("user.delete", input),
 } as const;
 ```
 
@@ -171,14 +172,17 @@ export const user = {
 ```typescript
 // Vanilla TypeScript
 const users = await user.list();
-const newUser = await user.create({ name: 'Alice', email: 'alice@example.com' });
+const newUser = await user.create({
+  name: "Alice",
+  email: "alice@example.com",
+});
 
 // With error handling
 try {
   const user = await user.get({ id: 1 });
 } catch (error) {
-  if (error.code === 'NOT_FOUND') {
-    console.log('User not found');
+  if (error.code === "NOT_FOUND") {
+    console.log("User not found");
   }
 }
 ```
@@ -190,7 +194,7 @@ try {
 ### Setup provider
 
 ```tsx
-import { RpcProvider } from './generated';
+import { RpcProvider } from "./generated";
 
 function App() {
   return (
@@ -209,7 +213,7 @@ function UserProfile({ id }: { id: number }) {
 
   if (isLoading) return <Spinner />;
   if (error) return <Error message={error.message} />;
-  
+
   return (
     <div>
       <h1>{data.name}</h1>
@@ -233,13 +237,15 @@ function CreateUserForm() {
   });
 
   return (
-    <form onSubmit={(e) => {
-      e.preventDefault();
-      mutate({ name, email });
-    }}>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        mutate({ name, email });
+      }}
+    >
       {/* form fields */}
       <button disabled={isLoading}>
-        {isLoading ? 'Creating...' : 'Create User'}
+        {isLoading ? "Creating..." : "Create User"}
       </button>
     </form>
   );
@@ -270,9 +276,9 @@ async fn logging(
 ) -> RpcResult<Response> {
     let start = std::time::Instant::now();
     println!("→ [{}] {}", req.procedure_type, req.path);
-    
+
     let result = next(ctx, req.clone()).await;
-    
+
     println!("← {} ({:?})", req.path, start.elapsed());
     result
 }
@@ -320,18 +326,18 @@ RpcError::new("CUSTOM_ERROR", "Something happened")
 ### TypeScript
 
 ```typescript
-import { isRpcError, hasErrorCode } from './generated';
+import { isRpcError, hasErrorCode } from "./generated";
 
 try {
   await user.create(input);
 } catch (error) {
   if (isRpcError(error)) {
     switch (error.code) {
-      case 'VALIDATION_ERROR':
+      case "VALIDATION_ERROR":
         showFieldError(error.details?.field);
         break;
-      case 'CONFLICT':
-        showToast('User already exists');
+      case "CONFLICT":
+        showToast("User already exists");
         break;
       default:
         showToast(error.message);
@@ -383,32 +389,32 @@ your-app/
 
 ### Router
 
-| Method | Description |
-|--------|-------------|
-| `Router::new()` | Create a new router |
-| `.context(ctx)` | Set the context for handlers |
-| `.middleware(fn)` | Add middleware |
-| `.query(name, handler)` | Add a read-only procedure |
-| `.mutation(name, handler)` | Add a write procedure |
-| `.merge(namespace, router)` | Merge another router |
+| Method                      | Description                  |
+| --------------------------- | ---------------------------- |
+| `Router::new()`             | Create a new router          |
+| `.context(ctx)`             | Set the context for handlers |
+| `.middleware(fn)`           | Add middleware               |
+| `.query(name, handler)`     | Add a read-only procedure    |
+| `.mutation(name, handler)`  | Add a write procedure        |
+| `.merge(namespace, router)` | Merge another router         |
 
 ### RpcError
 
-| Constructor | Code |
-|-------------|------|
-| `not_found(msg)` | `NOT_FOUND` |
-| `bad_request(msg)` | `BAD_REQUEST` |
-| `validation(msg)` | `VALIDATION_ERROR` |
-| `unauthorized(msg)` | `UNAUTHORIZED` |
-| `forbidden(msg)` | `FORBIDDEN` |
-| `internal(msg)` | `INTERNAL_ERROR` |
-| `conflict(msg)` | `CONFLICT` |
+| Constructor         | Code               |
+| ------------------- | ------------------ |
+| `not_found(msg)`    | `NOT_FOUND`        |
+| `bad_request(msg)`  | `BAD_REQUEST`      |
+| `validation(msg)`   | `VALIDATION_ERROR` |
+| `unauthorized(msg)` | `UNAUTHORIZED`     |
+| `forbidden(msg)`    | `FORBIDDEN`        |
+| `internal(msg)`     | `INTERNAL_ERROR`   |
+| `conflict(msg)`     | `CONFLICT`         |
 
 ### React Hooks
 
-| Hook | Type | Description |
-|------|------|-------------|
-| `useQuery` | Query | Fetch data with caching |
+| Hook          | Type     | Description              |
+| ------------- | -------- | ------------------------ |
+| `useQuery`    | Query    | Fetch data with caching  |
 | `useMutation` | Mutation | Perform write operations |
 
 ---

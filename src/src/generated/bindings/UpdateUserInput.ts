@@ -3,4 +3,8 @@
 /**
  * Input for updating a user
  */
-export type UpdateUserInput = { id: number, name: string | null, email: string | null, };
+export type UpdateUserInput = {
+  id: number;
+  name: string | null;
+  email: string | null;
+};

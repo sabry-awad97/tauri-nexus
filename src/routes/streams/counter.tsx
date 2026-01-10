@@ -1,33 +1,37 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useState, useRef } from 'react';
-import { subscribe } from '../../lib/rpc';
-import type { CounterEvent } from '../../rpc/contract';
+import { createFileRoute } from "@tanstack/react-router";
+import { useState, useRef } from "react";
+import { subscribe } from "../../lib/rpc";
+import type { CounterEvent } from "../../rpc/contract";
 
 function CounterPage() {
   const [count, setCount] = useState<number | null>(null);
   const [events, setEvents] = useState<CounterEvent[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [config, setConfig] = useState({ start: 0, maxCount: 20, intervalMs: 500 });
+  const [config, setConfig] = useState({
+    start: 0,
+    maxCount: 20,
+    intervalMs: 500,
+  });
   const cancelRef = useRef<(() => Promise<void>) | null>(null);
 
   const startCounter = async () => {
     setIsRunning(true);
     setCount(null);
     setEvents([]);
-    
+
     try {
-      const stream = await subscribe<CounterEvent>('stream.counter', config);
-      
+      const stream = await subscribe<CounterEvent>("stream.counter", config);
+
       cancelRef.current = async () => {
         await stream.return();
       };
-      
+
       for await (const event of stream) {
         setCount(event.count);
-        setEvents(prev => [...prev.slice(-9), event]);
+        setEvents((prev) => [...prev.slice(-9), event]);
       }
     } catch (err) {
-      console.error('Counter error:', err);
+      console.error("Counter error:", err);
     } finally {
       setIsRunning(false);
       cancelRef.current = null;
@@ -40,9 +44,8 @@ function CounterPage() {
     }
   };
 
-  const progress = count !== null 
-    ? ((count - config.start + 1) / config.maxCount) * 100 
-    : 0;
+  const progress =
+    count !== null ? ((count - config.start + 1) / config.maxCount) * 100 : 0;
 
   return (
     <div className="page stream-page counter-page">
@@ -53,24 +56,26 @@ function CounterPage() {
             Simple incrementing counter demonstrating basic streaming
           </p>
         </div>
-        <div className={`connection-status ${isRunning ? 'connected' : 'disconnected'}`}>
+        <div
+          className={`connection-status ${isRunning ? "connected" : "disconnected"}`}
+        >
           <span className="status-dot" />
-          {isRunning ? 'Streaming' : 'Stopped'}
+          {isRunning ? "Streaming" : "Stopped"}
         </div>
       </header>
 
       <div className="stream-layout">
         <div className="stream-main">
           <div className="counter-display-card">
-            <div className="counter-value">
-              {count !== null ? count : '—'}
-            </div>
+            <div className="counter-value">{count !== null ? count : "—"}</div>
             <div className="counter-progress">
               <div className="progress-bar" style={{ width: `${progress}%` }} />
             </div>
             <div className="counter-info">
               {count !== null ? (
-                <span>{count - config.start + 1} of {config.maxCount} events</span>
+                <span>
+                  {count - config.start + 1} of {config.maxCount} events
+                </span>
               ) : (
                 <span>Ready to start</span>
               )}
@@ -78,15 +83,15 @@ function CounterPage() {
           </div>
 
           <div className="stream-controls">
-            <button 
-              onClick={startCounter} 
+            <button
+              onClick={startCounter}
               disabled={isRunning}
               className="control-btn start"
             >
               <span>▶️</span> Start
             </button>
-            <button 
-              onClick={stopCounter} 
+            <button
+              onClick={stopCounter}
               disabled={!isRunning}
               className="control-btn stop"
             >
@@ -98,13 +103,18 @@ function CounterPage() {
         <aside className="stream-sidebar">
           <div className="config-panel">
             <h3>Configuration</h3>
-            
+
             <div className="config-field">
               <label>Start Value</label>
               <input
                 type="number"
                 value={config.start}
-                onChange={(e) => setConfig(c => ({ ...c, start: parseInt(e.target.value) || 0 }))}
+                onChange={(e) =>
+                  setConfig((c) => ({
+                    ...c,
+                    start: parseInt(e.target.value) || 0,
+                  }))
+                }
                 disabled={isRunning}
               />
             </div>
@@ -114,7 +124,12 @@ function CounterPage() {
               <input
                 type="number"
                 value={config.maxCount}
-                onChange={(e) => setConfig(c => ({ ...c, maxCount: parseInt(e.target.value) || 10 }))}
+                onChange={(e) =>
+                  setConfig((c) => ({
+                    ...c,
+                    maxCount: parseInt(e.target.value) || 10,
+                  }))
+                }
                 disabled={isRunning}
                 min={1}
                 max={100}
@@ -126,7 +141,12 @@ function CounterPage() {
               <input
                 type="number"
                 value={config.intervalMs}
-                onChange={(e) => setConfig(c => ({ ...c, intervalMs: parseInt(e.target.value) || 500 }))}
+                onChange={(e) =>
+                  setConfig((c) => ({
+                    ...c,
+                    intervalMs: parseInt(e.target.value) || 500,
+                  }))
+                }
                 disabled={isRunning}
                 min={100}
                 max={5000}
@@ -171,6 +191,6 @@ for await (const event of stream) {
   );
 }
 
-export const Route = createFileRoute('/streams/counter')({
+export const Route = createFileRoute("/streams/counter")({
   component: CounterPage,
 });

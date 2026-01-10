@@ -1,15 +1,15 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useState } from 'react';
-import { subscribe } from '../../lib/rpc';
-import { useSubscription } from '../../lib/rpc/hooks';
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { subscribe } from "../../lib/rpc";
+import { useSubscription } from "../../lib/rpc/hooks";
 
 function DigitalClock({ time }: { time: string }) {
   if (!time) return <div className="clock-placeholder">--:--:--</div>;
-  
+
   const date = new Date(time);
-  const hours = date.getHours().toString().padStart(2, '0');
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  const seconds = date.getSeconds().toString().padStart(2, '0');
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  const seconds = date.getSeconds().toString().padStart(2, "0");
 
   return (
     <div className="digital-clock">
@@ -33,7 +33,7 @@ function DigitalClock({ time }: { time: string }) {
 
 function AnalogClock({ time }: { time: string }) {
   if (!time) return null;
-  
+
   const date = new Date(time);
   const seconds = date.getSeconds();
   const minutes = date.getMinutes();
@@ -47,21 +47,21 @@ function AnalogClock({ time }: { time: string }) {
     <div className="analog-clock">
       <div className="clock-face">
         {[...Array(12)].map((_, i) => (
-          <div 
-            key={i} 
+          <div
+            key={i}
             className="clock-mark"
             style={{ transform: `rotate(${i * 30}deg)` }}
           />
         ))}
-        <div 
+        <div
           className="clock-hand hour"
           style={{ transform: `rotate(${hourDeg}deg)` }}
         />
-        <div 
+        <div
           className="clock-hand minute"
           style={{ transform: `rotate(${minuteDeg}deg)` }}
         />
-        <div 
+        <div
           className="clock-hand second"
           style={{ transform: `rotate(${secondDeg}deg)` }}
         />
@@ -75,31 +75,36 @@ function WorldClocks({ serverTime }: { serverTime: string }) {
   if (!serverTime) return null;
 
   const serverDate = new Date(serverTime);
-  
+
   const timezones = [
-    { name: 'New York', offset: -5 },
-    { name: 'London', offset: 0 },
-    { name: 'Tokyo', offset: 9 },
-    { name: 'Sydney', offset: 11 },
+    { name: "New York", offset: -5 },
+    { name: "London", offset: 0 },
+    { name: "Tokyo", offset: 9 },
+    { name: "Sydney", offset: 11 },
   ];
 
   return (
     <div className="world-clocks">
       <h3>World Clocks</h3>
       <div className="world-clocks-grid">
-        {timezones.map(tz => {
-          const localTime = new Date(serverDate.getTime() + (tz.offset * 60 * 60 * 1000));
+        {timezones.map((tz) => {
+          const localTime = new Date(
+            serverDate.getTime() + tz.offset * 60 * 60 * 1000,
+          );
           return (
             <div key={tz.name} className="world-clock-item">
               <span className="city-name">{tz.name}</span>
               <span className="city-time">
-                {localTime.toLocaleTimeString('en-US', { 
-                  hour: '2-digit', 
-                  minute: '2-digit',
-                  hour12: true 
+                {localTime.toLocaleTimeString("en-US", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
                 })}
               </span>
-              <span className="city-offset">UTC{tz.offset >= 0 ? '+' : ''}{tz.offset}</span>
+              <span className="city-offset">
+                UTC{tz.offset >= 0 ? "+" : ""}
+                {tz.offset}
+              </span>
             </div>
           );
         })}
@@ -109,12 +114,12 @@ function WorldClocks({ serverTime }: { serverTime: string }) {
 }
 
 function TimePage() {
-  const [time, setTime] = useState<string>('');
+  const [time, setTime] = useState<string>("");
   const [tickCount, setTickCount] = useState(0);
   const [latency, setLatency] = useState<number | null>(null);
-  
+
   const { isConnected, error } = useSubscription<string>(
-    async () => subscribe<string>('stream.time', {}),
+    async () => subscribe<string>("stream.time", {}),
     [],
     {
       onEvent: (t) => {
@@ -122,9 +127,9 @@ function TimePage() {
         const serverTime = new Date(t).getTime();
         setLatency(now - serverTime);
         setTime(t);
-        setTickCount(c => c + 1);
+        setTickCount((c) => c + 1);
       },
-    }
+    },
   );
 
   const serverDate = time ? new Date(time) : null;
@@ -138,9 +143,11 @@ function TimePage() {
             Real-time server clock synchronized every second
           </p>
         </div>
-        <div className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
+        <div
+          className={`connection-status ${isConnected ? "connected" : "disconnected"}`}
+        >
           <span className="status-dot" />
-          {isConnected ? 'Synced' : 'Connecting...'}
+          {isConnected ? "Synced" : "Connecting..."}
         </div>
       </header>
 
@@ -156,7 +163,7 @@ function TimePage() {
             <h3>Digital</h3>
             <DigitalClock time={time} />
           </div>
-          
+
           <div className="clock-card analog">
             <h3>Analog</h3>
             <AnalogClock time={time} />
@@ -170,22 +177,22 @@ function TimePage() {
               <div className="info-item">
                 <span className="info-label">Date</span>
                 <span className="info-value">
-                  {serverDate?.toLocaleDateString('en-US', { 
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  }) || '—'}
+                  {serverDate?.toLocaleDateString("en-US", {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  }) || "—"}
                 </span>
               </div>
               <div className="info-item">
                 <span className="info-label">ISO 8601</span>
-                <span className="info-value mono">{time || '—'}</span>
+                <span className="info-value mono">{time || "—"}</span>
               </div>
               <div className="info-item">
                 <span className="info-label">Unix Timestamp</span>
                 <span className="info-value mono">
-                  {serverDate?.getTime() || '—'}
+                  {serverDate?.getTime() || "—"}
                 </span>
               </div>
               <div className="info-item">
@@ -194,8 +201,10 @@ function TimePage() {
               </div>
               <div className="info-item">
                 <span className="info-label">Latency</span>
-                <span className={`info-value ${latency && latency > 100 ? 'warning' : ''}`}>
-                  {latency !== null ? `${latency}ms` : '—'}
+                <span
+                  className={`info-value ${latency && latency > 100 ? "warning" : ""}`}
+                >
+                  {latency !== null ? `${latency}ms` : "—"}
                 </span>
               </div>
             </div>
@@ -213,7 +222,7 @@ function TimePage() {
   {
     onEvent: (isoTime) => {
       setTime(isoTime);
-      // "${time || '2026-01-01T00:00:00.000Z'}"
+      // "${time || "2026-01-01T00:00:00.000Z"}"
     },
   }
 );`}</pre>
@@ -222,6 +231,6 @@ function TimePage() {
   );
 }
 
-export const Route = createFileRoute('/streams/time')({
+export const Route = createFileRoute("/streams/time")({
   component: TimePage,
 });

@@ -1,18 +1,18 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useHealth, useUsers } from '../generated';
+import { createFileRoute } from "@tanstack/react-router";
+import { useHealth, useUsers } from "../generated";
 
-function StatCard({ 
-  icon, 
-  label, 
-  value, 
+function StatCard({
+  icon,
+  label,
+  value,
   subtext,
-  color = 'blue' 
-}: { 
-  icon: string; 
-  label: string; 
-  value: string | number; 
+  color = "blue",
+}: {
+  icon: string;
+  label: string;
+  value: string | number;
   subtext?: string;
-  color?: 'blue' | 'green' | 'purple' | 'orange';
+  color?: "blue" | "green" | "purple" | "orange";
 }) {
   return (
     <div className={`stat-card ${color}`}>
@@ -26,15 +26,15 @@ function StatCard({
   );
 }
 
-function FeatureCard({ 
-  icon, 
-  title, 
-  description, 
-  tags 
-}: { 
-  icon: string; 
-  title: string; 
-  description: string; 
+function FeatureCard({
+  icon,
+  title,
+  description,
+  tags,
+}: {
+  icon: string;
+  title: string;
+  description: string;
   tags: string[];
 }) {
   return (
@@ -43,8 +43,10 @@ function FeatureCard({
       <h3 className="feature-title">{title}</h3>
       <p className="feature-description">{description}</p>
       <div className="feature-tags">
-        {tags.map(tag => (
-          <span key={tag} className="tag">{tag}</span>
+        {tags.map((tag) => (
+          <span key={tag} className="tag">
+            {tag}
+          </span>
         ))}
       </div>
     </div>
@@ -67,30 +69,30 @@ function Dashboard() {
       </header>
 
       <section className="stats-grid">
-        <StatCard 
-          icon="🚀" 
-          label="Status" 
-          value={health?.status === 'ok' ? 'Online' : 'Offline'}
+        <StatCard
+          icon="🚀"
+          label="Status"
+          value={health?.status === "ok" ? "Online" : "Offline"}
           subtext={health?.version ? `Version ${health.version}` : undefined}
           color="green"
         />
-        <StatCard 
-          icon="👥" 
-          label="Users" 
+        <StatCard
+          icon="👥"
+          label="Users"
           value={users?.length ?? 0}
           subtext="In database"
           color="blue"
         />
-        <StatCard 
-          icon="📡" 
-          label="Subscriptions" 
+        <StatCard
+          icon="📡"
+          label="Subscriptions"
           value={4}
           subtext="Available streams"
           color="purple"
         />
-        <StatCard 
-          icon="⚡" 
-          label="Procedures" 
+        <StatCard
+          icon="⚡"
+          label="Procedures"
           value={9}
           subtext="Query + Mutation"
           color="orange"
@@ -104,25 +106,25 @@ function Dashboard() {
             icon="🔒"
             title="Type-Safe"
             description="End-to-end type safety from Rust to TypeScript with automatic type inference"
-            tags={['TypeScript', 'Rust', 'Serde']}
+            tags={["TypeScript", "Rust", "Serde"]}
           />
           <FeatureCard
             icon="🪝"
             title="React Hooks"
             description="Built-in hooks for queries, mutations, and subscriptions with loading states"
-            tags={['useQuery', 'useMutation', 'useSubscription']}
+            tags={["useQuery", "useMutation", "useSubscription"]}
           />
           <FeatureCard
             icon="📡"
             title="Real-time Streams"
             description="SSE-style event streaming with async iterators and automatic cleanup"
-            tags={['AsyncIterator', 'Events', 'Backpressure']}
+            tags={["AsyncIterator", "Events", "Backpressure"]}
           />
           <FeatureCard
             icon="🔌"
             title="Middleware"
             description="Composable middleware for logging, auth, validation, and more"
-            tags={['Logging', 'Auth', 'Validation']}
+            tags={["Logging", "Auth", "Validation"]}
           />
         </div>
       </section>
@@ -161,6 +163,6 @@ function Dashboard() {
   );
 }
 
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute("/")({
   component: Dashboard,
 });

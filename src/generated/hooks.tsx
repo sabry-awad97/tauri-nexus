@@ -10,16 +10,16 @@ import {
   useCallback,
   useRef,
   type ReactNode,
-} from 'react';
-import { rpc, user } from './router';
-import type { 
-  User, 
-  CreateUserInput, 
-  UpdateUserInput, 
+} from "react";
+import { rpc, user } from "./router";
+import type {
+  User,
+  CreateUserInput,
+  UpdateUserInput,
   GreetInput,
   RpcError,
-} from './types';
-import { isRpcError } from './client';
+} from "./types";
+import { isRpcError } from "./client";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -46,7 +46,10 @@ export interface MutationState<T> {
   isIdle: boolean;
 }
 
-export interface MutationResult<TInput, TOutput> extends MutationState<TOutput> {
+export interface MutationResult<
+  TInput,
+  TOutput,
+> extends MutationState<TOutput> {
   mutate: (input: TInput) => void;
   mutateAsync: (input: TInput) => Promise<TOutput>;
   reset: () => void;
@@ -84,7 +87,7 @@ export function useRpc() {
 function useQuery<T>(
   queryFn: () => Promise<T>,
   deps: unknown[],
-  options: QueryOptions = {}
+  options: QueryOptions = {},
 ): QueryResult<T> {
   const { enabled = true, refetchInterval } = options;
   const [state, setState] = useState<QueryState<T>>({
@@ -98,8 +101,8 @@ function useQuery<T>(
 
   const fetchData = useCallback(async () => {
     if (!enabled) return;
-    
-    setState(s => ({ ...s, isLoading: true, error: null }));
+
+    setState((s) => ({ ...s, isLoading: true, error: null }));
 
     try {
       const result = await queryFn();
@@ -114,8 +117,10 @@ function useQuery<T>(
       }
     } catch (err) {
       if (mountedRef.current) {
-        const error = isRpcError(err) ? err : { code: 'UNKNOWN', message: String(err) };
-        setState(s => ({
+        const error = isRpcError(err)
+          ? err
+          : { code: "UNKNOWN", message: String(err) };
+        setState((s) => ({
           ...s,
           error,
           isLoading: false,
@@ -124,7 +129,7 @@ function useQuery<T>(
         }));
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, ...deps]);
 
   useEffect(() => {
@@ -140,7 +145,9 @@ function useQuery<T>(
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   return { ...state, refetch: fetchData };
@@ -148,7 +155,7 @@ function useQuery<T>(
 
 function useMutation<TInput, TOutput>(
   mutationFn: (input: TInput) => Promise<TOutput>,
-  options: MutationOptions<TInput, TOutput> = {}
+  options: MutationOptions<TInput, TOutput> = {},
 ): MutationResult<TInput, TOutput> {
   const { onSuccess, onError, onSettled } = options;
   const [state, setState] = useState<MutationState<TOutput>>({
@@ -163,7 +170,7 @@ function useMutation<TInput, TOutput>(
 
   const mutateAsync = useCallback(
     async (input: TInput): Promise<TOutput> => {
-      setState(s => ({ ...s, isLoading: true, isIdle: false, error: null }));
+      setState((s) => ({ ...s, isLoading: true, isIdle: false, error: null }));
 
       try {
         const result = await mutationFn(input);
@@ -181,9 +188,11 @@ function useMutation<TInput, TOutput>(
         onSettled?.();
         return result;
       } catch (err) {
-        const error = isRpcError(err) ? err : { code: 'UNKNOWN', message: String(err) };
+        const error = isRpcError(err)
+          ? err
+          : { code: "UNKNOWN", message: String(err) };
         if (mountedRef.current) {
-          setState(s => ({
+          setState((s) => ({
             ...s,
             error,
             isLoading: false,
@@ -196,12 +205,14 @@ function useMutation<TInput, TOutput>(
         throw error;
       }
     },
-    [mutationFn, onSuccess, onError, onSettled]
+    [mutationFn, onSuccess, onError, onSettled],
   );
 
   const mutate = useCallback(
-    (input: TInput) => { mutateAsync(input).catch(() => {}); },
-    [mutateAsync]
+    (input: TInput) => {
+      mutateAsync(input).catch(() => {});
+    },
+    [mutateAsync],
   );
 
   const reset = useCallback(() => {
@@ -217,7 +228,9 @@ function useMutation<TInput, TOutput>(
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   return { ...state, mutate, mutateAsync, reset };
@@ -247,14 +260,20 @@ export function useUsers(options?: QueryOptions) {
 }
 
 // User mutations
-export function useCreateUser(options?: MutationOptions<CreateUserInput, User>) {
+export function useCreateUser(
+  options?: MutationOptions<CreateUserInput, User>,
+) {
   return useMutation((input: CreateUserInput) => user.create(input), options);
 }
 
-export function useUpdateUser(options?: MutationOptions<UpdateUserInput, User>) {
+export function useUpdateUser(
+  options?: MutationOptions<UpdateUserInput, User>,
+) {
   return useMutation((input: UpdateUserInput) => user.update(input), options);
 }
 
-export function useDeleteUser(options?: MutationOptions<{ id: number }, unknown>) {
+export function useDeleteUser(
+  options?: MutationOptions<{ id: number }, unknown>,
+) {
   return useMutation((input: { id: number }) => user.delete(input), options);
 }

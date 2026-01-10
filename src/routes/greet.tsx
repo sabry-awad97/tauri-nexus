@@ -1,22 +1,22 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useState } from 'react';
-import { useGreet, rpc } from '../generated';
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { useGreet, rpc } from "../generated";
 
 function DirectCallDemo() {
-  const [name, setName] = useState('');
-  const [greeting, setGreeting] = useState('');
+  const [name, setName] = useState("");
+  const [greeting, setGreeting] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   async function handleGreet() {
     if (!name.trim()) return;
     setLoading(true);
-    setError('');
+    setError("");
     try {
       const result = await rpc.greet({ name });
       setGreeting(result);
     } catch (err: any) {
-      setError(err.message || 'Failed to greet');
+      setError(err.message || "Failed to greet");
     } finally {
       setLoading(false);
     }
@@ -31,19 +31,19 @@ function DirectCallDemo() {
       <p className="demo-description">
         Call the RPC procedure directly using <code>rpc.greet()</code>
       </p>
-      
+
       <div className="demo-input-group">
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleGreet()}
+          onKeyDown={(e) => e.key === "Enter" && handleGreet()}
           placeholder="Enter your name..."
           className="demo-input"
         />
-        <button 
-          onClick={handleGreet} 
-          disabled={loading || !name.trim()} 
+        <button
+          onClick={handleGreet}
+          disabled={loading || !name.trim()}
           className="demo-btn primary"
         >
           {loading ? (
@@ -52,11 +52,11 @@ function DirectCallDemo() {
               Greeting...
             </span>
           ) : (
-            'Say Hello'
+            "Say Hello"
           )}
         </button>
       </div>
-      
+
       {greeting && (
         <div className="demo-result success">
           <span className="result-icon">✨</span>
@@ -71,18 +71,18 @@ function DirectCallDemo() {
       )}
 
       <div className="code-preview">
-        <pre>{`const result = await rpc.greet({ name: "${name || 'World'}" });
-// Returns: "${greeting || 'Hello, World! 👋'}"`}</pre>
+        <pre>{`const result = await rpc.greet({ name: "${name || "World"}" });
+// Returns: "${greeting || "Hello, World! 👋"}"`}</pre>
       </div>
     </div>
   );
 }
 
 function HookDemo() {
-  const [name, setName] = useState('World');
+  const [name, setName] = useState("World");
   const { data, isLoading, error, refetch } = useGreet(
-    { name }, 
-    { enabled: name.length > 0 }
+    { name },
+    { enabled: name.length > 0 },
   );
 
   return (
@@ -94,7 +94,7 @@ function HookDemo() {
       <p className="demo-description">
         Reactive query that automatically refetches when input changes
       </p>
-      
+
       <div className="demo-input-group">
         <input
           type="text"
@@ -103,16 +103,18 @@ function HookDemo() {
           placeholder="Type to greet..."
           className="demo-input"
         />
-        <button 
-          onClick={() => refetch()} 
-          disabled={isLoading} 
+        <button
+          onClick={() => refetch()}
+          disabled={isLoading}
           className="demo-btn"
         >
           Refetch
         </button>
       </div>
-      
-      <div className={`demo-result ${isLoading ? 'loading' : error ? 'error' : 'success'}`}>
+
+      <div
+        className={`demo-result ${isLoading ? "loading" : error ? "error" : "success"}`}
+      >
         {isLoading && (
           <>
             <span className="spinner" />
@@ -144,19 +146,23 @@ function HookDemo() {
 }
 
 function ValidationDemo() {
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
   const { data, isLoading, error } = useGreet(
-    { name }, 
-    { enabled: name.length > 0 }
+    { name },
+    { enabled: name.length > 0 },
   );
 
   const validationHints = [
-    { test: name.length === 0, message: 'Name is required', type: 'info' },
-    { test: name.length > 0 && name.length < 2, message: 'Name too short', type: 'warning' },
-    { test: name.length >= 2, message: 'Valid name', type: 'success' },
+    { test: name.length === 0, message: "Name is required", type: "info" },
+    {
+      test: name.length > 0 && name.length < 2,
+      message: "Name too short",
+      type: "warning",
+    },
+    { test: name.length >= 2, message: "Valid name", type: "success" },
   ];
 
-  const currentHint = validationHints.find(h => h.test);
+  const currentHint = validationHints.find((h) => h.test);
 
   return (
     <div className="demo-card">
@@ -167,7 +173,7 @@ function ValidationDemo() {
       <p className="demo-description">
         The backend validates that name is not empty
       </p>
-      
+
       <div className="demo-input-group">
         <input
           type="text"
@@ -183,12 +189,28 @@ function ValidationDemo() {
           {currentHint.message}
         </div>
       )}
-      
-      <div className={`demo-result ${isLoading ? 'loading' : error ? 'error' : data ? 'success' : 'idle'}`}>
-        {isLoading && <><span className="spinner" /> Validating...</>}
-        {error && <><span className="result-icon">❌</span> {error.message}</>}
-        {data && !isLoading && <><span className="result-icon">✅</span> {data}</>}
-        {!data && !isLoading && !error && <span className="idle-text">Enter a name to test</span>}
+
+      <div
+        className={`demo-result ${isLoading ? "loading" : error ? "error" : data ? "success" : "idle"}`}
+      >
+        {isLoading && (
+          <>
+            <span className="spinner" /> Validating...
+          </>
+        )}
+        {error && (
+          <>
+            <span className="result-icon">❌</span> {error.message}
+          </>
+        )}
+        {data && !isLoading && (
+          <>
+            <span className="result-icon">✅</span> {data}
+          </>
+        )}
+        {!data && !isLoading && !error && (
+          <span className="idle-text">Enter a name to test</span>
+        )}
       </div>
     </div>
   );
@@ -215,6 +237,6 @@ function GreetPage() {
   );
 }
 
-export const Route = createFileRoute('/greet')({
+export const Route = createFileRoute("/greet")({
   component: GreetPage,
 });

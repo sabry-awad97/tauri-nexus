@@ -1,41 +1,47 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useState, useRef, useEffect } from 'react';
-import { subscribe } from '../../lib/rpc';
-import { useSubscription } from '../../lib/rpc/hooks';
-import type { ChatMessage } from '../../rpc/contract';
+import { createFileRoute } from "@tanstack/react-router";
+import { useState, useRef, useEffect } from "react";
+import { subscribe } from "../../lib/rpc";
+import { useSubscription } from "../../lib/rpc/hooks";
+import type { ChatMessage } from "../../rpc/contract";
 
 const ROOMS = [
-  { id: 'general', name: 'General', icon: '💬' },
-  { id: 'random', name: 'Random', icon: '🎲' },
-  { id: 'tech', name: 'Tech Talk', icon: '💻' },
+  { id: "general", name: "General", icon: "💬" },
+  { id: "random", name: "Random", icon: "🎲" },
+  { id: "tech", name: "Tech Talk", icon: "💻" },
 ];
 
 const USER_COLORS: Record<string, string> = {
-  'Alice': '#6366f1',
-  'Bob': '#8b5cf6',
-  'Charlie': '#ec4899',
-  'Diana': '#f97316',
+  Alice: "#6366f1",
+  Bob: "#8b5cf6",
+  Charlie: "#ec4899",
+  Diana: "#f97316",
 };
 
-function MessageBubble({ message, isFirst }: { message: ChatMessage; isFirst: boolean }) {
-  const color = USER_COLORS[message.userId] || '#64748b';
-  
+function MessageBubble({
+  message,
+  isFirst,
+}: {
+  message: ChatMessage;
+  isFirst: boolean;
+}) {
+  const color = USER_COLORS[message.userId] || "#64748b";
+
   return (
-    <div className={`message-bubble ${isFirst ? 'first' : ''}`}>
+    <div className={`message-bubble ${isFirst ? "first" : ""}`}>
       {isFirst && (
         <div className="message-header">
           <span className="message-avatar" style={{ backgroundColor: color }}>
             {message.userId[0]}
           </span>
-          <span className="message-user" style={{ color }}>{message.userId}</span>
+          <span className="message-user" style={{ color }}>
+            {message.userId}
+          </span>
           <span className="message-time">
             {new Date(message.timestamp).toLocaleTimeString()}
           </span>
         </div>
       )}
-      <div className="message-content">
-        {message.text}
-      </div>
+      <div className="message-content">{message.text}</div>
     </div>
   );
 }
@@ -43,21 +49,21 @@ function MessageBubble({ message, isFirst }: { message: ChatMessage; isFirst: bo
 function ChatRoom({ roomId }: { roomId: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
+
   const { isConnected, error } = useSubscription<ChatMessage>(
-    async () => subscribe<ChatMessage>('stream.chat', { roomId }),
+    async () => subscribe<ChatMessage>("stream.chat", { roomId }),
     [roomId],
     {
       onEvent: (message) => {
-        setMessages(prev => [...prev.slice(-49), message]);
+        setMessages((prev) => [...prev.slice(-49), message]);
       },
       autoReconnect: true,
       maxReconnects: 10,
-    }
+    },
   );
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
@@ -65,7 +71,9 @@ function ChatRoom({ roomId }: { roomId: string }) {
   }, [roomId]);
 
   // Group consecutive messages from same user
-  const groupedMessages = messages.reduce<{ message: ChatMessage; isFirst: boolean }[]>((acc, msg, i) => {
+  const groupedMessages = messages.reduce<
+    { message: ChatMessage; isFirst: boolean }[]
+  >((acc, msg, i) => {
     const prevMsg = messages[i - 1];
     const isFirst = !prevMsg || prevMsg.userId !== msg.userId;
     acc.push({ message: msg, isFirst });
@@ -75,9 +83,11 @@ function ChatRoom({ roomId }: { roomId: string }) {
   return (
     <div className="chat-room">
       <div className="chat-header">
-        <div className={`connection-badge ${isConnected ? 'connected' : 'disconnected'}`}>
+        <div
+          className={`connection-badge ${isConnected ? "connected" : "disconnected"}`}
+        >
           <span className="status-dot" />
-          {isConnected ? 'Connected' : 'Reconnecting...'}
+          {isConnected ? "Connected" : "Reconnecting..."}
         </div>
         <span className="message-count">{messages.length} messages</span>
       </div>
@@ -104,20 +114,22 @@ function ChatRoom({ roomId }: { roomId: string }) {
       </div>
 
       <div className="chat-footer">
-        <input 
-          type="text" 
+        <input
+          type="text"
           placeholder="Messages are simulated (read-only demo)"
           disabled
           className="chat-input"
         />
-        <button disabled className="send-btn">Send</button>
+        <button disabled className="send-btn">
+          Send
+        </button>
       </div>
     </div>
   );
 }
 
 function ChatPage() {
-  const [activeRoom, setActiveRoom] = useState('general');
+  const [activeRoom, setActiveRoom] = useState("general");
 
   return (
     <div className="page stream-page chat-page">
@@ -134,10 +146,10 @@ function ChatPage() {
         <aside className="rooms-sidebar">
           <h3>Rooms</h3>
           <div className="rooms-list">
-            {ROOMS.map(room => (
+            {ROOMS.map((room) => (
               <button
                 key={room.id}
-                className={`room-btn ${activeRoom === room.id ? 'active' : ''}`}
+                className={`room-btn ${activeRoom === room.id ? "active" : ""}`}
                 onClick={() => setActiveRoom(room.id)}
               >
                 <span className="room-icon">{room.icon}</span>
@@ -151,7 +163,10 @@ function ChatPage() {
             <div className="users-list">
               {Object.entries(USER_COLORS).map(([name, color]) => (
                 <div key={name} className="user-item">
-                  <span className="user-dot" style={{ backgroundColor: color }} />
+                  <span
+                    className="user-dot"
+                    style={{ backgroundColor: color }}
+                  />
                   <span>{name}</span>
                 </div>
               ))}
@@ -182,6 +197,6 @@ function ChatPage() {
   );
 }
 
-export const Route = createFileRoute('/streams/chat')({
+export const Route = createFileRoute("/streams/chat")({
   component: ChatPage,
 });

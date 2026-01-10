@@ -85,10 +85,10 @@ export type {
   // Utility types
   DeepPartial,
   Prettify,
-} from './types';
+} from "./types";
 
 // Contract builder helpers
-export { query, mutation, subscription } from './types';
+export { query, mutation, subscription } from "./types";
 
 // =============================================================================
 // Client
@@ -115,7 +115,7 @@ export {
   getSubscriptionCount,
   // Types
   type RpcClientConfig,
-} from './client';
+} from "./client";
 
 // =============================================================================
 // Event Iterator
@@ -125,7 +125,7 @@ export {
   createEventIterator,
   consumeEventIterator,
   type ConsumeOptions,
-} from './event-iterator';
+} from "./event-iterator";
 
 // =============================================================================
 // React Hooks
@@ -151,7 +151,7 @@ export {
   type SubscriptionState,
   type SubscriptionResult,
   type SubscriptionHookOptions,
-} from './hooks';
+} from "./hooks";
 
 // =============================================================================
 // Utilities
@@ -164,6 +164,7 @@ export {
   withRetry,
   withDedup,
   deduplicationKey,
+  stableStringify,
   defaultRetryConfig,
   type RetryConfig,
-} from './utils';
+} from "./utils";

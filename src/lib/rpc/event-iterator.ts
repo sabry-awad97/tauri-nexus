@@ -3,15 +3,15 @@
 // =============================================================================
 // Robust async iterator for subscription streams with auto-reconnect support.
 
-import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Event,
   EventIterator,
   RpcError,
   SubscriptionOptions,
   SubscribeRequest,
-} from './types';
+} from "./types";
 
 // =============================================================================
 // Types
@@ -19,7 +19,7 @@ import type {
 
 /** Subscription event from backend (matches Rust SubscriptionEvent) */
 interface SubscriptionEvent<T> {
-  type: 'data' | 'error' | 'completed';
+  type: "data" | "error" | "completed";
   payload?: Event<T> | RpcError;
 }
 
@@ -36,6 +36,7 @@ interface SubscriptionState<T> {
   buffer: T[];
   error: RpcError | null;
   completed: boolean;
+  cleanupInProgress: boolean;
   unlisten: UnlistenFn | null;
   reconnectAttempts: number;
   lastEventId?: string;
@@ -60,7 +61,7 @@ interface SubscriptionState<T> {
 export async function createEventIterator<T>(
   path: string,
   input: unknown = null,
-  options: SubscriptionOptions = {}
+  options: SubscriptionOptions = {},
 ): Promise<EventIterator<T>> {
   const subscriptionId = generateSubscriptionId();
 
@@ -73,6 +74,7 @@ export async function createEventIterator<T>(
     buffer: [],
     error: null,
     completed: false,
+    cleanupInProgress: false,
     unlisten: null,
     reconnectAttempts: 0,
     lastEventId: options.lastEventId,
@@ -83,7 +85,7 @@ export async function createEventIterator<T>(
 
   // Handle abort signal
   if (options.signal) {
-    options.signal.addEventListener('abort', () => {
+    options.signal.addEventListener("abort", () => {
       cleanup(state);
     });
   }
@@ -117,13 +119,13 @@ export async function createEventIterator<T>(
 /** Generate a unique subscription ID */
 function generateSubscriptionId(): string {
   // Use crypto.randomUUID if available, otherwise fallback
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
   // Fallback for older environments
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
@@ -145,7 +147,7 @@ async function connect<T>(state: SubscriptionState<T>): Promise<void> {
   };
 
   try {
-    await invoke('plugin:rpc|rpc_subscribe', { request });
+    await invoke("plugin:rpc|rpc_subscribe", { request });
   } catch (error) {
     // Clean up listener if subscription fails
     if (state.unlisten) {
@@ -158,10 +160,33 @@ async function connect<T>(state: SubscriptionState<T>): Promise<void> {
 
 /** Attempt to reconnect */
 async function reconnect<T>(state: SubscriptionState<T>): Promise<boolean> {
-  const { autoReconnect = false, maxReconnects = 5, reconnectDelay = 1000 } =
-    state.options;
+  const {
+    autoReconnect = false,
+    maxReconnects = 5,
+    reconnectDelay = 1000,
+  } = state.options;
 
   if (!autoReconnect || state.reconnectAttempts >= maxReconnects) {
+    // Max retries exceeded - reject all pending promises
+    if (state.reconnectAttempts >= maxReconnects) {
+      const maxRetriesError: RpcError = {
+        code: "MAX_RECONNECTS_EXCEEDED",
+        message: `Maximum reconnection attempts (${maxReconnects}) exceeded`,
+        details: {
+          attempts: state.reconnectAttempts,
+          maxReconnects,
+          path: state.path,
+        },
+      };
+      state.error = maxRetriesError;
+      state.completed = true;
+
+      // Reject all pending consumers
+      while (state.queue.length > 0) {
+        const { reject } = state.queue.shift()!;
+        reject(maxRetriesError);
+      }
+    }
     return false;
   }
 
@@ -194,10 +219,10 @@ async function reconnect<T>(state: SubscriptionState<T>): Promise<boolean> {
 /** Handle incoming subscription event */
 function handleEvent<T>(
   state: SubscriptionState<T>,
-  event: SubscriptionEvent<T>
+  event: SubscriptionEvent<T>,
 ): void {
   switch (event.type) {
-    case 'data': {
+    case "data": {
       const eventData = event.payload as Event<T>;
       const data = eventData.data;
 
@@ -217,7 +242,7 @@ function handleEvent<T>(
       break;
     }
 
-    case 'error': {
+    case "error": {
       state.error = event.payload as RpcError;
       state.completed = true;
 
@@ -238,7 +263,7 @@ function handleEvent<T>(
       break;
     }
 
-    case 'completed': {
+    case "completed": {
       state.completed = true;
 
       // Resolve all waiting consumers with done
@@ -253,7 +278,7 @@ function handleEvent<T>(
 
 /** Get the next value from the iterator */
 function getNextValue<T>(
-  state: SubscriptionState<T>
+  state: SubscriptionState<T>,
 ): Promise<IteratorResult<T>> {
   // If there's an error, throw it
   if (state.error) {
@@ -279,7 +304,13 @@ function getNextValue<T>(
 
 /** Clean up subscription resources */
 async function cleanup<T>(state: SubscriptionState<T>): Promise<void> {
-  // Remove event listener
+  // Prevent double cleanup
+  if (state.cleanupInProgress || (state.completed && !state.unlisten)) {
+    return;
+  }
+  state.cleanupInProgress = true;
+
+  // Remove event listener first (prevents new events during cleanup)
   if (state.unlisten) {
     state.unlisten();
     state.unlisten = null;
@@ -287,18 +318,20 @@ async function cleanup<T>(state: SubscriptionState<T>): Promise<void> {
 
   state.completed = true;
 
-  // Notify backend to cancel
-  try {
-    await invoke('plugin:rpc|rpc_unsubscribe', { id: `sub_${state.id}` });
-  } catch {
-    // Ignore errors during cleanup
-  }
-
-  // Resolve any waiting consumers
+  // Resolve any waiting consumers before backend call
   while (state.queue.length > 0) {
     const { resolve } = state.queue.shift()!;
     resolve({ done: true, value: undefined });
   }
+
+  // Notify backend to cancel (wrapped in try-catch for resilience)
+  try {
+    await invoke("plugin:rpc|rpc_unsubscribe", { id: `sub_${state.id}` });
+  } catch {
+    // Ignore errors during cleanup - continue cleanup regardless
+  }
+
+  state.cleanupInProgress = false;
 }
 
 // =============================================================================
@@ -313,7 +346,7 @@ export interface ConsumeOptions<T> {
   /** Called when stream completes successfully */
   onComplete?: () => void;
   /** Called when stream finishes (success, error, or cancelled) */
-  onFinish?: (state: 'success' | 'error' | 'cancelled') => void;
+  onFinish?: (state: "success" | "error" | "cancelled") => void;
 }
 
 /**
@@ -337,7 +370,7 @@ export interface ConsumeOptions<T> {
  */
 export function consumeEventIterator<T>(
   iteratorPromise: Promise<EventIterator<T>>,
-  options: ConsumeOptions<T>
+  options: ConsumeOptions<T>,
 ): () => Promise<void> {
   let cancelled = false;
   let iterator: EventIterator<T> | null = null;
@@ -354,12 +387,12 @@ export function consumeEventIterator<T>(
 
       if (!cancelled) {
         options.onComplete?.();
-        options.onFinish?.('success');
+        options.onFinish?.("success");
       }
     } catch (error) {
       if (!cancelled) {
         options.onError?.(error as RpcError);
-        options.onFinish?.('error');
+        options.onFinish?.("error");
       }
     }
   })();
@@ -370,7 +403,7 @@ export function consumeEventIterator<T>(
     if (iterator) {
       await iterator.return();
     }
-    options.onFinish?.('cancelled');
+    options.onFinish?.("cancelled");
   };
 }
 

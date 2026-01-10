@@ -3,7 +3,7 @@
 // =============================================================================
 // Type-safe procedure definitions matching the Rust router.
 
-import { call } from './client';
+import { call } from "./client";
 import type {
   User,
   GetUserInput,
@@ -13,21 +13,21 @@ import type {
   GreetInput,
   HealthResponse,
   SuccessResponse,
-} from './types';
+} from "./types";
 
 // Re-export types and client utilities
-export * from './types';
-export { configure, getProcedures, isRpcError, hasErrorCode } from './client';
+export * from "./types";
+export { configure, getProcedures, isRpcError, hasErrorCode } from "./client";
 
 // -----------------------------------------------------------------------------
 // Root Procedures
 // -----------------------------------------------------------------------------
 
 /** Health check */
-export const health = () => call<HealthResponse>('health', null);
+export const health = () => call<HealthResponse>("health", null);
 
 /** Greet a user */
-export const greet = (input: GreetInput) => call<string>('greet', input);
+export const greet = (input: GreetInput) => call<string>("greet", input);
 
 // -----------------------------------------------------------------------------
 // User Procedures
@@ -35,19 +35,20 @@ export const greet = (input: GreetInput) => call<string>('greet', input);
 
 export const user = {
   /** Get user by ID */
-  get: (input: GetUserInput) => call<User>('user.get', input),
-  
+  get: (input: GetUserInput) => call<User>("user.get", input),
+
   /** List all users */
-  list: () => call<User[]>('user.list', null),
-  
+  list: () => call<User[]>("user.list", null),
+
   /** Create a new user */
-  create: (input: CreateUserInput) => call<User>('user.create', input),
-  
+  create: (input: CreateUserInput) => call<User>("user.create", input),
+
   /** Update an existing user */
-  update: (input: UpdateUserInput) => call<User>('user.update', input),
-  
+  update: (input: UpdateUserInput) => call<User>("user.update", input),
+
   /** Delete a user */
-  delete: (input: DeleteUserInput) => call<SuccessResponse>('user.delete', input),
+  delete: (input: DeleteUserInput) =>
+    call<SuccessResponse>("user.delete", input),
 } as const;
 
 // -----------------------------------------------------------------------------
