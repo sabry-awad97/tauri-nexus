@@ -1,16 +1,23 @@
 // =============================================================================
-// RPC Contract - Type definitions for Tauri RPC
+// RPC Contract Definition
 // =============================================================================
-// 
-// These types mirror the Rust types in src-tauri/src/rpc/types.rs
-// In the future, this will be auto-generated from Rust proc macros.
+// Define your RPC contract here. The contract specifies all available
+// procedures (queries, mutations, subscriptions) and their input/output types.
+//
+// This is the single source of truth for your RPC API types.
+// The client will automatically infer all types from this contract.
 
-import { createClientWithSubscriptions, type ContractRouter } from '../lib/rpc';
+import {
+  createClientWithSubscriptions,
+  createHooks,
+  type ContractRouter,
+} from '../lib/rpc';
 
 // =============================================================================
 // Domain Types
 // =============================================================================
 
+/** User entity */
 export interface User {
   id: number;
   name: string;
@@ -18,22 +25,26 @@ export interface User {
   createdAt: string;
 }
 
+/** Input for creating a user */
 export interface CreateUserInput {
   name: string;
   email: string;
 }
 
+/** Input for updating a user */
 export interface UpdateUserInput {
   id: number;
   name?: string;
   email?: string;
 }
 
+/** Health check response */
 export interface HealthResponse {
   status: string;
   version: string;
 }
 
+/** Generic success response */
 export interface SuccessResponse {
   success: boolean;
   message?: string;
@@ -43,21 +54,25 @@ export interface SuccessResponse {
 // Subscription Types
 // =============================================================================
 
+/** Counter subscription input */
 export interface CounterInput {
   start?: number;
   maxCount?: number;
   intervalMs?: number;
 }
 
+/** Counter event */
 export interface CounterEvent {
   count: number;
   timestamp: string;
 }
 
+/** Chat room subscription input */
 export interface ChatRoomInput {
   roomId: string;
 }
 
+/** Chat message event */
 export interface ChatMessage {
   id: string;
   roomId: string;
@@ -66,15 +81,18 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+/** Send message input */
 export interface SendMessageInput {
   roomId: string;
   text: string;
 }
 
+/** Stock subscription input */
 export interface StockInput {
   symbols: string[];
 }
 
+/** Stock price event */
 export interface StockPrice {
   symbol: string;
   price: number;
@@ -86,13 +104,20 @@ export interface StockPrice {
 // =============================================================================
 // Contract Definition
 // =============================================================================
+// Define your RPC contract as a TypeScript interface.
+// Each procedure specifies its type, input, and output.
+//
+// Procedure types:
+// - query: Read-only operations (GET-like)
+// - mutation: Write operations (POST/PUT/DELETE-like)
+// - subscription: Streaming operations (WebSocket-like)
 
 export interface AppContract extends ContractRouter {
-  // Root procedures
+  // Root-level procedures
   health: { type: 'query'; input: void; output: HealthResponse };
   greet: { type: 'query'; input: { name: string }; output: string };
-  
-  // User namespace
+
+  // User namespace - CRUD operations
   user: {
     get: { type: 'query'; input: { id: number }; output: User };
     list: { type: 'query'; input: void; output: User[] };
@@ -100,23 +125,27 @@ export interface AppContract extends ContractRouter {
     update: { type: 'mutation'; input: UpdateUserInput; output: User };
     delete: { type: 'mutation'; input: { id: number }; output: SuccessResponse };
   };
-  
-  // Stream namespace (subscriptions)
+
+  // Stream namespace - real-time subscriptions
   stream: {
-    // Counter - emits incrementing numbers
     counter: { type: 'subscription'; input: CounterInput; output: CounterEvent };
-    // Stocks - simulated real-time stock prices
     stocks: { type: 'subscription'; input: StockInput; output: StockPrice };
-    // Chat - chat room messages
     chat: { type: 'subscription'; input: ChatRoomInput; output: ChatMessage };
-    // Time - current time every second
     time: { type: 'subscription'; input: void; output: string };
+  };
+
+  // Chat namespace - chat operations
+  chat: {
+    send: { type: 'mutation'; input: SendMessageInput; output: ChatMessage };
+    history: { type: 'query'; input: { roomId: string; limit?: number }; output: ChatMessage[] };
   };
 }
 
 // =============================================================================
 // Subscription Paths
 // =============================================================================
+// List all subscription paths for runtime detection.
+// This is required because TypeScript types are erased at runtime.
 
 const SUBSCRIPTION_PATHS = [
   'stream.counter',
@@ -126,13 +155,26 @@ const SUBSCRIPTION_PATHS = [
 ] as const;
 
 // =============================================================================
-// Typed Client Export
+// Client Instance
 // =============================================================================
+// Create a typed client instance. This is the main export for your app.
 
 export const rpc = createClientWithSubscriptions<AppContract>({
   subscriptionPaths: [...SUBSCRIPTION_PATHS],
 });
 
-// Namespace exports for convenience
+// =============================================================================
+// React Hooks
+// =============================================================================
+// Create typed React hooks bound to the client.
+
+export const { useRpcQuery, useRpcMutation, useRpcSubscription } = createHooks(rpc);
+
+// =============================================================================
+// Namespace Exports
+// =============================================================================
+// Export namespaces for convenient access.
+
 export const user = rpc.user;
 export const stream = rpc.stream;
+export const chat = rpc.chat;

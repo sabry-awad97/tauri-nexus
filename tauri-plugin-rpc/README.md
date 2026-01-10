@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/tauri-apps/tauri/dev/app-icon.png" width="80" alt="Tauri Logo">
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/tauri/tauri-original.svg" width="80" alt="Tauri Logo">
 </p>
 
 <h1 align="center">tauri-plugin-rpc</h1>

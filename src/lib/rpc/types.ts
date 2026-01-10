@@ -1,49 +1,60 @@
 // =============================================================================
-// Core Types
+// Tauri RPC Client - Core Types
 // =============================================================================
+// A fully type-safe RPC client library for Tauri v2 applications.
+// Define your contract once, get full type safety everywhere.
+
+// =============================================================================
+// Error Types
+// =============================================================================
+
+/** Standard RPC error codes */
+export type RpcErrorCode =
+  | 'BAD_REQUEST'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'VALIDATION_ERROR'
+  | 'CONFLICT'
+  | 'PAYLOAD_TOO_LARGE'
+  | 'INTERNAL_ERROR'
+  | 'NOT_IMPLEMENTED'
+  | 'SERVICE_UNAVAILABLE'
+  | 'PROCEDURE_NOT_FOUND'
+  | 'SUBSCRIPTION_ERROR'
+  | 'MIDDLEWARE_ERROR'
+  | 'SERIALIZATION_ERROR'
+  | 'TIMEOUT'
+  | 'CANCELLED'
+  | 'UNKNOWN';
 
 /** RPC Error from backend */
 export interface RpcError {
-  code: string;
+  code: RpcErrorCode | string;
   message: string;
   details?: unknown;
+  cause?: string;
 }
 
-/** Event with optional metadata */
+// =============================================================================
+// Event Types
+// =============================================================================
+
+/** Event with optional metadata for streaming */
 export interface Event<T> {
   data: T;
   id?: string;
   retry?: number;
 }
 
-/** Subscription options */
-export interface SubscriptionOptions {
-  /** Last event ID for resumption */
-  lastEventId?: string;
-  /** Abort signal for cancellation */
-  signal?: AbortSignal;
-}
-
-/** Subscribe request payload (matches Rust SubscribeRequest) */
-export interface SubscribeRequest {
-  /** Optional subscription ID (generated if empty) */
+/** Event metadata for SSE-style streaming */
+export interface EventMeta {
   id?: string;
-  /** Procedure path */
-  path: string;
-  /** Input data */
-  input: unknown;
-  /** Last event ID for resumption */
-  lastEventId?: string;
-}
-
-/** Call options */
-export interface CallOptions {
-  /** Abort signal for cancellation */
-  signal?: AbortSignal;
+  retry?: number;
 }
 
 // =============================================================================
-// Contract Definition Types
+// Procedure Definition Types
 // =============================================================================
 
 /** Procedure types */
@@ -55,27 +66,48 @@ export interface ProcedureDef<
   TInput = unknown,
   TOutput = unknown,
 > {
-  type: TType;
-  input: TInput;
-  output: TOutput;
+  readonly _type: TType;
+  readonly _input: TInput;
+  readonly _output: TOutput;
 }
 
-/** Query procedure */
-export interface QueryDef<TInput = unknown, TOutput = unknown> 
+/** Query procedure - for reading data */
+export interface QueryDef<TInput = void, TOutput = unknown>
   extends ProcedureDef<'query', TInput, TOutput> {}
 
-/** Mutation procedure */
-export interface MutationDef<TInput = unknown, TOutput = unknown> 
+/** Mutation procedure - for writing data */
+export interface MutationDef<TInput = void, TOutput = unknown>
   extends ProcedureDef<'mutation', TInput, TOutput> {}
 
-/** Subscription procedure (event iterator) */
-export interface SubscriptionDef<TInput = unknown, TOutput = unknown> 
+/** Subscription procedure - for streaming data */
+export interface SubscriptionDef<TInput = void, TOutput = unknown>
   extends ProcedureDef<'subscription', TInput, TOutput> {}
 
-/** Contract router - nested structure of procedures */
-export type ContractRouter = {
-  [key: string]: ProcedureDef | ContractRouter;
+// =============================================================================
+// Contract Router Types
+// =============================================================================
+
+/** Base procedure definition for contract */
+export type ProcedureDefinition = {
+  type: ProcedureType;
+  input: unknown;
+  output: unknown;
 };
+
+/** A router can contain procedures or nested routers */
+export type ContractRouter = {
+  [key: string]: ProcedureDefinition | ContractRouter;
+};
+
+/** Check if a type is a procedure definition */
+export type IsProcedure<T> = T extends ProcedureDef ? true : false;
+
+/** Check if a type is a router */
+export type IsRouter<T> = T extends ContractRouter
+  ? T extends ProcedureDef
+    ? false
+    : true
+  : false;
 
 // =============================================================================
 // Type Inference Utilities
@@ -90,57 +122,192 @@ export type InferOutput<T> = T extends ProcedureDef<any, any, infer O> ? O : nev
 /** Extract procedure type */
 export type InferProcedureType<T> = T extends ProcedureDef<infer P, any, any> ? P : never;
 
+/** Check if procedure is a query */
+export type IsQuery<T> = T extends QueryDef<any, any> ? true : false;
+
+/** Check if procedure is a mutation */
+export type IsMutation<T> = T extends MutationDef<any, any> ? true : false;
+
 /** Check if procedure is a subscription */
 export type IsSubscription<T> = T extends SubscriptionDef<any, any> ? true : false;
 
 // =============================================================================
-// Client Type Generation
+// Event Iterator Types
 // =============================================================================
 
-/** Event iterator return type */
+/** Async event iterator for subscriptions */
 export interface EventIterator<T> extends AsyncIterable<T> {
-  /** Stop the stream manually */
+  /** Stop the stream and clean up resources */
   return(): Promise<void>;
   /** Get the underlying async iterator */
   [Symbol.asyncIterator](): AsyncIterator<T>;
 }
 
-/** Convert procedure def to client method */
-export type ProcedureClient<T extends ProcedureDef> = 
-  T extends SubscriptionDef<infer I, infer O>
-    ? I extends void | undefined | never
-      ? (options?: SubscriptionOptions) => Promise<EventIterator<O>>
-      : (input: I, options?: SubscriptionOptions) => Promise<EventIterator<O>>
-    : T extends QueryDef<infer I, infer O> | MutationDef<infer I, infer O>
-      ? I extends void | undefined | never
-        ? (options?: CallOptions) => Promise<O>
-        : (input: I, options?: CallOptions) => Promise<O>
+// =============================================================================
+// Call Options
+// =============================================================================
+
+/** Options for query/mutation calls */
+export interface CallOptions {
+  /** Abort signal for cancellation */
+  signal?: AbortSignal;
+  /** Request timeout in milliseconds */
+  timeout?: number;
+  /** Custom headers/metadata */
+  meta?: Record<string, unknown>;
+}
+
+/** Options for subscription calls */
+export interface SubscriptionOptions extends CallOptions {
+  /** Last event ID for resumption */
+  lastEventId?: string;
+  /** Auto-reconnect on disconnect */
+  autoReconnect?: boolean;
+  /** Reconnect delay in milliseconds */
+  reconnectDelay?: number;
+  /** Maximum reconnect attempts */
+  maxReconnects?: number;
+}
+
+// =============================================================================
+// Client Method Types
+// =============================================================================
+
+/** Input type handling - void inputs don't require arguments */
+type InputArg<TInput> = TInput extends void | undefined | never
+  ? []
+  : [input: TInput];
+
+/** Options argument type */
+type OptionsArg<TOptions> = [options?: TOptions];
+
+/** Convert procedure def to client method signature */
+export type ProcedureClient<T> =
+  T extends { type: 'subscription'; input: infer I; output: infer O }
+    ? (...args: [...InputArg<I>, ...OptionsArg<SubscriptionOptions>]) => Promise<EventIterator<O>>
+    : T extends { type: 'query' | 'mutation'; input: infer I; output: infer O }
+      ? (...args: [...InputArg<I>, ...OptionsArg<CallOptions>]) => Promise<O>
       : never;
 
-/** Convert contract router to client type */
-export type RouterClient<T extends ContractRouter> = {
-  [K in keyof T]: T[K] extends ProcedureDef
+/** Check if type is a procedure definition */
+type IsProcedureDefinition<T> = T extends { type: ProcedureType; input: unknown; output: unknown } ? true : false;
+
+/** Convert contract router to client type recursively */
+export type RouterClient<T> = {
+  [K in keyof T]: IsProcedureDefinition<T[K]> extends true
     ? ProcedureClient<T[K]>
-    : T[K] extends ContractRouter
+    : T[K] extends object
       ? RouterClient<T[K]>
       : never;
 };
 
 // =============================================================================
-// Contract Builder Helpers (for defining contracts)
+// Path Extraction Types
+// =============================================================================
+
+/** Check if type is a procedure definition (internal helper) */
+type IsProcedureType<T> = T extends { type: ProcedureType; input: unknown; output: unknown } ? true : false;
+
+/** Extract all procedure paths from a router */
+export type ExtractPaths<T, Prefix extends string = ''> = 
+  IsProcedureType<T> extends true
+    ? Prefix
+    : T extends object
+      ? {
+          [K in keyof T]: K extends string
+            ? ExtractPaths<T[K], Prefix extends '' ? K : `${Prefix}.${K}`>
+            : never;
+        }[keyof T]
+      : never;
+
+/** Extract subscription paths from a router */
+export type ExtractSubscriptionPaths<T, Prefix extends string = ''> =
+  T extends { type: 'subscription'; input: unknown; output: unknown }
+    ? Prefix
+    : T extends object
+      ? {
+          [K in keyof T]: K extends string
+            ? ExtractSubscriptionPaths<T[K], Prefix extends '' ? K : `${Prefix}.${K}`>
+            : never;
+        }[keyof T]
+      : never;
+
+/** Get procedure at a specific path */
+export type GetProcedureAtPath<T, Path extends string> =
+  Path extends `${infer Head}.${infer Tail}`
+    ? Head extends keyof T
+      ? GetProcedureAtPath<T[Head], Tail>
+      : never
+    : Path extends keyof T
+      ? T[Path]
+      : never;
+
+// =============================================================================
+// Contract Builder Helpers
 // =============================================================================
 
 /** Define a query procedure */
 export function query<TInput = void, TOutput = void>(): QueryDef<TInput, TOutput> {
-  return { type: 'query', input: undefined as TInput, output: undefined as TOutput };
+  return { _type: 'query', _input: undefined as TInput, _output: undefined as TOutput };
 }
 
 /** Define a mutation procedure */
 export function mutation<TInput = void, TOutput = void>(): MutationDef<TInput, TOutput> {
-  return { type: 'mutation', input: undefined as TInput, output: undefined as TOutput };
+  return { _type: 'mutation', _input: undefined as TInput, _output: undefined as TOutput };
 }
 
 /** Define a subscription procedure */
 export function subscription<TInput = void, TOutput = void>(): SubscriptionDef<TInput, TOutput> {
-  return { type: 'subscription', input: undefined as TInput, output: undefined as TOutput };
+  return { _type: 'subscription', _input: undefined as TInput, _output: undefined as TOutput };
 }
+
+// =============================================================================
+// Middleware Types
+// =============================================================================
+
+/** Request context passed through middleware */
+export interface RequestContext {
+  path: string;
+  input: unknown;
+  type: ProcedureType;
+  meta?: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+/** Response context from middleware */
+export interface ResponseContext<T = unknown> {
+  data: T;
+  meta?: Record<string, unknown>;
+}
+
+/** Middleware function type */
+export type Middleware = <T>(
+  ctx: RequestContext,
+  next: () => Promise<T>
+) => Promise<T>;
+
+// =============================================================================
+// Subscribe Request (matches Rust SubscribeRequest)
+// =============================================================================
+
+/** Subscribe request payload sent to backend */
+export interface SubscribeRequest {
+  id?: string;
+  path: string;
+  input: unknown;
+  lastEventId?: string;
+}
+
+// =============================================================================
+// Utility Types
+// =============================================================================
+
+/** Make all properties optional recursively */
+export type DeepPartial<T> = T extends object
+  ? { [P in keyof T]?: DeepPartial<T[P]> }
+  : T;
+
+/** Prettify type for better IntelliSense display */
+export type Prettify<T> = {
+  [K in keyof T]: T[K];
+} & {};
