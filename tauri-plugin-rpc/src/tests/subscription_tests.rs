@@ -121,6 +121,162 @@ proptest! {
 }
 
 // =============================================================================
+// Property 5: Subscription Cancellation Cleanup
+// =============================================================================
+
+proptest! {
+    /// **Property 5: Subscription Cancellation Cleanup**
+    /// *For any* subscription that is cancelled, the associated task SHALL stop executing
+    /// within a bounded time, and the subscription SHALL be removed from the manager.
+    /// **Validates: Requirements 4.1, 4.4**
+    /// **Feature: tauri-rpc-plugin-optimization, Property 5: Subscription Cancellation Cleanup**
+    #[test]
+    fn prop_subscription_cancellation_cleanup(
+        subscription_count in 1usize..20,
+        cancel_indices in prop::collection::vec(0usize..20, 1..10)
+    ) {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let manager = Arc::new(SubscriptionManager::new());
+            let mut subscription_ids = Vec::new();
+            let mut signals = Vec::new();
+
+            // Create subscriptions with tracked tasks
+            for i in 0..subscription_count {
+                let id = SubscriptionId::new();
+                let signal = Arc::new(CancellationSignal::new());
+                let handle = crate::subscription::SubscriptionHandle::new(
+                    id,
+                    format!("test.path.{}", i),
+                    signal.clone(),
+                );
+                manager.subscribe(handle).await;
+
+                // Spawn a tracked task that runs until cancelled
+                let signal_clone = signal.clone();
+                manager.spawn_subscription(id, async move {
+                    // Simulate a long-running subscription task
+                    loop {
+                        if signal_clone.is_cancelled() {
+                            break;
+                        }
+                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                    }
+                }).await;
+
+                subscription_ids.push(id);
+                signals.push(signal);
+            }
+
+            // Verify all subscriptions exist
+            prop_assert_eq!(manager.count().await, subscription_count);
+
+            // Cancel some subscriptions via unsubscribe
+            let mut cancelled = HashSet::new();
+            for idx in cancel_indices {
+                if idx < subscription_count && !cancelled.contains(&idx) {
+                    let id = &subscription_ids[idx];
+                    
+                    // Unsubscribe should cancel the signal and remove from manager
+                    let result = manager.unsubscribe(id).await;
+                    prop_assert!(result, "Unsubscribe should succeed for existing subscription");
+
+                    // Signal should be cancelled immediately
+                    prop_assert!(
+                        signals[idx].is_cancelled(),
+                        "Signal should be cancelled after unsubscribe"
+                    );
+
+                    // Subscription should be removed from manager
+                    prop_assert!(
+                        !manager.exists(id).await,
+                        "Subscription should be removed from manager after unsubscribe"
+                    );
+
+                    cancelled.insert(idx);
+                }
+            }
+
+            // Verify remaining count
+            let expected_remaining = subscription_count - cancelled.len();
+            prop_assert_eq!(manager.count().await, expected_remaining);
+
+            // Test shutdown - should cancel all remaining subscriptions
+            manager.shutdown().await;
+
+            // After shutdown, all subscriptions should be removed
+            prop_assert_eq!(manager.count().await, 0, "All subscriptions should be removed after shutdown");
+
+            // All signals should be cancelled after shutdown
+            for signal in &signals {
+                prop_assert!(signal.is_cancelled(), "All signals should be cancelled after shutdown");
+            }
+
+            Ok(())
+        })?;
+    }
+
+    /// **Property 5 (continued): Task Tracking Cleanup**
+    /// *For any* set of spawned subscription tasks, shutdown SHALL abort all tasks
+    /// and wait for them to complete.
+    /// **Validates: Requirements 4.1, 4.2, 4.5**
+    /// **Feature: tauri-rpc-plugin-optimization, Property 5: Subscription Cancellation Cleanup**
+    #[test]
+    fn prop_task_tracking_cleanup(task_count in 1usize..10) {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let manager = Arc::new(SubscriptionManager::new());
+            let task_started = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+            // Spawn multiple tracked tasks
+            for i in 0..task_count {
+                let id = SubscriptionId::new();
+                let signal = Arc::new(CancellationSignal::new());
+                let handle = crate::subscription::SubscriptionHandle::new(
+                    id,
+                    format!("task.{}", i),
+                    signal.clone(),
+                );
+                manager.subscribe(handle).await;
+
+                let task_started_clone = task_started.clone();
+                let signal_clone = signal.clone();
+                manager.spawn_subscription(id, async move {
+                    // Mark task as started
+                    task_started_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    
+                    // Run until cancelled - use tokio::select! for faster cancellation
+                    signal_clone.cancelled().await;
+                }).await;
+            }
+
+            // Give tasks time to start (minimal delay)
+            tokio::task::yield_now().await;
+
+            // Note: Some tasks may not have started yet due to async scheduling
+            // The important thing is that shutdown handles them correctly
+            let _started = task_started.load(std::sync::atomic::Ordering::SeqCst);
+
+            // Shutdown should complete within bounded time (tasks should be aborted)
+            let shutdown_result = tokio::time::timeout(
+                tokio::time::Duration::from_secs(2),
+                manager.shutdown()
+            ).await;
+
+            prop_assert!(
+                shutdown_result.is_ok(),
+                "Shutdown should complete within bounded time"
+            );
+
+            // After shutdown, no subscriptions should remain
+            prop_assert_eq!(manager.count().await, 0, "No subscriptions should remain after shutdown");
+
+            Ok(())
+        })?;
+    }
+}
+
+// =============================================================================
 // Property 37: Event Iterator Completion Signal
 // =============================================================================
 

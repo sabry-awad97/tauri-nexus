@@ -439,11 +439,36 @@ impl Drop for SubscriptionHandle {
 // Subscription Manager
 // =============================================================================
 
-/// Manages active subscriptions
-#[derive(Debug, Default)]
+/// Manages active subscriptions with task tracking for graceful cleanup.
+///
+/// The `SubscriptionManager` tracks all active subscriptions and their associated
+/// background tasks. It provides methods for spawning tracked subscription tasks
+/// and graceful shutdown.
+///
+/// # Example
+/// ```rust,ignore
+/// let manager = SubscriptionManager::new();
+///
+/// // Spawn a tracked subscription task
+/// let id = manager.spawn_subscription(subscription_id, async move {
+///     // Subscription logic here
+/// }).await;
+///
+/// // Graceful shutdown - cancels all subscriptions and waits for tasks
+/// manager.shutdown().await;
+/// ```
+#[derive(Debug)]
 pub struct SubscriptionManager {
     /// Active subscriptions by ID
     subscriptions: RwLock<HashMap<SubscriptionId, SubscriptionHandle>>,
+    /// Task tracker for cleanup - tracks all spawned subscription tasks
+    task_tracker: RwLock<tokio::task::JoinSet<()>>,
+}
+
+impl Default for SubscriptionManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SubscriptionManager {
@@ -451,6 +476,7 @@ impl SubscriptionManager {
     pub fn new() -> Self {
         Self {
             subscriptions: RwLock::new(HashMap::new()),
+            task_tracker: RwLock::new(tokio::task::JoinSet::new()),
         }
     }
 
@@ -459,6 +485,73 @@ impl SubscriptionManager {
         let id = handle.id;
         self.subscriptions.write().await.insert(id, handle);
         id
+    }
+
+    /// Spawn a tracked subscription task.
+    ///
+    /// This method spawns a background task and tracks it in the `JoinSet` for
+    /// graceful cleanup during shutdown. The task will be automatically aborted
+    /// when `shutdown()` is called.
+    ///
+    /// # Arguments
+    /// * `id` - The subscription ID for this task
+    /// * `future` - The async task to spawn
+    ///
+    /// # Returns
+    /// The subscription ID that was passed in
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let id = manager.spawn_subscription(subscription_id, async move {
+    ///     while !signal.is_cancelled() {
+    ///         // Process subscription events
+    ///     }
+    /// }).await;
+    /// ```
+    pub async fn spawn_subscription<F>(&self, id: SubscriptionId, future: F) -> SubscriptionId
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let mut tracker = self.task_tracker.write().await;
+        tracker.spawn(future);
+        id
+    }
+
+    /// Graceful shutdown - cancel all subscriptions and wait for tasks to complete.
+    ///
+    /// This method:
+    /// 1. Cancels all active subscription signals
+    /// 2. Waits for all tracked tasks to complete (with cancellation)
+    /// 3. Clears the subscription registry
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// // During application shutdown
+    /// manager.shutdown().await;
+    /// ```
+    pub async fn shutdown(&self) {
+        // Cancel all subscription signals first
+        {
+            let subs = self.subscriptions.read().await;
+            for handle in subs.values() {
+                handle.cancel();
+            }
+        }
+
+        // Abort all tracked tasks and wait for them to complete
+        {
+            let mut tracker = self.task_tracker.write().await;
+            tracker.abort_all();
+            while tracker.join_next().await.is_some() {
+                // Wait for all tasks to complete
+            }
+        }
+
+        // Clear the subscriptions
+        {
+            let mut subs = self.subscriptions.write().await;
+            subs.clear();
+        }
     }
 
     /// Unsubscribe by ID
@@ -498,6 +591,11 @@ impl SubscriptionManager {
     pub async fn cleanup(&self) {
         let mut subs = self.subscriptions.write().await;
         subs.retain(|_, handle| !handle.is_cancelled());
+    }
+
+    /// Get the number of tracked tasks (for testing/debugging)
+    pub async fn task_count(&self) -> usize {
+        self.task_tracker.read().await.len()
     }
 }
 

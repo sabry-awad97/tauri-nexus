@@ -202,7 +202,9 @@ async fn rpc_subscribe<R: Runtime>(
     let router = router_state.0.clone();
     let sub_manager = sub_state.0.clone();
 
-    tokio::spawn(async move {
+    // Use spawn_subscription for tracked task management instead of tokio::spawn
+    // This ensures proper cleanup during shutdown
+    sub_state.0.spawn_subscription(subscription_id, async move {
         match router.subscribe(&path, input, sub_ctx).await {
             Ok(mut stream) => {
                 while let Some(event) = stream.recv().await {
@@ -219,7 +221,7 @@ async fn rpc_subscribe<R: Runtime>(
             }
         }
         sub_manager.unsubscribe(&subscription_id).await;
-    });
+    }).await;
 
     Ok(subscription_id.to_string())
 }

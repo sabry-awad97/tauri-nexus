@@ -16,7 +16,7 @@ uuid = { version = "1", features = ["v7", "serde"] }
 
 [dev-dependencies]
 proptest = "1.4"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }
