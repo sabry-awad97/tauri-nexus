@@ -1,4 +1,4 @@
-//! Tauri Application with ORPC-style Router
+//! Tauri Application
 
 pub mod rpc;
 

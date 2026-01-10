@@ -1,15 +1,14 @@
-//! App RPC - Router, Types, and Context
+//! Application RPC Module
+//!
+//! This module defines the RPC router, handlers, and types for the application.
 
-mod types;
 mod context;
 mod handlers;
+mod types;
 
+pub use context::AppContext;
+pub use handlers::create_router;
 pub use types::*;
-pub use context::*;
-pub use handlers::*;
 
-// Re-export plugin utilities
-pub use tauri_plugin_rpc::{
-    Router, Context, RpcError, RpcResult,
-    PaginatedResponse, PaginationInput, SuccessResponse,
-};
+// Re-export plugin types for convenience
+pub use tauri_plugin_rpc::prelude::*;

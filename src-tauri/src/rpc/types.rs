@@ -1,9 +1,12 @@
-//! App-specific types
+//! Application types
 //!
-//! Define your types here. Mirror these in TypeScript at:
-//! src/generated/types.ts
+//! These types are mirrored in TypeScript at: src/generated/types.ts
 
 use serde::{Deserialize, Serialize};
+
+// =============================================================================
+// User Types
+// =============================================================================
 
 /// User entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,7 +18,18 @@ pub struct User {
     pub created_at: String,
 }
 
-/// Input for getting a user
+impl User {
+    pub fn new(id: u32, name: impl Into<String>, email: impl Into<String>) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            email: email.into(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+}
+
+/// Input for getting a user by ID
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetUserInput {
     pub id: u32,
@@ -32,7 +46,9 @@ pub struct CreateUserInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateUserInput {
     pub id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
 }
 
@@ -42,8 +58,19 @@ pub struct DeleteUserInput {
     pub id: u32,
 }
 
-/// Greet input
+// =============================================================================
+// General Types
+// =============================================================================
+
+/// Input for greeting
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GreetInput {
     pub name: String,
+}
+
+/// Health check response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthResponse {
+    pub status: String,
+    pub version: String,
 }

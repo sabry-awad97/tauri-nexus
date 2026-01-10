@@ -1,19 +1,18 @@
-//! App context and state
+//! Application context and services
 
 use super::User;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Application context passed to all handlers
 #[derive(Clone)]
 pub struct AppContext {
-    pub db: DbContext,
+    /// Database service
+    pub db: DbService,
 }
 
 impl AppContext {
     pub fn new() -> Self {
-        Self {
-            db: DbContext::new(),
-        }
+        Self { db: DbService::new() }
     }
 }
 
@@ -23,82 +22,66 @@ impl Default for AppContext {
     }
 }
 
-/// Database context (simulated)
+/// Database service (simulated in-memory store)
 #[derive(Clone)]
-pub struct DbContext {
-    users: std::sync::Arc<Mutex<Vec<User>>>,
-    next_id: std::sync::Arc<Mutex<u32>>,
+pub struct DbService {
+    users: Arc<Mutex<Vec<User>>>,
+    next_id: Arc<Mutex<u32>>,
 }
 
-impl DbContext {
+impl DbService {
     pub fn new() -> Self {
         Self {
-            users: std::sync::Arc::new(Mutex::new(vec![
-                User {
-                    id: 1,
-                    name: "Alice".into(),
-                    email: "alice@example.com".into(),
-                    created_at: "2024-01-01T00:00:00Z".into(),
-                },
-                User {
-                    id: 2,
-                    name: "Bob".into(),
-                    email: "bob@example.com".into(),
-                    created_at: "2024-01-02T00:00:00Z".into(),
-                },
+            users: Arc::new(Mutex::new(vec![
+                User::new(1, "Alice", "alice@example.com"),
+                User::new(2, "Bob", "bob@example.com"),
             ])),
-            next_id: std::sync::Arc::new(Mutex::new(3)),
+            next_id: Arc::new(Mutex::new(3)),
         }
     }
 
     pub fn get_user(&self, id: u32) -> Option<User> {
-        let users = self.users.lock().ok()?;
-        users.iter().find(|u| u.id == id).cloned()
+        self.users.lock().ok()?.iter().find(|u| u.id == id).cloned()
     }
 
     pub fn list_users(&self) -> Vec<User> {
-        self.users.lock().map(|u| u.clone()).unwrap_or_default()
+        self.users.lock().ok().map(|u| u.clone()).unwrap_or_default()
     }
 
-    pub fn create_user(&self, name: String, email: String) -> Option<User> {
+    pub fn create_user(&self, name: &str, email: &str) -> Option<User> {
         let mut users = self.users.lock().ok()?;
         let mut next_id = self.next_id.lock().ok()?;
 
-        let user = User {
-            id: *next_id,
-            name,
-            email,
-            created_at: chrono::Utc::now().to_rfc3339(),
-        };
-
+        let user = User::new(*next_id, name, email);
         *next_id += 1;
         users.push(user.clone());
         Some(user)
     }
 
-    pub fn update_user(&self, id: u32, name: Option<String>, email: Option<String>) -> Option<User> {
+    pub fn update_user(&self, id: u32, name: Option<&str>, email: Option<&str>) -> Option<User> {
         let mut users = self.users.lock().ok()?;
         let user = users.iter_mut().find(|u| u.id == id)?;
 
-        if let Some(n) = name {
-            user.name = n;
-        }
-        if let Some(e) = email {
-            user.email = e;
-        }
+        if let Some(n) = name { user.name = n.to_string(); }
+        if let Some(e) = email { user.email = e.to_string(); }
 
         Some(user.clone())
     }
 
     pub fn delete_user(&self, id: u32) -> bool {
-        let mut users = self.users.lock().ok().unwrap();
-        let len_before = users.len();
-        users.retain(|u| u.id != id);
-        users.len() < len_before
+        self.users.lock().ok().map(|mut users| {
+            let len = users.len();
+            users.retain(|u| u.id != id);
+            users.len() < len
+        }).unwrap_or(false)
+    }
+
+    pub fn count_users(&self) -> u32 {
+        self.users.lock().ok().map(|u| u.len() as u32).unwrap_or(0)
     }
 }
 
-impl Default for DbContext {
+impl Default for DbService {
     fn default() -> Self {
         Self::new()
     }

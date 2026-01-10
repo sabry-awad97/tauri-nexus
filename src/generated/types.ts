@@ -1,14 +1,14 @@
 // =============================================================================
-// Type Definitions
+// RPC Types
 // =============================================================================
-// These types mirror the Rust types in src-tauri/src/rpc/types.rs
-// Keep them in sync when making changes.
+// Mirror of Rust types in src-tauri/src/rpc/types.rs
+// Keep in sync when making changes.
 
 // -----------------------------------------------------------------------------
-// Common Types (from tauri-plugin-rpc)
+// Common Types
 // -----------------------------------------------------------------------------
 
-/** Generic paginated response */
+/** Paginated response wrapper */
 export interface PaginatedResponse<T> {
   data: T[];
   total: number;
@@ -16,7 +16,7 @@ export interface PaginatedResponse<T> {
   totalPages: number;
 }
 
-/** Generic success response */
+/** Success response for operations */
 export interface SuccessResponse {
   success: boolean;
   message?: string;
@@ -28,8 +28,15 @@ export interface PaginationInput {
   limit?: number;
 }
 
+/** RPC error from backend */
+export interface RpcError {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
 // -----------------------------------------------------------------------------
-// App Types (from src-tauri/src/rpc/types.rs)
+// User Types
 // -----------------------------------------------------------------------------
 
 /** User entity */
@@ -63,7 +70,17 @@ export interface DeleteUserInput {
   id: number;
 }
 
+// -----------------------------------------------------------------------------
+// General Types
+// -----------------------------------------------------------------------------
+
 /** Greet input */
 export interface GreetInput {
   name: string;
+}
+
+/** Health check response */
+export interface HealthResponse {
+  status: string;
+  version: string;
 }

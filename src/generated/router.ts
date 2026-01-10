@@ -1,10 +1,9 @@
 // =============================================================================
 // RPC Router
 // =============================================================================
-// Type-safe RPC client with path-based routing.
-// Calls go through plugin:rpc|rpc_call
+// Type-safe procedure definitions matching the Rust router.
 
-import { invoke } from '@tauri-apps/api/core';
+import { call } from './client';
 import type {
   User,
   GetUserInput,
@@ -12,48 +11,53 @@ import type {
   UpdateUserInput,
   DeleteUserInput,
   GreetInput,
+  HealthResponse,
   SuccessResponse,
 } from './types';
 
-// Re-export all types
+// Re-export types and client utilities
 export * from './types';
+export { configure, getProcedures, isRpcError, hasErrorCode } from './client';
 
 // -----------------------------------------------------------------------------
-// RPC Call Helper
+// Root Procedures
 // -----------------------------------------------------------------------------
 
-async function call<T>(path: string, input: unknown = {}): Promise<T> {
-  return invoke<T>('plugin:rpc|rpc_call', { path, input });
-}
+/** Health check */
+export const health = () => call<HealthResponse>('health', {});
 
-/** Get available procedures from the router */
-export async function getProcedures(): Promise<string[]> {
-  return invoke<string[]>('plugin:rpc|rpc_procedures');
-}
+/** Greet a user */
+export const greet = (input: GreetInput) => call<string>('greet', input);
 
 // -----------------------------------------------------------------------------
-// Procedures
+// User Procedures
 // -----------------------------------------------------------------------------
 
-/** Root-level procedures */
-export const greet = (input: GreetInput) => 
-  call<string>('greet', input);
-
-/** User procedures (user.*) */
 export const user = {
+  /** Get user by ID */
   get: (input: GetUserInput) => call<User>('user.get', input),
+  
+  /** List all users */
   list: () => call<User[]>('user.list', {}),
+  
+  /** Create a new user */
   create: (input: CreateUserInput) => call<User>('user.create', input),
+  
+  /** Update an existing user */
   update: (input: UpdateUserInput) => call<User>('user.update', input),
+  
+  /** Delete a user */
   delete: (input: DeleteUserInput) => call<SuccessResponse>('user.delete', input),
 } as const;
 
 // -----------------------------------------------------------------------------
-// Flat API (for convenience)
+// Flat API (Alternative)
 // -----------------------------------------------------------------------------
 
 export const rpc = {
+  health,
   greet,
+  // User
   getUser: user.get,
   listUsers: user.list,
   createUser: user.create,

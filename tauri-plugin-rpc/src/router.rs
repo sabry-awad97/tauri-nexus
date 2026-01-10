@@ -1,7 +1,7 @@
 //! Router implementation with builder pattern
 
 use crate::{
-    handler::{into_boxed_handler, BoxedHandler, Handler},
+    handler::{into_boxed, BoxedHandler, Handler},
     middleware::{MiddlewareFn, Next, ProcedureType, Request, Response},
     plugin::DynRouter,
     Context, EmptyContext, RpcError, RpcResult,
@@ -18,7 +18,17 @@ struct Procedure<Ctx: Clone + Send + Sync + 'static> {
     procedure_type: ProcedureType,
 }
 
-/// Router with builder pattern
+/// Type-safe router with builder pattern
+/// 
+/// # Example
+/// ```rust,ignore
+/// let router = Router::new()
+///     .context(AppContext::default())
+///     .middleware(logging)
+///     .query("health", health_handler)
+///     .mutation("create", create_handler)
+///     .merge("users", users_router());
+/// ```
 pub struct Router<Ctx: Clone + Send + Sync + 'static = EmptyContext> {
     context: Option<Ctx>,
     procedures: HashMap<String, Procedure<Ctx>>,
@@ -46,6 +56,8 @@ impl Router<EmptyContext> {
 
 impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     /// Set the context for this router
+    /// 
+    /// The context is passed to all handlers and middleware.
     pub fn context<NewCtx: Clone + Send + Sync + 'static>(self, ctx: NewCtx) -> Router<NewCtx> {
         Router {
             context: Some(ctx),
@@ -56,6 +68,8 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     }
 
     /// Add middleware to the router
+    /// 
+    /// Middleware is executed in the order it's added.
     pub fn middleware<F, Fut>(mut self, f: F) -> Self
     where
         F: Fn(Context<Ctx>, Request, Next<Ctx>) -> Fut + Send + Sync + 'static,
@@ -79,7 +93,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         self.procedures.insert(
             full_path,
             Procedure {
-                handler: into_boxed_handler(handler),
+                handler: into_boxed(handler),
                 procedure_type: ProcedureType::Query,
             },
         );
@@ -98,7 +112,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         self.procedures.insert(
             full_path,
             Procedure {
-                handler: into_boxed_handler(handler),
+                handler: into_boxed(handler),
                 procedure_type: ProcedureType::Mutation,
             },
         );
@@ -106,6 +120,14 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     }
 
     /// Merge another router under a namespace
+    /// 
+    /// # Example
+    /// ```rust,ignore
+    /// let router = Router::new()
+    ///     .merge("users", users_router())
+    ///     .merge("posts", posts_router());
+    /// // Creates: users.get, users.list, posts.get, posts.list, etc.
+    /// ```
     pub fn merge<N: Into<String>>(mut self, namespace: N, other: Router<Ctx>) -> Self {
         let namespace = namespace.into();
         for (path, procedure) in other.procedures {
@@ -116,7 +138,6 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
             };
             self.procedures.insert(full_path, procedure);
         }
-        // Merge middleware
         self.middleware.extend(other.middleware);
         self
     }
@@ -129,14 +150,16 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         }
     }
 
-    /// Get the context
+    /// Get the context reference
     pub fn get_context(&self) -> Option<&Ctx> {
         self.context.as_ref()
     }
 
-    /// List all procedure paths
+    /// List all registered procedure paths
     pub fn procedures(&self) -> Vec<String> {
-        self.procedures.keys().cloned().collect()
+        let mut paths: Vec<_> = self.procedures.keys().cloned().collect();
+        paths.sort();
+        paths
     }
 
     /// Call a procedure by path
@@ -149,7 +172,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         let ctx = Context::new(
             self.context
                 .clone()
-                .ok_or_else(|| RpcError::internal("Router context not set"))?,
+                .ok_or_else(|| RpcError::internal("Router context not initialized"))?,
         );
 
         let request = Request {
@@ -158,14 +181,14 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
             input: input.clone(),
         };
 
-        // Build middleware chain
+        // Build the handler as the final step
         let handler = procedure.handler.clone();
         let final_handler: Next<Ctx> = Arc::new(move |ctx, req| {
             let handler = handler.clone();
             Box::pin(async move { (handler)(ctx, req.input).await })
         });
 
-        // Apply middleware in reverse order
+        // Apply middleware in reverse order (last added = innermost)
         let chain = self.middleware.iter().rev().fold(final_handler, |next, mw| {
             let mw = mw.clone();
             Arc::new(move |ctx, req| {
@@ -179,58 +202,13 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     }
 }
 
-/// Builder for creating routers with a specific namespace
-pub struct RouterBuilder<Ctx: Clone + Send + Sync + 'static> {
-    router: Router<Ctx>,
-}
-
-impl<Ctx: Clone + Send + Sync + 'static> RouterBuilder<Ctx> {
-    pub fn new(prefix: &str) -> Self {
-        Self {
-            router: Router {
-                context: None,
-                procedures: HashMap::new(),
-                middleware: Vec::new(),
-                prefix: prefix.to_string(),
-            },
-        }
-    }
-
-    pub fn query<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
-    where
-        N: Into<String>,
-        Input: DeserializeOwned + Send + 'static,
-        Output: Serialize + Send + 'static,
-        H: Handler<Ctx, Input, Output>,
-    {
-        self.router = self.router.query(name, handler);
-        self
-    }
-
-    pub fn mutation<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
-    where
-        N: Into<String>,
-        Input: DeserializeOwned + Send + 'static,
-        Output: Serialize + Send + 'static,
-        H: Handler<Ctx, Input, Output>,
-    {
-        self.router = self.router.mutation(name, handler);
-        self
-    }
-
-    pub fn build(self) -> Router<Ctx> {
-        self.router
-    }
-}
-
-
-// Implement DynRouter for Router
+// Implement DynRouter for type erasure
 impl<Ctx: Clone + Send + Sync + 'static> DynRouter for Router<Ctx> {
     fn call<'a>(
         &'a self,
         path: &'a str,
         input: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, RpcError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = RpcResult<serde_json::Value>> + Send + 'a>> {
         Box::pin(async move { Router::call(self, path, input).await })
     }
 
