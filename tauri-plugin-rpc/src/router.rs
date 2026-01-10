@@ -1,4 +1,33 @@
 //! Router implementation with builder pattern
+//!
+//! This module provides the [`Router`] and [`CompiledRouter`] types for building
+//! and executing RPC procedure handlers.
+//!
+//! # Router
+//!
+//! The [`Router`] type uses a builder pattern to configure procedures and middleware:
+//!
+//! ```rust,ignore
+//! let router = Router::new()
+//!     .context(AppContext::default())
+//!     .middleware(logging)
+//!     .query("health", health_handler)
+//!     .mutation("create", create_handler)
+//!     .subscription("events", events_handler)
+//!     .merge("users", users_router());
+//! ```
+//!
+//! # Compiled Router
+//!
+//! For optimized performance, compile the router to pre-build middleware chains:
+//!
+//! ```rust,ignore
+//! let compiled = router.compile();
+//! // Middleware chains are now pre-computed for O(1) execution
+//! ```
+//!
+//! Both `Router` and `CompiledRouter` implement [`DynRouter`] and can be passed
+//! to [`init`](crate::init) or [`init_with_config`](crate::init_with_config).
 
 use crate::{
     Context, EmptyContext, RpcError, RpcResult,

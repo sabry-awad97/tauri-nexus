@@ -105,11 +105,12 @@ async fn greet_handler(_ctx: Context<AppContext>, input: GreetInput) -> RpcResul
 async fn get_user(ctx: Context<AppContext>, input: GetUserInput) -> RpcResult<User> {
     ctx.db
         .get_user(input.id)
+        .await
         .ok_or_else(|| RpcError::not_found(format!("User {} not found", input.id)))
 }
 
 async fn list_users(ctx: Context<AppContext>, _: ()) -> RpcResult<Vec<User>> {
-    Ok(ctx.db.list_users())
+    Ok(ctx.db.list_users().await)
 }
 
 async fn create_user(ctx: Context<AppContext>, input: CreateUserInput) -> RpcResult<User> {
@@ -122,7 +123,7 @@ async fn create_user(ctx: Context<AppContext>, input: CreateUserInput) -> RpcRes
 
     ctx.db
         .create_user(&input.name, &input.email)
-        .ok_or_else(|| RpcError::internal("Failed to create user"))
+        .await
 }
 
 async fn update_user(ctx: Context<AppContext>, input: UpdateUserInput) -> RpcResult<User> {
@@ -134,6 +135,7 @@ async fn update_user(ctx: Context<AppContext>, input: UpdateUserInput) -> RpcRes
 
     ctx.db
         .update_user(input.id, input.name.as_deref(), input.email.as_deref())
+        .await
         .ok_or_else(|| RpcError::not_found(format!("User {} not found", input.id)))
 }
 
@@ -141,7 +143,7 @@ async fn delete_user(
     ctx: Context<AppContext>,
     input: DeleteUserInput,
 ) -> RpcResult<SuccessResponse> {
-    if ctx.db.delete_user(input.id) {
+    if ctx.db.delete_user(input.id).await {
         Ok(SuccessResponse::ok(format!("User {} deleted", input.id)))
     } else {
         Err(RpcError::not_found(format!("User {} not found", input.id)))

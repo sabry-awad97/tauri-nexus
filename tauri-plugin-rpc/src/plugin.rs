@@ -264,6 +264,11 @@ where
 
 /// Initialize the RPC plugin with a router and custom configuration
 /// 
+/// # Panics
+/// 
+/// Panics if the configuration is invalid (e.g., max_input_size is 0).
+/// Use `RpcConfig::validate()` to check configuration before passing it.
+/// 
 /// # Example
 /// ```rust,ignore
 /// use tauri_plugin_rpc::RpcConfig;
@@ -281,6 +286,11 @@ where
     R: Runtime,
     D: DynRouter + 'static,
 {
+    // Validate configuration at startup
+    if let Err(e) = config.validate() {
+        panic!("Invalid RPC configuration: {}", e);
+    }
+
     let router: Arc<dyn DynRouter> = Arc::new(router);
     let subscription_manager = Arc::new(SubscriptionManager::new());
 

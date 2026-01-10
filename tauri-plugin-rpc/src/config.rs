@@ -16,6 +16,36 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Error type for configuration validation failures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigValidationError {
+    /// max_input_size must be greater than 0
+    InvalidMaxInputSize,
+    /// default_channel_buffer must be greater than 0
+    InvalidChannelBuffer,
+    /// cleanup_interval_secs must be greater than 0
+    InvalidCleanupInterval,
+}
+
+impl fmt::Display for ConfigValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidMaxInputSize => {
+                write!(f, "max_input_size must be greater than 0")
+            }
+            Self::InvalidChannelBuffer => {
+                write!(f, "default_channel_buffer must be greater than 0")
+            }
+            Self::InvalidCleanupInterval => {
+                write!(f, "cleanup_interval_secs must be greater than 0")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigValidationError {}
 
 /// Strategy for handling backpressure when subscription channels are full.
 ///
@@ -124,6 +154,33 @@ impl RpcConfig {
     /// Create a new configuration with default values.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Validate the configuration and return an error if invalid.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `max_input_size` is 0
+    /// - `default_channel_buffer` is 0
+    /// - `cleanup_interval_secs` is 0
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let config = RpcConfig::new();
+    /// config.validate().expect("Config should be valid");
+    /// ```
+    pub fn validate(&self) -> Result<(), ConfigValidationError> {
+        if self.max_input_size == 0 {
+            return Err(ConfigValidationError::InvalidMaxInputSize);
+        }
+        if self.default_channel_buffer == 0 {
+            return Err(ConfigValidationError::InvalidChannelBuffer);
+        }
+        if self.cleanup_interval_secs == 0 {
+            return Err(ConfigValidationError::InvalidCleanupInterval);
+        }
+        Ok(())
     }
 
     /// Set the maximum input size in bytes.

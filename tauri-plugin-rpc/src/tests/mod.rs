@@ -17,3 +17,6 @@ pub mod validation_tests;
 
 #[cfg(test)]
 pub mod middleware_tests;
+
+#[cfg(test)]
+pub mod config_tests;
