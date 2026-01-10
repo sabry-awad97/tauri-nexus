@@ -30,6 +30,154 @@ enum Procedure<Ctx: Clone + Send + Sync + 'static> {
     },
 }
 
+// =============================================================================
+// Compiled Router
+// =============================================================================
+
+/// Pre-compiled middleware chain for a procedure
+struct CompiledChain<Ctx: Clone + Send + Sync + 'static> {
+    /// The final handler wrapped with all middleware
+    chain: Next<Ctx>,
+    /// Procedure type metadata
+    procedure_type: ProcedureType,
+}
+
+/// A compiled router with pre-computed middleware chains for optimized execution.
+///
+/// This struct is created by calling `Router::compile()` and provides O(1) lookup
+/// for procedure calls with pre-built middleware chains, eliminating per-request
+/// chain construction overhead.
+///
+/// # Example
+/// ```rust,ignore
+/// let router = Router::new()
+///     .context(AppContext::default())
+///     .middleware(logging)
+///     .query("health", health_handler)
+///     .compile();
+///
+/// // Use compiled router for optimized calls
+/// let result = router.call("health", json!(null)).await;
+/// ```
+pub struct CompiledRouter<Ctx: Clone + Send + Sync + 'static> {
+    /// Application context
+    context: Option<Ctx>,
+    /// Pre-compiled middleware chains by path (for queries/mutations)
+    compiled_chains: HashMap<String, CompiledChain<Ctx>>,
+    /// Subscription handlers (subscriptions don't use middleware chains)
+    subscriptions: HashMap<String, BoxedSubscriptionHandler<Ctx>>,
+}
+
+impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
+    /// Get the context reference
+    pub fn get_context(&self) -> Option<&Ctx> {
+        self.context.as_ref()
+    }
+
+    /// List all registered procedure paths
+    pub fn procedures(&self) -> Vec<String> {
+        let mut paths: Vec<_> = self.compiled_chains.keys()
+            .chain(self.subscriptions.keys())
+            .cloned()
+            .collect();
+        paths.sort();
+        paths
+    }
+
+    /// Check if a path is a subscription
+    pub fn is_subscription(&self, path: &str) -> bool {
+        self.subscriptions.contains_key(path)
+    }
+
+    /// Call a procedure by path using pre-compiled middleware chain
+    pub async fn call(&self, path: &str, input: serde_json::Value) -> RpcResult<serde_json::Value> {
+        // Check if it's a subscription first
+        if self.subscriptions.contains_key(path) {
+            return Err(RpcError::bad_request(
+                "Cannot call subscription procedure with 'call'. Use 'subscribe' instead.",
+            ));
+        }
+
+        let compiled = self
+            .compiled_chains
+            .get(path)
+            .ok_or_else(|| RpcError::procedure_not_found(path))?;
+
+        let ctx = Context::new(
+            self.context
+                .clone()
+                .ok_or_else(|| RpcError::internal("Router context not initialized"))?,
+        );
+
+        let request = Request {
+            path: path.to_string(),
+            procedure_type: compiled.procedure_type.clone(),
+            input,
+        };
+
+        // Use pre-compiled chain directly - no per-request chain building
+        (compiled.chain.clone())(ctx, request).await
+    }
+
+    /// Subscribe to a streaming procedure
+    pub async fn subscribe(
+        &self,
+        path: &str,
+        input: serde_json::Value,
+        sub_ctx: SubscriptionContext,
+    ) -> RpcResult<mpsc::Receiver<Event<serde_json::Value>>> {
+        let handler = self
+            .subscriptions
+            .get(path)
+            .ok_or_else(|| RpcError::procedure_not_found(path))?;
+
+        // Check if it's actually a subscription
+        if self.compiled_chains.contains_key(path) {
+            return Err(RpcError::bad_request(
+                "Cannot subscribe to non-subscription procedure. Use 'call' instead.",
+            ));
+        }
+
+        let ctx = Context::new(
+            self.context
+                .clone()
+                .ok_or_else(|| RpcError::internal("Router context not initialized"))?,
+        );
+
+        (handler)(ctx, sub_ctx, input).await
+    }
+}
+
+// Implement DynRouter for CompiledRouter
+impl<Ctx: Clone + Send + Sync + 'static> DynRouter for CompiledRouter<Ctx> {
+    fn call<'a>(
+        &'a self,
+        path: &'a str,
+        input: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = RpcResult<serde_json::Value>> + Send + 'a>> {
+        Box::pin(async move { CompiledRouter::call(self, path, input).await })
+    }
+
+    fn procedures(&self) -> Vec<String> {
+        CompiledRouter::procedures(self)
+    }
+
+    fn is_subscription(&self, path: &str) -> bool {
+        CompiledRouter::is_subscription(self, path)
+    }
+
+    fn subscribe<'a>(
+        &'a self,
+        path: &'a str,
+        input: serde_json::Value,
+        ctx: SubscriptionContext,
+    ) -> Pin<
+        Box<dyn Future<Output = RpcResult<mpsc::Receiver<Event<serde_json::Value>>>> + Send + 'a>,
+    > {
+        Box::pin(async move { CompiledRouter::subscribe(self, path, input, ctx).await })
+    }
+}
+
 /// Type-safe router with builder pattern
 ///
 /// # Example
@@ -216,6 +364,72 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
             self.procedures.get(path),
             Some(Procedure::Subscription { .. })
         )
+    }
+
+    /// Compile the router for optimized execution.
+    ///
+    /// This pre-computes middleware chains for all procedures at build time,
+    /// eliminating per-request chain construction overhead. The compiled router
+    /// provides O(1) lookup and execution for procedure calls.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let router = Router::new()
+    ///     .context(AppContext::default())
+    ///     .middleware(logging)
+    ///     .middleware(auth)
+    ///     .query("health", health_handler)
+    ///     .mutation("create", create_handler)
+    ///     .compile();
+    ///
+    /// // Middleware chains are pre-built, no per-request overhead
+    /// let result = router.call("health", json!(null)).await;
+    /// ```
+    pub fn compile(self) -> CompiledRouter<Ctx> {
+        let mut compiled_chains = HashMap::new();
+        let mut subscriptions = HashMap::new();
+
+        for (path, procedure) in self.procedures {
+            match procedure {
+                Procedure::Handler { handler, procedure_type } => {
+                    // Build the handler as the final step
+                    let final_handler: Next<Ctx> = Arc::new(move |ctx, req| {
+                        let handler = handler.clone();
+                        Box::pin(async move { (handler)(ctx, req.input).await })
+                    });
+
+                    // Apply middleware in reverse order (last added = innermost)
+                    // This builds the chain once at compile time
+                    let chain = self
+                        .middleware
+                        .iter()
+                        .rev()
+                        .fold(final_handler, |next, mw| {
+                            let mw = mw.clone();
+                            Arc::new(move |ctx, req| {
+                                let mw = mw.clone();
+                                let next = next.clone();
+                                Box::pin(async move { (mw)(ctx, req, next).await })
+                            })
+                        });
+
+                    compiled_chains.insert(
+                        path,
+                        CompiledChain { chain, procedure_type },
+                    );
+                }
+                Procedure::Subscription { handler } => {
+                    // Subscriptions don't use middleware chains
+                    subscriptions.insert(path, handler);
+                }
+            }
+        }
+
+        CompiledRouter {
+            context: self.context,
+            compiled_chains,
+            subscriptions,
+        }
     }
 
     /// Call a procedure by path

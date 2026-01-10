@@ -619,14 +619,26 @@ impl<T: Clone + Send + 'static> EventPublisher<T> {
         Self { sender, capacity }
     }
 
-    /// Publish an event to all subscribers
+    /// Publish an event to all subscribers.
+    ///
+    /// Returns `Ok(count)` with the number of subscribers that received the event,
+    /// or `Err` if there are no active subscribers.
+    ///
+    /// This method handles the case of no subscribers gracefully by returning an
+    /// error instead of panicking. A trace-level log is emitted when publish fails.
     pub fn publish(&self, event: Event<T>) -> Result<usize, RpcError> {
-        self.sender
-            .send(event)
-            .map_err(|_| RpcError::internal("No active subscribers"))
+        match self.sender.send(event) {
+            Ok(count) => Ok(count),
+            Err(_) => {
+                tracing::trace!("EventPublisher::publish failed: no active subscribers");
+                Err(RpcError::internal("No active subscribers"))
+            }
+        }
     }
 
-    /// Publish data as an event
+    /// Publish data as an event.
+    ///
+    /// This is a convenience method that wraps the data in an [`Event`] and publishes it.
     pub fn publish_data(&self, data: T) -> Result<usize, RpcError> {
         self.publish(Event::new(data))
     }
@@ -665,12 +677,26 @@ pub struct EventSubscriber<T: Clone + Send + 'static> {
 }
 
 impl<T: Clone + Send + 'static> EventSubscriber<T> {
-    /// Receive the next event
+    /// Receive the next event.
+    ///
+    /// This method handles lagged messages gracefully by skipping them and
+    /// continuing to receive the most recent available messages. A trace-level
+    /// log is emitted when messages are skipped due to lag.
+    ///
+    /// Returns `Some(event)` when an event is received, or `None` when the
+    /// channel is closed.
     pub async fn recv(&mut self) -> Option<Event<T>> {
         loop {
             match self.receiver.recv().await {
                 Ok(event) => return Some(event),
-                Err(broadcast::error::RecvError::Lagged(_)) => continue, // Skip lagged messages
+                Err(broadcast::error::RecvError::Lagged(count)) => {
+                    // Skip lagged messages and continue receiving
+                    tracing::trace!(
+                        "EventSubscriber lagged behind, skipped {} messages",
+                        count
+                    );
+                    continue;
+                }
                 Err(broadcast::error::RecvError::Closed) => return None,
             }
         }

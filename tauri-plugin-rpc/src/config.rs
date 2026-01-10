@@ -4,17 +4,56 @@
 //!
 //! # Example
 //! ```rust,ignore
-//! use tauri_plugin_rpc::RpcConfig;
+//! use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy};
 //!
 //! let config = RpcConfig {
 //!     max_input_size: 512 * 1024,  // 512KB
 //!     default_channel_buffer: 64,
+//!     backpressure_strategy: BackpressureStrategy::DropOldest,
 //!     debug_logging: true,
 //!     cleanup_interval_secs: 30,
 //! };
 //! ```
 
 use serde::{Deserialize, Serialize};
+
+/// Strategy for handling backpressure when subscription channels are full.
+///
+/// When a subscription channel reaches its buffer capacity, this strategy
+/// determines how new events are handled.
+///
+/// # Variants
+///
+/// * `Block` - Block the producer until space is available. This ensures no
+///   events are lost but may slow down the producer.
+///
+/// * `DropOldest` - Drop the oldest events in the buffer to make room for new
+///   ones. This ensures the producer is never blocked but may lose events.
+///
+/// * `Error` - Return an error when the channel is full. This allows the
+///   producer to handle backpressure explicitly.
+///
+/// # Example
+/// ```rust,ignore
+/// use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy};
+///
+/// let config = RpcConfig::new()
+///     .with_backpressure_strategy(BackpressureStrategy::DropOldest);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BackpressureStrategy {
+    /// Block the producer until space is available in the channel.
+    /// This ensures no events are lost but may slow down the producer.
+    #[default]
+    Block,
+    /// Drop the oldest events in the buffer to make room for new ones.
+    /// This ensures the producer is never blocked but may lose events.
+    DropOldest,
+    /// Return an error when the channel is full.
+    /// This allows the producer to handle backpressure explicitly.
+    Error,
+}
 
 /// Plugin configuration for customizing RPC behavior.
 ///
@@ -30,6 +69,9 @@ use serde::{Deserialize, Serialize};
 ///   Larger values allow more events to be queued before backpressure is applied.
 ///   Default: 32 events.
 ///
+/// * `backpressure_strategy` - Strategy for handling backpressure when subscription
+///   channels are full. Default: `Block`.
+///
 /// * `debug_logging` - Enable verbose debug logging for troubleshooting.
 ///   Default: false.
 ///
@@ -38,7 +80,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// # Example
 /// ```rust,ignore
-/// use tauri_plugin_rpc::RpcConfig;
+/// use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy};
 ///
 /// // Use defaults
 /// let config = RpcConfig::default();
@@ -47,6 +89,7 @@ use serde::{Deserialize, Serialize};
 /// let config = RpcConfig {
 ///     max_input_size: 2 * 1024 * 1024,  // 2MB
 ///     default_channel_buffer: 128,
+///     backpressure_strategy: BackpressureStrategy::DropOldest,
 ///     debug_logging: cfg!(debug_assertions),
 ///     cleanup_interval_secs: 120,
 /// };
@@ -57,6 +100,8 @@ pub struct RpcConfig {
     pub max_input_size: usize,
     /// Default subscription channel buffer size (default: 32)
     pub default_channel_buffer: usize,
+    /// Strategy for handling backpressure when channels are full (default: Block)
+    pub backpressure_strategy: BackpressureStrategy,
     /// Enable debug logging (default: false)
     pub debug_logging: bool,
     /// Subscription cleanup interval in seconds (default: 60)
@@ -68,6 +113,7 @@ impl Default for RpcConfig {
         Self {
             max_input_size: 1024 * 1024, // 1MB
             default_channel_buffer: 32,
+            backpressure_strategy: BackpressureStrategy::default(),
             debug_logging: false,
             cleanup_interval_secs: 60,
         }
@@ -99,6 +145,20 @@ impl RpcConfig {
     /// ```
     pub fn with_channel_buffer(mut self, size: usize) -> Self {
         self.default_channel_buffer = size;
+        self
+    }
+
+    /// Set the backpressure strategy for subscription channels.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use tauri_plugin_rpc::BackpressureStrategy;
+    ///
+    /// let config = RpcConfig::new()
+    ///     .with_backpressure_strategy(BackpressureStrategy::DropOldest);
+    /// ```
+    pub fn with_backpressure_strategy(mut self, strategy: BackpressureStrategy) -> Self {
+        self.backpressure_strategy = strategy;
         self
     }
 

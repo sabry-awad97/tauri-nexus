@@ -40,7 +40,7 @@ pub mod types;
 mod tests;
 
 // Public API
-pub use config::RpcConfig;
+pub use config::{BackpressureStrategy, RpcConfig};
 pub use context::{Context, EmptyContext};
 pub use error::{RpcError, RpcErrorCode, RpcResult};
 pub use handler::Handler;
@@ -49,7 +49,7 @@ pub use plugin::{
     DynRouter, SubscribeRequest, SubscriptionFuture, init, init_with_config, 
     validate_input_size, validate_path, validate_subscription_id,
 };
-pub use router::Router;
+pub use router::{CompiledRouter, Router};
 pub use subscription::{
     CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, EventSender,
     EventStream, EventSubscriber, SubscriptionContext, SubscriptionEvent, SubscriptionHandle,
@@ -61,7 +61,9 @@ pub use types::*;
 /// Prelude for convenient imports
 pub mod prelude {
     pub use crate::{
+        BackpressureStrategy,
         ChannelPublisher,
+        CompiledRouter,
         Context,
         EmptyContext,
         // Subscription types

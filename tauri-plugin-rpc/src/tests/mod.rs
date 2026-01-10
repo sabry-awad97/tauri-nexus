@@ -14,3 +14,6 @@ pub mod error_tests;
 
 #[cfg(test)]
 pub mod validation_tests;
+
+#[cfg(test)]
+pub mod middleware_tests;
