@@ -293,11 +293,16 @@ describe('call()', () => {
 
   // Property: call always returns result or throws RpcError
   it('property: call result is always valid or throws RpcError', async () => {
+    // Generate valid paths (alphanumeric, underscore, dot, no leading/trailing dots)
+    const validPathArb = fc.stringMatching(/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)*$/);
+    
     await fc.assert(
       fc.asyncProperty(
-        fc.string({ minLength: 1 }),
+        validPathArb,
         fc.anything(),
         async (path, input) => {
+          // Reset mock for each iteration
+          mockInvoke.mockReset();
           // Mock success case
           mockInvoke.mockResolvedValueOnce({ success: true });
           
@@ -361,9 +366,12 @@ describe('Middleware', () => {
   });
 
   it('should allow middleware to modify response', async () => {
+    // Reset mock and config first
+    mockInvoke.mockReset();
+    
     const middleware: Middleware = async (ctx, next) => {
       const result = await next();
-      return { ...result as object, modified: true };
+      return { ...(result as object), modified: true };
     };
     
     configureRpc({ middleware: [middleware] });
@@ -375,6 +383,9 @@ describe('Middleware', () => {
   });
 
   it('should allow middleware to handle errors', async () => {
+    // Reset mock and config first
+    mockInvoke.mockReset();
+    
     const middleware: Middleware = async (ctx, next) => {
       try {
         return await next();
@@ -398,8 +409,9 @@ describe('Middleware', () => {
 
 describe('Lifecycle Hooks', () => {
   it('should call onRequest before each request', async () => {
+    mockInvoke.mockReset();
     const onRequest = vi.fn();
-    configureRpc({ onRequest });
+    configureRpc({ onRequest, middleware: [] });
     mockInvoke.mockResolvedValueOnce('result');
     
     await call('test.path', { data: 'value' });
@@ -413,8 +425,9 @@ describe('Lifecycle Hooks', () => {
   });
 
   it('should call onResponse after successful response', async () => {
+    mockInvoke.mockReset();
     const onResponse = vi.fn();
-    configureRpc({ onResponse });
+    configureRpc({ onResponse, middleware: [] });
     mockInvoke.mockResolvedValueOnce({ success: true });
     
     await call('test');
@@ -426,8 +439,9 @@ describe('Lifecycle Hooks', () => {
   });
 
   it('should call onError on failure', async () => {
+    mockInvoke.mockReset();
     const onError = vi.fn();
-    configureRpc({ onError });
+    configureRpc({ onError, middleware: [] });
     mockInvoke.mockRejectedValueOnce(JSON.stringify({ code: 'ERROR', message: 'Failed' }));
     
     await expect(call('test')).rejects.toThrow();
@@ -445,6 +459,8 @@ describe('Lifecycle Hooks', () => {
 
 describe('Client Proxy', () => {
   it('should build correct paths for nested procedures', async () => {
+    mockInvoke.mockReset();
+    configureRpc({ middleware: [] });
     const client = createClient<TestContract>();
     mockInvoke.mockResolvedValueOnce({ id: 1, name: 'John' });
     
@@ -457,6 +473,8 @@ describe('Client Proxy', () => {
   });
 
   it('should build correct paths for root procedures', async () => {
+    mockInvoke.mockReset();
+    configureRpc({ middleware: [] });
     const client = createClient<TestContract>();
     mockInvoke.mockResolvedValueOnce({ status: 'ok' });
     

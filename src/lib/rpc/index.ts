@@ -104,6 +104,8 @@ export {
   // Core functions
   call,
   subscribe,
+  // Validation
+  validatePath,
   // Error utilities
   isRpcError,
   hasErrorCode,
