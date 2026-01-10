@@ -32,7 +32,11 @@ mod handler;
 pub mod middleware;
 mod plugin;
 mod router;
+pub mod subscription;
 pub mod types;
+
+#[cfg(test)]
+mod tests;
 
 // Public API
 pub use context::{Context, EmptyContext};
@@ -41,6 +45,12 @@ pub use handler::Handler;
 pub use middleware::{Middleware, Next, Request, ProcedureType};
 pub use plugin::{init, DynRouter};
 pub use router::Router;
+pub use subscription::{
+    Event, EventMeta, EventPublisher, EventSender, EventStream, EventSubscriber,
+    SubscriptionContext, SubscriptionEvent, SubscriptionHandler, SubscriptionHandle,
+    SubscriptionManager, ChannelPublisher, CancellationSignal,
+    event_channel, generate_subscription_id, with_event_meta,
+};
 pub use types::*;
 
 /// Prelude for convenient imports
@@ -49,6 +59,11 @@ pub mod prelude {
         Context, EmptyContext, Handler, Middleware, Next, 
         ProcedureType, Request, RpcError, RpcResult, Router,
         PaginatedResponse, PaginationInput, SuccessResponse,
+        // Subscription types
+        Event, EventMeta, EventPublisher, EventSender, EventStream,
+        SubscriptionContext, SubscriptionEvent, SubscriptionHandler,
+        SubscriptionManager, ChannelPublisher,
+        event_channel, generate_subscription_id, with_event_meta,
         init,
     };
 }

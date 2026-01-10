@@ -4,6 +4,10 @@ use crate::{
     handler::{into_boxed, BoxedHandler, Handler},
     middleware::{MiddlewareFn, Next, ProcedureType, Request, Response},
     plugin::DynRouter,
+    subscription::{
+        into_boxed_subscription, BoxedSubscriptionHandler, Event, SubscriptionContext,
+        SubscriptionHandler,
+    },
     Context, EmptyContext, RpcError, RpcResult,
 };
 use serde::{de::DeserializeOwned, Serialize};
@@ -11,11 +15,19 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 /// Procedure definition
-struct Procedure<Ctx: Clone + Send + Sync + 'static> {
-    handler: BoxedHandler<Ctx>,
-    procedure_type: ProcedureType,
+enum Procedure<Ctx: Clone + Send + Sync + 'static> {
+    /// Query or Mutation procedure
+    Handler {
+        handler: BoxedHandler<Ctx>,
+        procedure_type: ProcedureType,
+    },
+    /// Subscription procedure
+    Subscription {
+        handler: BoxedSubscriptionHandler<Ctx>,
+    },
 }
 
 /// Type-safe router with builder pattern
@@ -27,6 +39,7 @@ struct Procedure<Ctx: Clone + Send + Sync + 'static> {
 ///     .middleware(logging)
 ///     .query("health", health_handler)
 ///     .mutation("create", create_handler)
+///     .subscription("events", events_handler)
 ///     .merge("users", users_router());
 /// ```
 pub struct Router<Ctx: Clone + Send + Sync + 'static = EmptyContext> {
@@ -92,7 +105,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         let full_path = self.make_path(&name.into());
         self.procedures.insert(
             full_path,
-            Procedure {
+            Procedure::Handler {
                 handler: into_boxed(handler),
                 procedure_type: ProcedureType::Query,
             },
@@ -111,9 +124,45 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         let full_path = self.make_path(&name.into());
         self.procedures.insert(
             full_path,
-            Procedure {
+            Procedure::Handler {
                 handler: into_boxed(handler),
                 procedure_type: ProcedureType::Mutation,
+            },
+        );
+        self
+    }
+
+    /// Add a subscription procedure (streaming)
+    /// 
+    /// # Example
+    /// ```rust,ignore
+    /// router.subscription("events", |ctx, sub_ctx, input: EventInput| async move {
+    ///     let (tx, rx) = event_channel(32);
+    ///     
+    ///     tokio::spawn(async move {
+    ///         loop {
+    ///             if sub_ctx.is_cancelled() {
+    ///                 break;
+    ///             }
+    ///             tx.send(Event::new(data)).await.ok();
+    ///         }
+    ///     });
+    ///     
+    ///     Ok(rx)
+    /// })
+    /// ```
+    pub fn subscription<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
+    where
+        N: Into<String>,
+        Input: DeserializeOwned + Send + 'static,
+        Output: Serialize + Send + 'static,
+        H: SubscriptionHandler<Ctx, Input, Output>,
+    {
+        let full_path = self.make_path(&name.into());
+        self.procedures.insert(
+            full_path,
+            Procedure::Subscription {
+                handler: into_boxed_subscription(handler),
             },
         );
         self
@@ -162,6 +211,11 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         paths
     }
 
+    /// Check if a path is a subscription
+    pub fn is_subscription(&self, path: &str) -> bool {
+        matches!(self.procedures.get(path), Some(Procedure::Subscription { .. }))
+    }
+
     /// Call a procedure by path
     pub async fn call(&self, path: &str, input: serde_json::Value) -> RpcResult<serde_json::Value> {
         let procedure = self
@@ -169,36 +223,75 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
             .get(path)
             .ok_or_else(|| RpcError::procedure_not_found(path))?;
 
-        let ctx = Context::new(
-            self.context
-                .clone()
-                .ok_or_else(|| RpcError::internal("Router context not initialized"))?,
-        );
+        match procedure {
+            Procedure::Handler { handler, procedure_type } => {
+                let ctx = Context::new(
+                    self.context
+                        .clone()
+                        .ok_or_else(|| RpcError::internal("Router context not initialized"))?,
+                );
 
-        let request = Request {
-            path: path.to_string(),
-            procedure_type: procedure.procedure_type.clone(),
-            input: input.clone(),
-        };
+                let request = Request {
+                    path: path.to_string(),
+                    procedure_type: procedure_type.clone(),
+                    input: input.clone(),
+                };
 
-        // Build the handler as the final step
-        let handler = procedure.handler.clone();
-        let final_handler: Next<Ctx> = Arc::new(move |ctx, req| {
-            let handler = handler.clone();
-            Box::pin(async move { (handler)(ctx, req.input).await })
-        });
+                // Build the handler as the final step
+                let handler = handler.clone();
+                let final_handler: Next<Ctx> = Arc::new(move |ctx, req| {
+                    let handler = handler.clone();
+                    Box::pin(async move { (handler)(ctx, req.input).await })
+                });
 
-        // Apply middleware in reverse order (last added = innermost)
-        let chain = self.middleware.iter().rev().fold(final_handler, |next, mw| {
-            let mw = mw.clone();
-            Arc::new(move |ctx, req| {
-                let mw = mw.clone();
-                let next = next.clone();
-                Box::pin(async move { (mw)(ctx, req, next).await })
-            })
-        });
+                // Apply middleware in reverse order (last added = innermost)
+                let chain = self.middleware.iter().rev().fold(final_handler, |next, mw| {
+                    let mw = mw.clone();
+                    Arc::new(move |ctx, req| {
+                        let mw = mw.clone();
+                        let next = next.clone();
+                        Box::pin(async move { (mw)(ctx, req, next).await })
+                    })
+                });
 
-        chain(ctx, request).await
+                chain(ctx, request).await
+            }
+            Procedure::Subscription { .. } => {
+                Err(RpcError::bad_request(
+                    "Cannot call subscription procedure with 'call'. Use 'subscribe' instead.",
+                ))
+            }
+        }
+    }
+
+    /// Subscribe to a streaming procedure
+    pub async fn subscribe(
+        &self,
+        path: &str,
+        input: serde_json::Value,
+        sub_ctx: SubscriptionContext,
+    ) -> RpcResult<mpsc::Receiver<Event<serde_json::Value>>> {
+        let procedure = self
+            .procedures
+            .get(path)
+            .ok_or_else(|| RpcError::procedure_not_found(path))?;
+
+        match procedure {
+            Procedure::Subscription { handler } => {
+                let ctx = Context::new(
+                    self.context
+                        .clone()
+                        .ok_or_else(|| RpcError::internal("Router context not initialized"))?,
+                );
+
+                (handler)(ctx, sub_ctx, input).await
+            }
+            Procedure::Handler { .. } => {
+                Err(RpcError::bad_request(
+                    "Cannot subscribe to non-subscription procedure. Use 'call' instead.",
+                ))
+            }
+        }
     }
 }
 
@@ -214,5 +307,18 @@ impl<Ctx: Clone + Send + Sync + 'static> DynRouter for Router<Ctx> {
 
     fn procedures(&self) -> Vec<String> {
         Router::procedures(self)
+    }
+
+    fn is_subscription(&self, path: &str) -> bool {
+        Router::is_subscription(self, path)
+    }
+
+    fn subscribe<'a>(
+        &'a self,
+        path: &'a str,
+        input: serde_json::Value,
+        ctx: SubscriptionContext,
+    ) -> Pin<Box<dyn Future<Output = RpcResult<mpsc::Receiver<Event<serde_json::Value>>>> + Send + 'a>> {
+        Box::pin(async move { Router::subscribe(self, path, input, ctx).await })
     }
 }
