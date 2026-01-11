@@ -3,9 +3,10 @@
 // =============================================================================
 // Displays a single RPC procedure with expandable details.
 
-import type { ProcedureSchema } from './types';
-import { TypeRenderer } from './TypeRenderer';
-import { getTypeLabel, getTypeBadgeClass } from './utils';
+import type { ProcedureSchema } from "./types";
+import { TypeRenderer } from "./TypeRenderer";
+import { ProcedureTester } from "./ProcedureTester";
+import { getTypeLabel, getTypeBadgeClass } from "./utils";
 
 export interface ProcedureCardProps {
   /** Procedure path (e.g., "user.get") */
@@ -32,7 +33,7 @@ export function ProcedureCard({
 
   return (
     <div
-      className={`procedure-card ${expanded ? 'expanded' : ''}`}
+      className={`procedure-card ${expanded ? "expanded" : ""}`}
       data-testid={`procedure-${path}`}
     >
       <button
@@ -42,14 +43,21 @@ export function ProcedureCard({
         type="button"
       >
         <div className="procedure-header-left">
-          <span className={`procedure-badge ${badgeClass}`} data-testid="type-badge">
+          <span
+            className={`procedure-badge ${badgeClass}`}
+            data-testid="type-badge"
+          >
             {typeLabel}
           </span>
           <span className="procedure-path" data-testid="procedure-path">
             {path}
           </span>
           {schema.deprecated && (
-            <span className="procedure-deprecated" data-testid="deprecated-indicator" title="Deprecated">
+            <span
+              className="procedure-deprecated"
+              data-testid="deprecated-indicator"
+              title="Deprecated"
+            >
               ⚠️ Deprecated
             </span>
           )}
@@ -62,9 +70,7 @@ export function ProcedureCard({
                 : schema.description}
             </span>
           )}
-          <span className="procedure-expand-icon">
-            {expanded ? '▼' : '▶'}
-          </span>
+          <span className="procedure-expand-icon">{expanded ? "▼" : "▶"}</span>
         </div>
       </button>
 
@@ -88,7 +94,10 @@ export function ProcedureCard({
           )}
 
           {schema.input && (
-            <div className="procedure-schema-section" data-testid="input-schema">
+            <div
+              className="procedure-schema-section"
+              data-testid="input-schema"
+            >
               <span className="procedure-section-label">Input:</span>
               <div className="procedure-schema-content">
                 <TypeRenderer schema={schema.input} showExamples={true} />
@@ -97,7 +106,10 @@ export function ProcedureCard({
           )}
 
           {schema.output && (
-            <div className="procedure-schema-section" data-testid="output-schema">
+            <div
+              className="procedure-schema-section"
+              data-testid="output-schema"
+            >
               <span className="procedure-section-label">Output:</span>
               <div className="procedure-schema-content">
                 <TypeRenderer schema={schema.output} showExamples={true} />
@@ -113,6 +125,8 @@ export function ProcedureCard({
               </pre>
             </div>
           )}
+
+          <ProcedureTester path={path} inputSchema={schema.input} />
         </div>
       )}
     </div>

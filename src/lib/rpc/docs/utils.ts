@@ -10,15 +10,16 @@ import type {
   ProcedureType,
   FilterState,
   FilterResult,
-} from './types';
+  TypeSchema,
+} from "./types";
 
 /**
  * Extract the namespace from a procedure path.
  * For "user.get" returns "user", for "health" returns "" (root level).
  */
 export function getNamespace(path: string): string {
-  const lastDotIndex = path.lastIndexOf('.');
-  return lastDotIndex === -1 ? '' : path.substring(0, lastDotIndex);
+  const lastDotIndex = path.lastIndexOf(".");
+  return lastDotIndex === -1 ? "" : path.substring(0, lastDotIndex);
 }
 
 /**
@@ -26,16 +27,16 @@ export function getNamespace(path: string): string {
  * For "user.get" returns "get", for "health" returns "health".
  */
 export function getProcedureName(path: string): string {
-  const lastDotIndex = path.lastIndexOf('.');
+  const lastDotIndex = path.lastIndexOf(".");
   return lastDotIndex === -1 ? path : path.substring(lastDotIndex + 1);
 }
 
 /**
  * Group procedures by their namespace prefix.
- * 
+ *
  * @param procedures - Record of procedure path to schema
  * @returns Array of procedure groups sorted by namespace
- * 
+ *
  * @example
  * ```typescript
  * const groups = groupProcedures({
@@ -51,7 +52,7 @@ export function getProcedureName(path: string): string {
  * ```
  */
 export function groupProcedures(
-  procedures: Record<string, ProcedureSchema>
+  procedures: Record<string, ProcedureSchema>,
 ): ProcedureGroup[] {
   const groupMap = new Map<string, ProcedureEntry[]>();
 
@@ -76,8 +77,8 @@ export function groupProcedures(
 
   // Sort groups: root level first, then alphabetically
   groups.sort((a, b) => {
-    if (a.namespace === '' && b.namespace !== '') return -1;
-    if (a.namespace !== '' && b.namespace === '') return 1;
+    if (a.namespace === "" && b.namespace !== "") return -1;
+    if (a.namespace !== "" && b.namespace === "") return 1;
     return a.namespace.localeCompare(b.namespace);
   });
 
@@ -90,29 +91,33 @@ export function groupProcedures(
  */
 function matchesSearch(entry: ProcedureEntry, search: string): boolean {
   if (!search) return true;
-  
+
   const lowerSearch = search.toLowerCase();
   const pathMatch = entry.path.toLowerCase().includes(lowerSearch);
-  const descMatch = entry.schema.description?.toLowerCase().includes(lowerSearch) ?? false;
-  
+  const descMatch =
+    entry.schema.description?.toLowerCase().includes(lowerSearch) ?? false;
+
   return pathMatch || descMatch;
 }
 
 /**
  * Check if a procedure matches the type filter.
  */
-function matchesType(entry: ProcedureEntry, typeFilter: ProcedureType | 'all'): boolean {
-  if (typeFilter === 'all') return true;
+function matchesType(
+  entry: ProcedureEntry,
+  typeFilter: ProcedureType | "all",
+): boolean {
+  if (typeFilter === "all") return true;
   return entry.schema.procedure_type === typeFilter;
 }
 
 /**
  * Filter procedures by search query and type.
- * 
+ *
  * @param procedures - Record of procedure path to schema
  * @param filter - Filter state with search and typeFilter
  * @returns Filtered procedures with counts
- * 
+ *
  * @example
  * ```typescript
  * const result = filterProcedures(procedures, {
@@ -124,7 +129,7 @@ function matchesType(entry: ProcedureEntry, typeFilter: ProcedureType | 'all'): 
  */
 export function filterProcedures(
   procedures: Record<string, ProcedureSchema>,
-  filter: FilterState
+  filter: FilterState,
 ): FilterResult {
   const entries = Object.entries(procedures).map(([path, schema]) => ({
     path,
@@ -132,10 +137,11 @@ export function filterProcedures(
   }));
 
   const totalCount = entries.length;
-  
+
   const filtered = entries.filter(
     (entry) =>
-      matchesSearch(entry, filter.search) && matchesType(entry, filter.typeFilter)
+      matchesSearch(entry, filter.search) &&
+      matchesType(entry, filter.typeFilter),
   );
 
   return {
@@ -150,12 +156,12 @@ export function filterProcedures(
  */
 export function getTypeLabel(type: ProcedureType): string {
   switch (type) {
-    case 'query':
-      return 'Query';
-    case 'mutation':
-      return 'Mutation';
-    case 'subscription':
-      return 'Subscription';
+    case "query":
+      return "Query";
+    case "mutation":
+      return "Mutation";
+    case "subscription":
+      return "Subscription";
   }
 }
 
@@ -164,11 +170,96 @@ export function getTypeLabel(type: ProcedureType): string {
  */
 export function getTypeBadgeClass(type: ProcedureType): string {
   switch (type) {
-    case 'query':
-      return 'badge-query';
-    case 'mutation':
-      return 'badge-mutation';
-    case 'subscription':
-      return 'badge-subscription';
+    case "query":
+      return "badge-query";
+    case "mutation":
+      return "badge-mutation";
+    case "subscription":
+      return "badge-subscription";
   }
+}
+
+/**
+ * Generate a placeholder value for a TypeSchema.
+ * Used to show expected input structure in the procedure tester.
+ *
+ * @param schema - The type schema to generate placeholder for
+ * @returns A placeholder value matching the schema structure
+ */
+export function generatePlaceholder(schema?: TypeSchema): unknown {
+  if (!schema) {
+    return {};
+  }
+
+  switch (schema.type) {
+    case "object": {
+      if (!schema.properties) {
+        return {};
+      }
+      const obj: Record<string, unknown> = {};
+      for (const [key, propSchema] of Object.entries(schema.properties)) {
+        obj[key] = generatePlaceholder(propSchema);
+      }
+      return obj;
+    }
+
+    case "array": {
+      if (schema.items) {
+        return [generatePlaceholder(schema.items)];
+      }
+      return [];
+    }
+
+    case "string": {
+      if (schema.enum && schema.enum.length > 0) {
+        return schema.enum[0];
+      }
+      if (schema.example !== undefined) {
+        return schema.example;
+      }
+      if (schema.format === "email") return "user@example.com";
+      if (schema.format === "uuid")
+        return "00000000-0000-0000-0000-000000000000";
+      if (schema.format === "date-time") return "2024-01-01T00:00:00Z";
+      if (schema.format === "date") return "2024-01-01";
+      if (schema.format === "uri") return "https://example.com";
+      return "";
+    }
+
+    case "number":
+    case "integer": {
+      if (schema.example !== undefined) {
+        return schema.example;
+      }
+      if (schema.minimum !== undefined) {
+        return schema.minimum;
+      }
+      return 0;
+    }
+
+    case "boolean": {
+      if (schema.example !== undefined) {
+        return schema.example;
+      }
+      return false;
+    }
+
+    case "null":
+      return null;
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Generate a JSON placeholder string for a TypeSchema.
+ * Returns formatted JSON suitable for display in an input editor.
+ *
+ * @param schema - The type schema to generate placeholder for
+ * @returns Formatted JSON string
+ */
+export function generatePlaceholderJson(schema?: TypeSchema): string {
+  const placeholder = generatePlaceholder(schema);
+  return JSON.stringify(placeholder, null, 2);
 }

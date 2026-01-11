@@ -3,19 +3,19 @@
 // =============================================================================
 // Tests using fast-check to verify universal properties of ApiDocs.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as fc from 'fast-check';
-import { render, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ApiDocs } from '../ApiDocs';
-import type { RouterSchema, ProcedureSchema, ProcedureType } from '../types';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as fc from "fast-check";
+import { render, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ApiDocs } from "../ApiDocs";
+import type { RouterSchema, ProcedureSchema, ProcedureType } from "../types";
 
 // Mock Tauri invoke
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from "@tauri-apps/api/core";
 
 // =============================================================================
 // Test Utilities
@@ -34,9 +34,7 @@ function createTestQueryClient() {
 
 function renderWithClient(ui: React.ReactElement, client: QueryClient) {
   return render(
-    <QueryClientProvider client={client}>
-      {ui}
-    </QueryClientProvider>
+    <QueryClientProvider client={client}>{ui}</QueryClientProvider>,
   );
 }
 
@@ -45,12 +43,18 @@ function renderWithClient(ui: React.ReactElement, client: QueryClient) {
 // =============================================================================
 
 /** Generate a valid procedure type */
-const procedureTypeArb = fc.constantFrom<ProcedureType>('query', 'mutation', 'subscription');
+const procedureTypeArb = fc.constantFrom<ProcedureType>(
+  "query",
+  "mutation",
+  "subscription",
+);
 
 /** Generate a procedure schema */
 const procedureSchemaArb: fc.Arbitrary<ProcedureSchema> = fc.record({
   procedure_type: procedureTypeArb,
-  description: fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+  description: fc.option(fc.string({ minLength: 1, maxLength: 50 }), {
+    nil: undefined,
+  }),
   deprecated: fc.boolean(),
   tags: fc.array(fc.string({ minLength: 1, maxLength: 10 }), { maxLength: 3 }),
   input: fc.constant(undefined),
@@ -61,8 +65,10 @@ const procedureSchemaArb: fc.Arbitrary<ProcedureSchema> = fc.record({
 /** Generate procedure names (what the backend actually returns) */
 const procedureNamesArb: fc.Arbitrary<string[]> = fc
   .array(
-    fc.string({ minLength: 1, maxLength: 15 }).filter(s => /^[a-z][a-z0-9.]*$/i.test(s)),
-    { minLength: 1, maxLength: 10 }
+    fc
+      .string({ minLength: 1, maxLength: 15 })
+      .filter((s) => /^[a-z][a-z0-9.]*$/i.test(s)),
+    { minLength: 1, maxLength: 10 },
   )
   .map((names) => [...new Set(names)]); // Remove duplicates
 
@@ -70,10 +76,12 @@ const procedureNamesArb: fc.Arbitrary<string[]> = fc
 const routerSchemaArb: fc.Arbitrary<RouterSchema> = fc
   .array(
     fc.tuple(
-      fc.string({ minLength: 1, maxLength: 15 }).filter(s => /^[a-z][a-z0-9.]*$/i.test(s)),
-      procedureSchemaArb
+      fc
+        .string({ minLength: 1, maxLength: 15 })
+        .filter((s) => /^[a-z][a-z0-9.]*$/i.test(s)),
+      procedureSchemaArb,
     ),
-    { minLength: 1, maxLength: 10 }
+    { minLength: 1, maxLength: 10 },
   )
   .map((entries) => {
     const procedures: Record<string, ProcedureSchema> = {};
@@ -83,9 +91,9 @@ const routerSchemaArb: fc.Arbitrary<RouterSchema> = fc
       }
     }
     return {
-      version: '1.0.0',
-      name: 'Test API',
-      description: 'Test API description',
+      version: "1.0.0",
+      name: "Test API",
+      description: "Test API description",
       procedures,
     };
   });
@@ -101,139 +109,160 @@ const customPropsArb = fc.record({
 // =============================================================================
 // **Validates: Requirements 6.2**
 
-describe('Property 8: Props Customize Component Output', () => {
+describe("Property 8: Props Customize Component Output", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('displays custom title when provided', async () => {
-    await fc.assert(
-      fc.asyncProperty(procedureNamesArb, customPropsArb, async (procedureNames, props) => {
-        vi.mocked(invoke).mockResolvedValue(procedureNames);
-        const client = createTestQueryClient();
-        
-        const { container } = renderWithClient(
-          <ApiDocs title={props.title} />,
-          client
-        );
-        
-        await waitFor(() => {
-          const titleElement = container.querySelector('[data-testid="api-docs-title"]');
-          expect(titleElement).toBeTruthy();
-          expect(titleElement?.textContent).toBe(props.title);
-        });
-      }),
-      { numRuns: 20 }
-    );
-  });
-
-  it('displays custom description when provided', async () => {
-    await fc.assert(
-      fc.asyncProperty(procedureNamesArb, customPropsArb, async (procedureNames, props) => {
-        vi.mocked(invoke).mockResolvedValue(procedureNames);
-        const client = createTestQueryClient();
-        
-        const { container } = renderWithClient(
-          <ApiDocs description={props.description} />,
-          client
-        );
-        
-        await waitFor(() => {
-          const descElement = container.querySelector('[data-testid="api-docs-description"]');
-          expect(descElement).toBeTruthy();
-          expect(descElement?.textContent).toBe(props.description);
-        });
-      }),
-      { numRuns: 20 }
-    );
-  });
-
-  it('hides header when showHeader is false', async () => {
-    await fc.assert(
-      fc.asyncProperty(procedureNamesArb, async (procedureNames) => {
-        vi.mocked(invoke).mockResolvedValue(procedureNames);
-        const client = createTestQueryClient();
-        
-        const { container } = renderWithClient(
-          <ApiDocs showHeader={false} />,
-          client
-        );
-        
-        await waitFor(() => {
-          const docsElement = container.querySelector('[data-testid="api-docs"]');
-          expect(docsElement).toBeTruthy();
-        });
-        
-        const headerElement = container.querySelector('[data-testid="api-docs-header"]');
-        expect(headerElement).toBeNull();
-      }),
-      { numRuns: 20 }
-    );
-  });
-
-  it('shows header when showHeader is true (default)', async () => {
-    await fc.assert(
-      fc.asyncProperty(procedureNamesArb, async (procedureNames) => {
-        vi.mocked(invoke).mockResolvedValue(procedureNames);
-        const client = createTestQueryClient();
-        
-        const { container } = renderWithClient(
-          <ApiDocs showHeader={true} />,
-          client
-        );
-        
-        await waitFor(() => {
-          const headerElement = container.querySelector('[data-testid="api-docs-header"]');
-          expect(headerElement).toBeTruthy();
-        });
-      }),
-      { numRuns: 20 }
-    );
-  });
-
-  it('applies custom className', async () => {
+  it("displays custom title when provided", async () => {
     await fc.assert(
       fc.asyncProperty(
         procedureNamesArb,
-        fc.string({ minLength: 1, maxLength: 20 }).filter(s => /^[a-z][a-z0-9-]*$/i.test(s)),
-        async (procedureNames, customClass) => {
+        customPropsArb,
+        async (procedureNames, props) => {
           vi.mocked(invoke).mockResolvedValue(procedureNames);
           const client = createTestQueryClient();
-          
+
           const { container } = renderWithClient(
-            <ApiDocs className={customClass} />,
-            client
+            <ApiDocs title={props.title} />,
+            client,
           );
-          
+
           await waitFor(() => {
-            const docsElement = container.querySelector('[data-testid="api-docs"]');
-            expect(docsElement).toBeTruthy();
-            expect(docsElement?.classList.contains(customClass)).toBe(true);
+            const titleElement = container.querySelector(
+              '[data-testid="api-docs-title"]',
+            );
+            expect(titleElement).toBeTruthy();
+            expect(titleElement?.textContent).toBe(props.title);
           });
-        }
+        },
       ),
-      { numRuns: 20 }
+      { numRuns: 20 },
     );
   });
 
-  it('uses default title when not provided', async () => {
+  it("displays custom description when provided", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        procedureNamesArb,
+        customPropsArb,
+        async (procedureNames, props) => {
+          vi.mocked(invoke).mockResolvedValue(procedureNames);
+          const client = createTestQueryClient();
+
+          const { container } = renderWithClient(
+            <ApiDocs description={props.description} />,
+            client,
+          );
+
+          await waitFor(() => {
+            const descElement = container.querySelector(
+              '[data-testid="api-docs-description"]',
+            );
+            expect(descElement).toBeTruthy();
+            expect(descElement?.textContent).toBe(props.description);
+          });
+        },
+      ),
+      { numRuns: 20 },
+    );
+  });
+
+  it("hides header when showHeader is false", async () => {
     await fc.assert(
       fc.asyncProperty(procedureNamesArb, async (procedureNames) => {
         vi.mocked(invoke).mockResolvedValue(procedureNames);
         const client = createTestQueryClient();
-        
+
         const { container } = renderWithClient(
-          <ApiDocs />,
-          client
+          <ApiDocs showHeader={false} />,
+          client,
         );
-        
+
         await waitFor(() => {
-          const titleElement = container.querySelector('[data-testid="api-docs-title"]');
-          expect(titleElement).toBeTruthy();
-          expect(titleElement?.textContent).toBe('API Documentation');
+          const docsElement = container.querySelector(
+            '[data-testid="api-docs"]',
+          );
+          expect(docsElement).toBeTruthy();
+        });
+
+        const headerElement = container.querySelector(
+          '[data-testid="api-docs-header"]',
+        );
+        expect(headerElement).toBeNull();
+      }),
+      { numRuns: 20 },
+    );
+  });
+
+  it("shows header when showHeader is true (default)", async () => {
+    await fc.assert(
+      fc.asyncProperty(procedureNamesArb, async (procedureNames) => {
+        vi.mocked(invoke).mockResolvedValue(procedureNames);
+        const client = createTestQueryClient();
+
+        const { container } = renderWithClient(
+          <ApiDocs showHeader={true} />,
+          client,
+        );
+
+        await waitFor(() => {
+          const headerElement = container.querySelector(
+            '[data-testid="api-docs-header"]',
+          );
+          expect(headerElement).toBeTruthy();
         });
       }),
-      { numRuns: 10 }
+      { numRuns: 20 },
+    );
+  });
+
+  it("applies custom className", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        procedureNamesArb,
+        fc
+          .string({ minLength: 1, maxLength: 20 })
+          .filter((s) => /^[a-z][a-z0-9-]*$/i.test(s)),
+        async (procedureNames, customClass) => {
+          vi.mocked(invoke).mockResolvedValue(procedureNames);
+          const client = createTestQueryClient();
+
+          const { container } = renderWithClient(
+            <ApiDocs className={customClass} />,
+            client,
+          );
+
+          await waitFor(() => {
+            const docsElement = container.querySelector(
+              '[data-testid="api-docs"]',
+            );
+            expect(docsElement).toBeTruthy();
+            expect(docsElement?.classList.contains(customClass)).toBe(true);
+          });
+        },
+      ),
+      { numRuns: 20 },
+    );
+  });
+
+  it("uses default title when not provided", async () => {
+    await fc.assert(
+      fc.asyncProperty(procedureNamesArb, async (procedureNames) => {
+        vi.mocked(invoke).mockResolvedValue(procedureNames);
+        const client = createTestQueryClient();
+
+        const { container } = renderWithClient(<ApiDocs />, client);
+
+        await waitFor(() => {
+          const titleElement = container.querySelector(
+            '[data-testid="api-docs-title"]',
+          );
+          expect(titleElement).toBeTruthy();
+          expect(titleElement?.textContent).toBe("API Documentation");
+        });
+      }),
+      { numRuns: 10 },
     );
   });
 });

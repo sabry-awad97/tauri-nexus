@@ -1,7 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { ApiDocs } from '../lib/rpc/docs';
+import { createFileRoute } from "@tanstack/react-router";
+import { ApiDocs } from "../lib/rpc/docs";
 
-export const Route = createFileRoute('/docs')({
+export const Route = createFileRoute("/docs")({
   component: DocsPage,
 });
 

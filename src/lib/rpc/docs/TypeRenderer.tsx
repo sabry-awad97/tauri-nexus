@@ -3,8 +3,8 @@
 // =============================================================================
 // Renders TypeSchema objects as readable type definitions with syntax highlighting.
 
-import { JSX } from 'react';
-import type { TypeSchema } from './types';
+import { JSX } from "react";
+import type { TypeSchema } from "./types";
 
 export interface TypeRendererProps {
   /** The type schema to render */
@@ -42,7 +42,7 @@ function renderConstraints(schema: TypeSchema): string[] {
     constraints.push(`format: ${schema.format}`);
   }
   if (schema.nullable) {
-    constraints.push('nullable');
+    constraints.push("nullable");
   }
 
   return constraints;
@@ -53,7 +53,7 @@ function renderConstraints(schema: TypeSchema): string[] {
  */
 function getTypeName(schema: TypeSchema): string {
   if (schema.enum && schema.enum.length > 0) {
-    const enumValues = schema.enum.map(v => JSON.stringify(v)).join(' | ');
+    const enumValues = schema.enum.map((v) => JSON.stringify(v)).join(" | ");
     return enumValues;
   }
   return schema.type;
@@ -68,7 +68,7 @@ export function TypeRenderer({
   showExamples = true,
   maxDepth = 10,
 }: TypeRendererProps): JSX.Element {
-  const indent = '  '.repeat(level);
+  const indent = "  ".repeat(level);
 
   // Truncate deeply nested types
   if (level >= maxDepth) {
@@ -79,21 +79,27 @@ export function TypeRenderer({
   const typeName = getTypeName(schema);
 
   // Handle object types
-  if (schema.type === 'object' && schema.properties) {
+  if (schema.type === "object" && schema.properties) {
     const properties = Object.entries(schema.properties);
     const required = new Set(schema.required ?? []);
 
     return (
       <div className="type-object" data-testid="type-object">
-        <span className="type-brace">{'{'}</span>
+        <span className="type-brace">{"{"}</span>
         {properties.length > 0 && (
           <div className="type-properties">
             {properties.map(([name, propSchema]) => (
-              <div key={name} className="type-property" data-testid={`property-${name}`}>
-                <span className="type-indent">{indent}  </span>
+              <div
+                key={name}
+                className="type-property"
+                data-testid={`property-${name}`}
+              >
+                <span className="type-indent">{indent} </span>
                 <span className="type-property-name">{name}</span>
                 {required.has(name) && (
-                  <span className="type-required" title="Required">*</span>
+                  <span className="type-required" title="Required">
+                    *
+                  </span>
                 )}
                 <span className="type-colon">: </span>
                 <TypeRenderer
@@ -103,22 +109,27 @@ export function TypeRenderer({
                   maxDepth={maxDepth}
                 />
                 {propSchema.description && (
-                  <span className="type-description"> // {propSchema.description}</span>
+                  <span className="type-description">
+                    {" "}
+                    // {propSchema.description}
+                  </span>
                 )}
               </div>
             ))}
           </div>
         )}
         <span className="type-indent">{indent}</span>
-        <span className="type-brace">{'}'}</span>
+        <span className="type-brace">{"}"}</span>
         {constraints.length > 0 && (
           <span className="type-constraints" data-testid="constraints">
-            {' '}({constraints.join(', ')})
+            {" "}
+            ({constraints.join(", ")})
           </span>
         )}
         {showExamples && schema.example !== undefined && (
           <span className="type-example" data-testid="example">
-            {' '}// e.g. {JSON.stringify(schema.example)}
+            {" "}
+            // e.g. {JSON.stringify(schema.example)}
           </span>
         )}
       </div>
@@ -126,7 +137,7 @@ export function TypeRenderer({
   }
 
   // Handle array types
-  if (schema.type === 'array' && schema.items) {
+  if (schema.type === "array" && schema.items) {
     return (
       <span className="type-array" data-testid="type-array">
         <TypeRenderer
@@ -138,12 +149,14 @@ export function TypeRenderer({
         <span className="type-array-brackets">[]</span>
         {constraints.length > 0 && (
           <span className="type-constraints" data-testid="constraints">
-            {' '}({constraints.join(', ')})
+            {" "}
+            ({constraints.join(", ")})
           </span>
         )}
         {showExamples && schema.example !== undefined && (
           <span className="type-example" data-testid="example">
-            {' '}// e.g. {JSON.stringify(schema.example)}
+            {" "}
+            // e.g. {JSON.stringify(schema.example)}
           </span>
         )}
       </span>
@@ -152,16 +165,21 @@ export function TypeRenderer({
 
   // Handle primitive types
   return (
-    <span className={`type-primitive type-${schema.type}`} data-testid={`type-${schema.type}`}>
+    <span
+      className={`type-primitive type-${schema.type}`}
+      data-testid={`type-${schema.type}`}
+    >
       <span className="type-name">{typeName}</span>
       {constraints.length > 0 && (
         <span className="type-constraints" data-testid="constraints">
-          {' '}({constraints.join(', ')})
+          {" "}
+          ({constraints.join(", ")})
         </span>
       )}
       {showExamples && schema.example !== undefined && (
         <span className="type-example" data-testid="example">
-          {' '}// e.g. {JSON.stringify(schema.example)}
+          {" "}
+          // e.g. {JSON.stringify(schema.example)}
         </span>
       )}
     </span>

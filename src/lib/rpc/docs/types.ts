@@ -6,7 +6,7 @@
 /**
  * Procedure type enumeration matching Rust ProcedureTypeSchema.
  */
-export type ProcedureType = 'query' | 'mutation' | 'subscription';
+export type ProcedureType = "query" | "mutation" | "subscription";
 
 /**
  * Type schema for describing data types.
@@ -108,7 +108,7 @@ export interface FilterState {
   /** Text search query */
   search: string;
   /** Procedure type filter */
-  typeFilter: ProcedureType | 'all';
+  typeFilter: ProcedureType | "all";
 }
 
 /**

@@ -3,8 +3,8 @@
 // =============================================================================
 // Provides search and filter controls for the API documentation.
 
-import { useState, useEffect, useCallback } from 'react';
-import type { ProcedureType } from './types';
+import { useState, useEffect, useCallback } from "react";
+import type { ProcedureType } from "./types";
 
 export interface FilterBarProps {
   /** Current search query */
@@ -12,9 +12,9 @@ export interface FilterBarProps {
   /** Callback when search changes */
   onSearchChange: (value: string) => void;
   /** Current procedure type filter */
-  typeFilter: ProcedureType | 'all';
+  typeFilter: ProcedureType | "all";
   /** Callback when type filter changes */
-  onTypeFilterChange: (type: ProcedureType | 'all') => void;
+  onTypeFilterChange: (type: ProcedureType | "all") => void;
   /** Total procedure count */
   totalCount: number;
   /** Filtered procedure count */
@@ -23,11 +23,11 @@ export interface FilterBarProps {
   debounceMs?: number;
 }
 
-const TYPE_FILTERS: Array<{ value: ProcedureType | 'all'; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'query', label: 'Queries' },
-  { value: 'mutation', label: 'Mutations' },
-  { value: 'subscription', label: 'Subscriptions' },
+const TYPE_FILTERS: Array<{ value: ProcedureType | "all"; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "query", label: "Queries" },
+  { value: "mutation", label: "Mutations" },
+  { value: "subscription", label: "Subscriptions" },
 ];
 
 /**
@@ -60,13 +60,16 @@ export function FilterBar({
     return () => clearTimeout(timer);
   }, [localSearch, search, onSearchChange, debounceMs]);
 
-  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setLocalSearch(e.target.value);
-  }, []);
+  const handleSearchChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setLocalSearch(e.target.value);
+    },
+    [],
+  );
 
   const handleClearSearch = useCallback(() => {
-    setLocalSearch('');
-    onSearchChange('');
+    setLocalSearch("");
+    onSearchChange("");
   }, [onSearchChange]);
 
   return (
@@ -99,7 +102,7 @@ export function FilterBar({
           <button
             key={value}
             type="button"
-            className={`filter-type-btn ${typeFilter === value ? 'active' : ''}`}
+            className={`filter-type-btn ${typeFilter === value ? "active" : ""}`}
             onClick={() => onTypeFilterChange(value)}
             aria-pressed={typeFilter === value}
             data-testid={`filter-${value}`}
