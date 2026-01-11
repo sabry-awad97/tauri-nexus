@@ -399,3 +399,161 @@ export type DeepPartial<T> = T extends object
 export type Prettify<T> = {
   [K in keyof T]: T[K];
 } & {};
+
+// =============================================================================
+// Client Type Inference Utilities
+// =============================================================================
+
+/**
+ * Recursively infers the input types from a contract.
+ * Produces a nested map where each endpoint's input type is preserved.
+ * 
+ * @example
+ * ```typescript
+ * type Inputs = InferClientInputs<AppContract>;
+ * type FindUserInput = Inputs['user']['get']; // { id: number }
+ * ```
+ */
+export type InferClientInputs<T> = {
+  [K in keyof T]: T[K] extends { type: ProcedureType; input: infer I; output: unknown }
+    ? I
+    : T[K] extends object
+      ? InferClientInputs<T[K]>
+      : never;
+};
+
+/**
+ * Recursively infers the output types from a contract.
+ * Produces a nested map where each endpoint's output type is preserved.
+ * 
+ * @example
+ * ```typescript
+ * type Outputs = InferClientOutputs<AppContract>;
+ * type FindUserOutput = Outputs['user']['get']; // User
+ * ```
+ */
+export type InferClientOutputs<T> = {
+  [K in keyof T]: T[K] extends { type: ProcedureType; input: unknown; output: infer O }
+    ? O
+    : T[K] extends object
+      ? InferClientOutputs<T[K]>
+      : never;
+};
+
+/**
+ * Recursively infers the body input types from a contract.
+ * If an endpoint's input includes `{ body: ... }`, only the body portion is extracted.
+ * 
+ * @example
+ * ```typescript
+ * type BodyInputs = InferClientBodyInputs<AppContract>;
+ * type CreateUserBody = BodyInputs['user']['create']; // { name: string; email: string }
+ * ```
+ */
+export type InferClientBodyInputs<T> = {
+  [K in keyof T]: T[K] extends { type: ProcedureType; input: infer I; output: unknown }
+    ? I extends { body: infer B }
+      ? B
+      : I
+    : T[K] extends object
+      ? InferClientBodyInputs<T[K]>
+      : never;
+};
+
+/**
+ * Recursively infers the body output types from a contract.
+ * If an endpoint's output includes `{ body: ... }`, only the body portion is extracted.
+ * 
+ * @example
+ * ```typescript
+ * type BodyOutputs = InferClientBodyOutputs<AppContract>;
+ * type CreateUserBodyOutput = BodyOutputs['user']['create'];
+ * ```
+ */
+export type InferClientBodyOutputs<T> = {
+  [K in keyof T]: T[K] extends { type: ProcedureType; input: unknown; output: infer O }
+    ? O extends { body: infer B }
+      ? B
+      : O
+    : T[K] extends object
+      ? InferClientBodyOutputs<T[K]>
+      : never;
+};
+
+/**
+ * Recursively infers the error types from a contract.
+ * Produces a nested map where each endpoint's error type is preserved.
+ * 
+ * @example
+ * ```typescript
+ * type Errors = InferClientErrors<AppContract>;
+ * type FindUserError = Errors['user']['get']; // RpcError
+ * ```
+ */
+export type InferClientErrors<T> = {
+  [K in keyof T]: T[K] extends { type: ProcedureType; input: unknown; output: unknown }
+    ? RpcError
+    : T[K] extends object
+      ? InferClientErrors<T[K]>
+      : never;
+};
+
+/**
+ * Recursively infers a union of all error types from a contract.
+ * Useful when you want to handle all possible errors from any endpoint at once.
+ * 
+ * @example
+ * ```typescript
+ * type AllErrors = InferClientErrorUnion<AppContract>; // RpcError
+ * ```
+ */
+export type InferClientErrorUnion<T> = T extends { type: ProcedureType; input: unknown; output: unknown }
+  ? RpcError
+  : T extends object
+    ? { [K in keyof T]: InferClientErrorUnion<T[K]> }[keyof T]
+    : never;
+
+/**
+ * Infers the procedure type (query, mutation, subscription) for each endpoint.
+ * 
+ * @example
+ * ```typescript
+ * type Types = InferClientProcedureTypes<AppContract>;
+ * type UserGetType = Types['user']['get']; // 'query'
+ * ```
+ */
+export type InferClientProcedureTypes<T> = {
+  [K in keyof T]: T[K] extends { type: infer P; input: unknown; output: unknown }
+    ? P
+    : T[K] extends object
+      ? InferClientProcedureTypes<T[K]>
+      : never;
+};
+
+/**
+ * Extract all input types as a union from a contract.
+ * 
+ * @example
+ * ```typescript
+ * type AllInputs = InferClientInputUnion<AppContract>;
+ * ```
+ */
+export type InferClientInputUnion<T> = T extends { type: ProcedureType; input: infer I; output: unknown }
+  ? I
+  : T extends object
+    ? { [K in keyof T]: InferClientInputUnion<T[K]> }[keyof T]
+    : never;
+
+/**
+ * Extract all output types as a union from a contract.
+ * 
+ * @example
+ * ```typescript
+ * type AllOutputs = InferClientOutputUnion<AppContract>;
+ * ```
+ */
+export type InferClientOutputUnion<T> = T extends { type: ProcedureType; input: unknown; output: infer O }
+  ? O
+  : T extends object
+    ? { [K in keyof T]: InferClientOutputUnion<T[K]> }[keyof T]
+    : never;

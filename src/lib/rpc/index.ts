@@ -85,6 +85,16 @@ export type {
   // Utility types
   DeepPartial,
   Prettify,
+  // Client inference utilities
+  InferClientInputs,
+  InferClientOutputs,
+  InferClientBodyInputs,
+  InferClientBodyOutputs,
+  InferClientErrors,
+  InferClientErrorUnion,
+  InferClientProcedureTypes,
+  InferClientInputUnion,
+  InferClientOutputUnion,
 } from "./types";
 
 // Contract builder helpers
