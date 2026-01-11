@@ -217,7 +217,7 @@ describe("TauriLink", () => {
           path: "test.path",
           input: { foo: "bar" },
           type: "query",
-        })
+        }),
       );
     });
 
@@ -232,13 +232,13 @@ describe("TauriLink", () => {
 
       expect(onResponse).toHaveBeenCalledWith(
         { data: "test" },
-        expect.objectContaining({ path: "test" })
+        expect.objectContaining({ path: "test" }),
       );
     });
 
     it("should call onError on failure", async () => {
       mockInvoke.mockRejectedValue(
-        JSON.stringify({ code: "NOT_FOUND", message: "Not found" })
+        JSON.stringify({ code: "NOT_FOUND", message: "Not found" }),
       );
 
       const onError = vi.fn();
@@ -251,7 +251,7 @@ describe("TauriLink", () => {
 
       expect(onError).toHaveBeenCalledWith(
         expect.objectContaining({ code: "NOT_FOUND" }),
-        expect.objectContaining({ path: "test" })
+        expect.objectContaining({ path: "test" }),
       );
     });
   });
@@ -284,7 +284,7 @@ describe("TauriLink", () => {
       expect(mockCreateEventIterator).toHaveBeenCalledWith(
         "stream.counter",
         { start: 0 },
-        expect.any(Object)
+        expect.any(Object),
       );
       expect(result).toBe(mockIterator);
     });
@@ -302,7 +302,11 @@ describe("createClientFromLink", () => {
     const link = new TauriLink();
     const client = createClientFromLink<{
       user: {
-        get: { type: "query"; input: { id: number }; output: { id: number; name: string } };
+        get: {
+          type: "query";
+          input: { id: number };
+          output: { id: number; name: string };
+        };
       };
     }>(link);
 
@@ -389,7 +393,7 @@ describe("interceptor helpers", () => {
       const error = { code: "NOT_FOUND", message: "Not found" };
 
       await expect(
-        interceptor(ctx, () => Promise.reject(error))
+        interceptor(ctx, () => Promise.reject(error)),
       ).rejects.toEqual(error);
 
       expect(handler).toHaveBeenCalledWith(error, ctx);
@@ -408,7 +412,7 @@ describe("interceptor helpers", () => {
       };
 
       await expect(
-        interceptor(ctx, () => Promise.reject(new Error("plain error")))
+        interceptor(ctx, () => Promise.reject(new Error("plain error"))),
       ).rejects.toThrow("plain error");
 
       expect(handler).not.toHaveBeenCalled();
@@ -433,7 +437,7 @@ describe("interceptor helpers", () => {
 
       expect(consoleSpy).toHaveBeenCalledWith("[TEST] user.get", { id: 1 });
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[TEST] user.get completed in")
+        expect.stringContaining("[TEST] user.get completed in"),
       );
 
       consoleSpy.mockRestore();
@@ -441,7 +445,9 @@ describe("interceptor helpers", () => {
 
     it("should log errors", async () => {
       const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const consoleErrorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
 
       const interceptor = logging();
 
@@ -454,12 +460,12 @@ describe("interceptor helpers", () => {
       };
 
       await expect(
-        interceptor(ctx, () => Promise.reject(new Error("fail")))
+        interceptor(ctx, () => Promise.reject(new Error("fail"))),
       ).rejects.toThrow("fail");
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining("[RPC] test failed in"),
-        expect.any(Error)
+        expect.any(Error),
       );
 
       consoleSpy.mockRestore();
@@ -510,7 +516,7 @@ describe("interceptor helpers", () => {
         interceptor(ctx, async () => {
           attempts++;
           throw { code: "NOT_FOUND", message: "Not found" };
-        })
+        }),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
 
       expect(attempts).toBe(1);

@@ -18,7 +18,7 @@ import {
   validatePath,
   type RpcClientConfig,
 } from "../client";
-import type { ContractRouter, RpcError, Middleware } from "../types";
+import type { RpcError, Middleware } from "../types";
 
 // Mock the invoke function
 vi.mock("@tauri-apps/api/core", () => ({
@@ -31,7 +31,7 @@ const mockInvoke = vi.mocked(invoke);
 // Test Contract
 // =============================================================================
 
-interface TestContract extends ContractRouter {
+interface TestContract {
   health: { type: "query"; input: void; output: { status: string } };
   greet: { type: "query"; input: { name: string }; output: string };
   user: {
@@ -562,7 +562,7 @@ describe("Client Proxy", () => {
 
   // Property: Client proxy builds correct paths for any depth
   it("property: proxy builds correct dot-separated paths", async () => {
-    interface DeepContract extends ContractRouter {
+    interface DeepContract {
       a: {
         b: {
           c: {

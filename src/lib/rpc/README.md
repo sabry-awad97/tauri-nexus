@@ -218,7 +218,7 @@ const user = await client.user.get(
   { id: 1 },
   {
     context: { token: "abc123" },
-  }
+  },
 );
 ```
 
@@ -321,7 +321,7 @@ const contract = router({
       z.object({
         // String input → Date object
         after: z.string().transform((s) => new Date(s)),
-      })
+      }),
     )
     .output(
       z.array(
@@ -329,8 +329,8 @@ const contract = router({
           id: z.string(),
           // String response → Date object
           date: z.string().transform((s) => new Date(s)),
-        })
-      )
+        }),
+      ),
     )
     .query(),
 });
@@ -563,7 +563,7 @@ const cancel = consumeEventIterator(
     onError: (error) => console.error("Error:", error),
     onComplete: () => console.log("Completed"),
     onFinish: (state) => console.log("Finished:", state), // 'success' | 'error' | 'cancelled'
-  }
+  },
 );
 
 // Later: cancel the subscription

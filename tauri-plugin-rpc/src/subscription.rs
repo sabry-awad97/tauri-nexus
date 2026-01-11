@@ -691,10 +691,7 @@ impl<T: Clone + Send + 'static> EventSubscriber<T> {
                 Ok(event) => return Some(event),
                 Err(broadcast::error::RecvError::Lagged(count)) => {
                     // Skip lagged messages and continue receiving
-                    tracing::trace!(
-                        "EventSubscriber lagged behind, skipped {} messages",
-                        count
-                    );
+                    tracing::trace!("EventSubscriber lagged behind, skipped {} messages", count);
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => return None,

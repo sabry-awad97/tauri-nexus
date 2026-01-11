@@ -287,38 +287,14 @@ export async function subscribe<T>(
 }
 
 // =============================================================================
-// Batch Call Functions
+// Batch Call Functions (Internal)
 // =============================================================================
 
 /**
- * Execute multiple RPC calls in a single batch request.
- * 
- * This function sends multiple procedure calls to the backend in a single
- * request, reducing IPC overhead. Results are returned in the same order
- * as the input requests.
- * 
- * @param requests - Array of requests to execute
- * @param options - Optional batch call options
- * @returns BatchResponse containing results for each request
- * 
- * @example
- * ```typescript
- * const response = await callBatch([
- *   { id: '1', path: 'user.get', input: { id: 1 } },
- *   { id: '2', path: 'user.get', input: { id: 2 } },
- *   { id: '3', path: 'post.list', input: { limit: 10 } },
- * ]);
- * 
- * for (const result of response.results) {
- *   if (result.error) {
- *     console.error(`Request ${result.id} failed:`, result.error);
- *   } else {
- *     console.log(`Request ${result.id} succeeded:`, result.data);
- *   }
- * }
- * ```
+ * Internal function to execute batch requests.
+ * Use `rpc.batch()` for type-safe batch operations.
  */
-export async function callBatch<T = unknown>(
+async function executeBatch<T = unknown>(
   requests: SingleRequest[],
   options?: BatchCallOptions,
 ): Promise<BatchResponse<T>> {
@@ -337,9 +313,12 @@ export async function callBatch<T = unknown>(
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        const result = await invoke<BatchResponse<T>>("plugin:rpc|rpc_call_batch", {
-          batch: batchRequest,
-        });
+        const result = await invoke<BatchResponse<T>>(
+          "plugin:rpc|rpc_call_batch",
+          {
+            batch: batchRequest,
+          },
+        );
         clearTimeout(timeoutId);
         return result;
       } catch (error) {
@@ -357,77 +336,239 @@ export async function callBatch<T = unknown>(
   }
 }
 
+// =============================================================================
+// Type-Safe Batch Builder
+// =============================================================================
+
+import type {
+  ExtractCallablePaths,
+  GetInputAtPath,
+  GetOutputAtPath,
+  TypedBatchResult,
+} from "./types";
+
 /**
- * Helper class for building batch requests with a fluent API.
- * 
+ * Internal type to track batch entries with their output types.
+ */
+interface BatchEntry {
+  id: string;
+  path: string;
+  input: unknown;
+}
+
+/**
+ * Type map for tracking request IDs to their output types.
+ */
+type OutputTypeMap = Record<string, unknown>;
+
+/**
+ * Type-safe batch builder that infers paths and inputs from a contract.
+ *
+ * This builder provides full type safety:
+ * - Paths are constrained to valid callable procedures (queries/mutations)
+ * - Input types are inferred from the path
+ * - Output types are tracked per request ID
+ *
  * @example
  * ```typescript
- * const response = await new BatchBuilder()
- *   .add('1', 'user.get', { id: 1 })
- *   .add('2', 'user.get', { id: 2 })
- *   .add('3', 'post.list', { limit: 10 })
+ * import { createTypedBatch } from '../lib/rpc';
+ * import type { AppContract } from '../rpc/contract';
+ *
+ * const response = await createTypedBatch<AppContract>()
+ *   .add('health-check', 'health', undefined)
+ *   .add('user-1', 'user.get', { id: 1 })
+ *   .add('greeting', 'greet', { name: 'World' })
  *   .execute();
+ *
+ * // Results are typed!
+ * const healthResult = response.getResult('health-check');
+ * if (healthResult.data) {
+ *   console.log(healthResult.data.status); // HealthResponse
+ * }
  * ```
  */
-export class BatchBuilder {
-  private requests: SingleRequest[] = [];
+export class TypedBatchBuilder<
+  TContract,
+  TOutputMap extends OutputTypeMap = Record<string, never>,
+> {
+  private entries: BatchEntry[] = [];
 
   /**
-   * Add a request to the batch.
+   * Add a type-safe request to the batch.
+   *
    * @param id - Unique identifier for this request
-   * @param path - Procedure path to call
-   * @param input - Input data for the procedure
+   * @param path - Procedure path (autocompleted from contract)
+   * @param input - Input data (type inferred from path)
    */
-  add(id: string, path: string, input: unknown = null): this {
-    this.requests.push({ id, path, input });
-    return this;
+  add<TId extends string, TPath extends ExtractCallablePaths<TContract>>(
+    id: TId,
+    path: TPath,
+    input: GetInputAtPath<TContract, TPath>,
+  ): TypedBatchBuilder<
+    TContract,
+    TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
+  > {
+    this.entries.push({ id, path, input });
+    return this as unknown as TypedBatchBuilder<
+      TContract,
+      TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
+    >;
   }
 
   /**
    * Get the current requests in the batch.
    */
   getRequests(): SingleRequest[] {
-    return [...this.requests];
+    return this.entries.map((e) => ({
+      id: e.id,
+      path: e.path,
+      input: e.input,
+    }));
   }
 
   /**
    * Get the number of requests in the batch.
    */
   size(): number {
-    return this.requests.length;
+    return this.entries.length;
   }
 
   /**
    * Clear all requests from the batch.
    */
-  clear(): this {
-    this.requests = [];
-    return this;
+  clear(): TypedBatchBuilder<TContract, Record<string, never>> {
+    this.entries = [];
+    return this as unknown as TypedBatchBuilder<
+      TContract,
+      Record<string, never>
+    >;
   }
 
   /**
-   * Execute the batch and return results.
+   * Execute the batch and return a typed response.
    * @param options - Optional batch call options
    */
-  async execute<T = unknown>(options?: BatchCallOptions): Promise<BatchResponse<T>> {
-    return callBatch<T>(this.requests, options);
+  async execute(
+    options?: BatchCallOptions,
+  ): Promise<TypedBatchResponseWrapper<TOutputMap>> {
+    const response = await executeBatch(this.getRequests(), options);
+    return new TypedBatchResponseWrapper<TOutputMap>(response);
   }
 }
 
 /**
- * Create a new batch builder for fluent batch request construction.
- * 
- * @example
- * ```typescript
- * const response = await createBatch()
- *   .add('1', 'user.get', { id: 1 })
- *   .add('2', 'user.list', {})
- *   .execute();
- * ```
+ * Type-safe batch response with helper methods to get typed results.
  */
-export function createBatch(): BatchBuilder {
-  return new BatchBuilder();
+export class TypedBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
+  private resultMap: Map<string, TypedBatchResult<unknown>>;
+  private orderedResults: TypedBatchResult<unknown>[];
+
+  constructor(response: BatchResponse<unknown>) {
+    this.orderedResults = response.results;
+    this.resultMap = new Map();
+    for (const result of response.results) {
+      this.resultMap.set(result.id, result);
+    }
+  }
+
+  /**
+   * Get all results in order.
+   */
+  get results(): TypedBatchResult<unknown>[] {
+    return this.orderedResults;
+  }
+
+  /**
+   * Get a typed result by request ID.
+   * The return type is inferred from the batch builder.
+   */
+  getResult<TId extends keyof TOutputMap & string>(
+    id: TId,
+  ): TypedBatchResult<TOutputMap[TId]> {
+    const result = this.resultMap.get(id);
+    if (!result) {
+      return {
+        id,
+        error: { code: "NOT_FOUND", message: `No result found for id: ${id}` },
+      };
+    }
+    return result as TypedBatchResult<TOutputMap[TId]>;
+  }
+
+  /**
+   * Check if a specific request succeeded.
+   */
+  isSuccess(id: string): boolean {
+    const result = this.resultMap.get(id);
+    return result ? !result.error : false;
+  }
+
+  /**
+   * Check if a specific request failed.
+   */
+  isError(id: string): boolean {
+    const result = this.resultMap.get(id);
+    return result ? !!result.error : true;
+  }
+
+  /**
+   * Get all successful results.
+   */
+  getSuccessful(): TypedBatchResult<unknown>[] {
+    return this.orderedResults.filter((r) => !r.error);
+  }
+
+  /**
+   * Get all failed results.
+   */
+  getFailed(): TypedBatchResult<unknown>[] {
+    return this.orderedResults.filter((r) => r.error);
+  }
+
+  /**
+   * Get the count of successful requests.
+   */
+  get successCount(): number {
+    return this.orderedResults.filter((r) => !r.error).length;
+  }
+
+  /**
+   * Get the count of failed requests.
+   */
+  get errorCount(): number {
+    return this.orderedResults.filter((r) => r.error).length;
+  }
 }
+
+// Keep old class name as alias for backwards compatibility
+export { TypedBatchResponseWrapper as TypedBatchResponse };
+
+// =============================================================================
+// Client Types with Batch Support
+// =============================================================================
+
+/**
+ * Extended client type that includes the batch() method.
+ */
+export type RpcClient<T> = RouterClient<T> & {
+  /**
+   * Create a type-safe batch builder for executing multiple requests.
+   *
+   * @example
+   * ```typescript
+   * const response = await rpc.batch()
+   *   .add('h', 'health', undefined)
+   *   .add('u1', 'user.get', { id: 1 })
+   *   .add('g', 'greet', { name: 'World' })
+   *   .execute();
+   *
+   * // Results are typed!
+   * const health = response.getResult('h');    // TypedBatchResult<HealthResponse>
+   * const user = response.getResult('u1');     // TypedBatchResult<User>
+   * ```
+   */
+  batch(): TypedBatchBuilder<T, Record<string, never>>;
+};
 
 // =============================================================================
 // Client Factory
@@ -443,7 +584,7 @@ function isSubscriptionPath(path: string): boolean {
 }
 
 /** Create a proxy that builds paths and calls the appropriate function */
-function createClientProxy<T>(pathParts: string[]): RouterClient<T> {
+function createClientProxy<T>(pathParts: string[]): RpcClient<T> {
   const handler = function (
     inputOrOptions?: unknown,
     maybeOptions?: CallOptions | SubscriptionOptions,
@@ -462,10 +603,16 @@ function createClientProxy<T>(pathParts: string[]): RouterClient<T> {
     return call(fullPath, inputOrOptions, maybeOptions as CallOptions);
   };
 
-  return new Proxy(handler as unknown as RouterClient<T>, {
+  return new Proxy(handler as unknown as RpcClient<T>, {
     get(_target, prop: string | symbol) {
       if (prop === CLIENT_PROXY) return true;
       if (typeof prop === "symbol") return undefined;
+
+      // Handle batch() method at root level
+      if (prop === "batch" && pathParts.length === 0) {
+        return () => new TypedBatchBuilder<T, Record<string, never>>();
+      }
+
       return createClientProxy([...pathParts, prop]);
     },
     apply(_, __, args: unknown[]) {
@@ -508,9 +655,15 @@ function createClientProxy<T>(pathParts: string[]): RouterClient<T> {
  * const health = await rpc.health();
  * const user = await rpc.user.get({ id: 1 });
  * const stream = await rpc.stream.events();
+ *
+ * // Type-safe batch operations
+ * const response = await rpc.batch()
+ *   .add('h', 'health', undefined)
+ *   .add('u', 'user.get', { id: 1 })
+ *   .execute();
  * ```
  */
-export function createClient<T>(config?: RpcClientConfig): RouterClient<T> {
+export function createClient<T>(config?: RpcClientConfig): RpcClient<T> {
   if (config) {
     configureRpc(config);
   }
@@ -527,11 +680,16 @@ export function createClient<T>(config?: RpcClientConfig): RouterClient<T> {
  *   subscriptionPaths: ['stream.counter', 'stream.chat'],
  *   middleware: [loggingMiddleware],
  * });
+ *
+ * // Type-safe batch operations
+ * const response = await rpc.batch()
+ *   .add('h', 'health', undefined)
+ *   .execute();
  * ```
  */
 export function createClientWithSubscriptions<T>(
   config: RpcClientConfig & { subscriptionPaths: string[] },
-): RouterClient<T> {
+): RpcClient<T> {
   configureRpc(config);
   return createClientProxy<T>([]);
 }

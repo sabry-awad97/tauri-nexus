@@ -4,11 +4,7 @@
 // Tests for type inference utilities and contract builder helpers.
 
 import { describe, it, expect } from "vitest";
-import {
-  query,
-  mutation,
-  subscription,
-} from "../types";
+import { query, mutation, subscription } from "../types";
 
 // =============================================================================
 // Contract Builder Helper Tests
@@ -64,7 +60,10 @@ describe("Type Inference (Compile-Time Verification)", () => {
     // Create procedure definitions using helpers
     const healthQuery = query<void, { status: string }>();
     const greetQuery = query<{ name: string }, string>();
-    const createMutation = mutation<{ name: string }, { id: number; name: string }>();
+    const createMutation = mutation<
+      { name: string },
+      { id: number; name: string }
+    >();
     const eventsSub = subscription<void, { type: string; data: unknown }>();
 
     // Verify the _type field is correct
@@ -95,13 +94,29 @@ describe("Contract Structure", () => {
     // This test verifies that contracts can have nested structures
     // The actual type inference is tested at compile time
     const contract = {
-      health: { type: "query" as const, input: undefined, output: { status: "ok" } },
+      health: {
+        type: "query" as const,
+        input: undefined,
+        output: { status: "ok" },
+      },
       user: {
-        get: { type: "query" as const, input: { id: 1 }, output: { id: 1, name: "test" } },
-        create: { type: "mutation" as const, input: { name: "test" }, output: { id: 1, name: "test" } },
+        get: {
+          type: "query" as const,
+          input: { id: 1 },
+          output: { id: 1, name: "test" },
+        },
+        create: {
+          type: "mutation" as const,
+          input: { name: "test" },
+          output: { id: 1, name: "test" },
+        },
       },
       stream: {
-        events: { type: "subscription" as const, input: undefined, output: { type: "event", data: {} } },
+        events: {
+          type: "subscription" as const,
+          input: undefined,
+          output: { type: "event", data: {} },
+        },
       },
     };
 
@@ -117,7 +132,11 @@ describe("Contract Structure", () => {
         v1: {
           users: {
             list: { type: "query" as const, input: undefined, output: [] },
-            get: { type: "query" as const, input: { id: 1 }, output: { id: 1 } },
+            get: {
+              type: "query" as const,
+              input: { id: 1 },
+              output: { id: 1 },
+            },
           },
         },
       },
@@ -138,12 +157,24 @@ describe("Client Inference Utilities", () => {
     health: { type: "query"; input: void; output: { status: string } };
     greet: { type: "query"; input: { name: string }; output: string };
     user: {
-      get: { type: "query"; input: { id: number }; output: { id: number; name: string } };
-      create: { type: "mutation"; input: { name: string; email: string }; output: { id: number; name: string } };
+      get: {
+        type: "query";
+        input: { id: number };
+        output: { id: number; name: string };
+      };
+      create: {
+        type: "mutation";
+        input: { name: string; email: string };
+        output: { id: number; name: string };
+      };
       delete: { type: "mutation"; input: { id: number }; output: boolean };
     };
     stream: {
-      events: { type: "subscription"; input: void; output: { type: string; data: unknown } };
+      events: {
+        type: "subscription";
+        input: void;
+        output: { type: string; data: unknown };
+      };
     };
   }
 
@@ -151,46 +182,52 @@ describe("Client Inference Utilities", () => {
     // These are compile-time type checks
     // If this compiles, the types are working correctly
     type Inputs = import("../types").InferClientInputs<TestContract>;
-    
+
     // Type assertions - these verify the structure at compile time
     // Using void 0 to satisfy unused variable warnings while keeping type checks
     void (undefined as unknown as Inputs["health"]);
     void ({ name: "test" } as Inputs["greet"]);
     void ({ id: 1 } as Inputs["user"]["get"]);
-    void ({ name: "test", email: "test@example.com" } as Inputs["user"]["create"]);
-    
+    void ({
+      name: "test",
+      email: "test@example.com",
+    } as Inputs["user"]["create"]);
+
     expect(true).toBe(true); // Compile-time test passed
   });
 
   it("should infer output types correctly (compile-time verification)", () => {
     type Outputs = import("../types").InferClientOutputs<TestContract>;
-    
+
     void ({ status: "ok" } as Outputs["health"]);
     void ("Hello" as Outputs["greet"]);
     void ({ id: 1, name: "test" } as Outputs["user"]["get"]);
     void ({ id: 1, name: "test" } as Outputs["user"]["create"]);
     void (true as Outputs["user"]["delete"]);
-    
+
     expect(true).toBe(true); // Compile-time test passed
   });
 
   it("should infer procedure types correctly (compile-time verification)", () => {
     type Types = import("../types").InferClientProcedureTypes<TestContract>;
-    
+
     void ("query" as Types["health"]);
     void ("mutation" as Types["user"]["create"]);
     void ("subscription" as Types["stream"]["events"]);
-    
+
     expect(true).toBe(true); // Compile-time test passed
   });
 
   it("should infer error types correctly (compile-time verification)", () => {
     type Errors = import("../types").InferClientErrors<TestContract>;
-    
+
     // All errors should be RpcError type
     void ({ code: "NOT_FOUND", message: "Not found" } as Errors["health"]);
-    void ({ code: "INTERNAL_ERROR", message: "Error" } as Errors["user"]["get"]);
-    
+    void ({
+      code: "INTERNAL_ERROR",
+      message: "Error",
+    } as Errors["user"]["get"]);
+
     expect(true).toBe(true); // Compile-time test passed
   });
 });

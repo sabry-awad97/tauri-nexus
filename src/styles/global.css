@@ -1901,7 +1901,6 @@ body {
   }
 }
 
-
 /* =============================================================================
    Advanced Page
    ============================================================================= */
@@ -2019,7 +2018,6 @@ body {
   color: var(--text-secondary);
   font-family: "Fira Code", "Monaco", monospace;
 }
-
 
 /* =============================================================================
    Batch Page
@@ -2381,4 +2379,31 @@ body {
   font-size: 13px;
   font-family: "Fira Code", monospace;
   line-height: 1.6;
+}
+
+/* Featured Example Card */
+.example-card.featured {
+  border-color: var(--accent-purple);
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    rgba(139, 92, 246, 0.1) 100%
+  );
+}
+
+.example-card.featured h3 {
+  color: var(--accent-purple);
+}
+
+.code-block.featured {
+  border: 1px solid var(--accent-purple);
+  background: linear-gradient(
+    135deg,
+    var(--bg-tertiary) 0%,
+    rgba(139, 92, 246, 0.05) 100%
+  );
+}
+
+.code-block.featured h4 {
+  color: var(--accent-purple);
 }

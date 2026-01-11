@@ -147,6 +147,242 @@ export interface BatchCallOptions {
 }
 
 // =============================================================================
+// Type-Safe Batch Types
+// =============================================================================
+
+/**
+ * Helper to check if a type is a callable (non-subscription) procedure
+ */
+type IsCallableProcedure<T> = T extends {
+  type: "query" | "mutation";
+  input: unknown;
+  output: unknown;
+}
+  ? true
+  : false;
+
+/**
+ * Helper to get known keys (excluding index signatures)
+ */
+type KnownKeys<T> = {
+  [K in keyof T]: string extends K ? never : number extends K ? never : K;
+}[keyof T];
+
+/**
+ * Extract all callable (non-subscription) procedure paths from a contract.
+ * Subscriptions cannot be batched.
+ *
+ * This type extracts paths up to 3 levels deep and handles contracts with index signatures.
+ */
+export type ExtractCallablePaths<T> = T extends object
+  ? {
+      [K in KnownKeys<T>]: K extends string
+        ? // Check if it's a callable procedure at this level
+          IsCallableProcedure<T[K]> extends true
+          ? K
+          : // Otherwise, check nested levels
+            T[K] extends object
+            ? T[K] extends {
+                type: ProcedureType;
+                input: unknown;
+                output: unknown;
+              }
+              ? never // It's a subscription, skip
+              : {
+                  [K2 in KnownKeys<T[K]>]: K2 extends string
+                    ? IsCallableProcedure<T[K][K2]> extends true
+                      ? `${K}.${K2}`
+                      : T[K][K2] extends object
+                        ? T[K][K2] extends {
+                            type: ProcedureType;
+                            input: unknown;
+                            output: unknown;
+                          }
+                          ? never
+                          : {
+                              [K3 in KnownKeys<T[K][K2]>]: K3 extends string
+                                ? IsCallableProcedure<T[K][K2][K3]> extends true
+                                  ? `${K}.${K2}.${K3}`
+                                  : never
+                                : never;
+                            }[KnownKeys<T[K][K2]>]
+                        : never
+                    : never;
+                }[KnownKeys<T[K]>]
+            : never
+        : never;
+    }[KnownKeys<T>]
+  : never;
+
+/**
+ * Get the input type for a procedure at a given path.
+ * Supports up to 3 levels of nesting.
+ */
+export type GetInputAtPath<
+  T,
+  Path extends string,
+> = Path extends `${infer L1}.${infer L2}.${infer L3}`
+  ? L1 extends keyof T
+    ? T[L1] extends object
+      ? L2 extends keyof T[L1]
+        ? T[L1][L2] extends object
+          ? L3 extends keyof T[L1][L2]
+            ? T[L1][L2][L3] extends {
+                type: ProcedureType;
+                input: infer I;
+                output: unknown;
+              }
+              ? I
+              : never
+            : never
+          : never
+        : never
+      : never
+    : never
+  : Path extends `${infer L1}.${infer L2}`
+    ? L1 extends keyof T
+      ? T[L1] extends object
+        ? L2 extends keyof T[L1]
+          ? T[L1][L2] extends {
+              type: ProcedureType;
+              input: infer I;
+              output: unknown;
+            }
+            ? I
+            : never
+          : never
+        : never
+      : never
+    : Path extends keyof T
+      ? T[Path] extends { type: ProcedureType; input: infer I; output: unknown }
+        ? I
+        : never
+      : never;
+
+/**
+ * Get the output type for a procedure at a given path.
+ * Supports up to 3 levels of nesting.
+ */
+export type GetOutputAtPath<
+  T,
+  Path extends string,
+> = Path extends `${infer L1}.${infer L2}.${infer L3}`
+  ? L1 extends keyof T
+    ? T[L1] extends object
+      ? L2 extends keyof T[L1]
+        ? T[L1][L2] extends object
+          ? L3 extends keyof T[L1][L2]
+            ? T[L1][L2][L3] extends {
+                type: ProcedureType;
+                input: unknown;
+                output: infer O;
+              }
+              ? O
+              : never
+            : never
+          : never
+        : never
+      : never
+    : never
+  : Path extends `${infer L1}.${infer L2}`
+    ? L1 extends keyof T
+      ? T[L1] extends object
+        ? L2 extends keyof T[L1]
+          ? T[L1][L2] extends {
+              type: ProcedureType;
+              input: unknown;
+              output: infer O;
+            }
+            ? O
+            : never
+          : never
+        : never
+      : never
+    : Path extends keyof T
+      ? T[Path] extends { type: ProcedureType; input: unknown; output: infer O }
+        ? O
+        : never
+      : never;
+
+/**
+ * Type-safe single request for a specific contract.
+ * The path is constrained to valid callable paths, and input is inferred.
+ */
+export interface TypedSingleRequest<
+  TContract,
+  TPath extends ExtractCallablePaths<TContract> =
+    ExtractCallablePaths<TContract>,
+> {
+  /** Unique identifier for this request within the batch */
+  id: string;
+  /** The procedure path - constrained to valid paths from the contract */
+  path: TPath;
+  /** Input data - type is inferred from the path */
+  input: GetInputAtPath<TContract, TPath>;
+}
+
+/**
+ * Type-safe batch result that preserves the output type based on the request.
+ */
+export interface TypedBatchResult<TOutput = unknown> {
+  /** The ID of the request this result corresponds to */
+  id: string;
+  /** The result data (present on success) */
+  data?: TOutput;
+  /** The error (present on failure) */
+  error?: RpcError;
+}
+
+/**
+ * Helper type to create a request entry for the batch builder.
+ * Maps request ID to its expected output type.
+ */
+export type BatchRequestEntry<TId extends string, TOutput> = {
+  id: TId;
+  output: TOutput;
+};
+
+/**
+ * Extract output type from a batch request entries tuple.
+ */
+export type ExtractBatchOutputs<
+  T extends readonly BatchRequestEntry<string, unknown>[],
+> = {
+  [K in T[number]["id"]]: Extract<T[number], { id: K }>["output"];
+};
+
+/**
+ * Type-safe batch response with results typed per request ID.
+ */
+export interface TypedBatchResponseType<
+  TEntries extends readonly BatchRequestEntry<string, unknown>[],
+> {
+  results: {
+    [K in keyof TEntries]: TEntries[K] extends BatchRequestEntry<
+      infer Id,
+      infer Output
+    >
+      ? TypedBatchResult<Output> & { id: Id }
+      : never;
+  };
+}
+
+/**
+ * Helper to create a typed request object.
+ * This is used internally by the TypedBatchBuilder.
+ */
+export type CreateTypedRequest<
+  TContract,
+  TPath extends ExtractCallablePaths<TContract>,
+  TId extends string,
+> = {
+  id: TId;
+  path: TPath;
+  input: GetInputAtPath<TContract, TPath>;
+  _output: GetOutputAtPath<TContract, TPath>;
+};
+
+// =============================================================================
 // Procedure Definition Types
 // =============================================================================
 
@@ -193,16 +429,11 @@ export type ProcedureDefinition = {
   output: unknown;
 };
 
-/** A router can contain procedures or nested routers */
-export type ContractRouter = {
-  [key: string]: ProcedureDefinition | ContractRouter;
-};
-
 /** Check if a type is a procedure definition */
 export type IsProcedure<T> = T extends ProcedureDef ? true : false;
 
-/** Check if a type is a router */
-export type IsRouter<T> = T extends ContractRouter
+/** Check if a type is a router (nested object with procedures) */
+export type IsRouter<T> = T extends object
   ? T extends ProcedureDef
     ? false
     : true
@@ -467,7 +698,7 @@ export type Prettify<T> = {
 /**
  * Recursively infers the input types from a contract.
  * Produces a nested map where each endpoint's input type is preserved.
- * 
+ *
  * @example
  * ```typescript
  * type Inputs = InferClientInputs<AppContract>;
@@ -475,7 +706,11 @@ export type Prettify<T> = {
  * ```
  */
 export type InferClientInputs<T> = {
-  [K in keyof T]: T[K] extends { type: ProcedureType; input: infer I; output: unknown }
+  [K in keyof T]: T[K] extends {
+    type: ProcedureType;
+    input: infer I;
+    output: unknown;
+  }
     ? I
     : T[K] extends object
       ? InferClientInputs<T[K]>
@@ -485,7 +720,7 @@ export type InferClientInputs<T> = {
 /**
  * Recursively infers the output types from a contract.
  * Produces a nested map where each endpoint's output type is preserved.
- * 
+ *
  * @example
  * ```typescript
  * type Outputs = InferClientOutputs<AppContract>;
@@ -493,7 +728,11 @@ export type InferClientInputs<T> = {
  * ```
  */
 export type InferClientOutputs<T> = {
-  [K in keyof T]: T[K] extends { type: ProcedureType; input: unknown; output: infer O }
+  [K in keyof T]: T[K] extends {
+    type: ProcedureType;
+    input: unknown;
+    output: infer O;
+  }
     ? O
     : T[K] extends object
       ? InferClientOutputs<T[K]>
@@ -503,7 +742,7 @@ export type InferClientOutputs<T> = {
 /**
  * Recursively infers the body input types from a contract.
  * If an endpoint's input includes `{ body: ... }`, only the body portion is extracted.
- * 
+ *
  * @example
  * ```typescript
  * type BodyInputs = InferClientBodyInputs<AppContract>;
@@ -511,7 +750,11 @@ export type InferClientOutputs<T> = {
  * ```
  */
 export type InferClientBodyInputs<T> = {
-  [K in keyof T]: T[K] extends { type: ProcedureType; input: infer I; output: unknown }
+  [K in keyof T]: T[K] extends {
+    type: ProcedureType;
+    input: infer I;
+    output: unknown;
+  }
     ? I extends { body: infer B }
       ? B
       : I
@@ -523,7 +766,7 @@ export type InferClientBodyInputs<T> = {
 /**
  * Recursively infers the body output types from a contract.
  * If an endpoint's output includes `{ body: ... }`, only the body portion is extracted.
- * 
+ *
  * @example
  * ```typescript
  * type BodyOutputs = InferClientBodyOutputs<AppContract>;
@@ -531,7 +774,11 @@ export type InferClientBodyInputs<T> = {
  * ```
  */
 export type InferClientBodyOutputs<T> = {
-  [K in keyof T]: T[K] extends { type: ProcedureType; input: unknown; output: infer O }
+  [K in keyof T]: T[K] extends {
+    type: ProcedureType;
+    input: unknown;
+    output: infer O;
+  }
     ? O extends { body: infer B }
       ? B
       : O
@@ -543,7 +790,7 @@ export type InferClientBodyOutputs<T> = {
 /**
  * Recursively infers the error types from a contract.
  * Produces a nested map where each endpoint's error type is preserved.
- * 
+ *
  * @example
  * ```typescript
  * type Errors = InferClientErrors<AppContract>;
@@ -551,7 +798,11 @@ export type InferClientBodyOutputs<T> = {
  * ```
  */
 export type InferClientErrors<T> = {
-  [K in keyof T]: T[K] extends { type: ProcedureType; input: unknown; output: unknown }
+  [K in keyof T]: T[K] extends {
+    type: ProcedureType;
+    input: unknown;
+    output: unknown;
+  }
     ? RpcError
     : T[K] extends object
       ? InferClientErrors<T[K]>
@@ -561,13 +812,17 @@ export type InferClientErrors<T> = {
 /**
  * Recursively infers a union of all error types from a contract.
  * Useful when you want to handle all possible errors from any endpoint at once.
- * 
+ *
  * @example
  * ```typescript
  * type AllErrors = InferClientErrorUnion<AppContract>; // RpcError
  * ```
  */
-export type InferClientErrorUnion<T> = T extends { type: ProcedureType; input: unknown; output: unknown }
+export type InferClientErrorUnion<T> = T extends {
+  type: ProcedureType;
+  input: unknown;
+  output: unknown;
+}
   ? RpcError
   : T extends object
     ? { [K in keyof T]: InferClientErrorUnion<T[K]> }[keyof T]
@@ -575,7 +830,7 @@ export type InferClientErrorUnion<T> = T extends { type: ProcedureType; input: u
 
 /**
  * Infers the procedure type (query, mutation, subscription) for each endpoint.
- * 
+ *
  * @example
  * ```typescript
  * type Types = InferClientProcedureTypes<AppContract>;
@@ -583,7 +838,11 @@ export type InferClientErrorUnion<T> = T extends { type: ProcedureType; input: u
  * ```
  */
 export type InferClientProcedureTypes<T> = {
-  [K in keyof T]: T[K] extends { type: infer P; input: unknown; output: unknown }
+  [K in keyof T]: T[K] extends {
+    type: infer P;
+    input: unknown;
+    output: unknown;
+  }
     ? P
     : T[K] extends object
       ? InferClientProcedureTypes<T[K]>
@@ -592,13 +851,17 @@ export type InferClientProcedureTypes<T> = {
 
 /**
  * Extract all input types as a union from a contract.
- * 
+ *
  * @example
  * ```typescript
  * type AllInputs = InferClientInputUnion<AppContract>;
  * ```
  */
-export type InferClientInputUnion<T> = T extends { type: ProcedureType; input: infer I; output: unknown }
+export type InferClientInputUnion<T> = T extends {
+  type: ProcedureType;
+  input: infer I;
+  output: unknown;
+}
   ? I
   : T extends object
     ? { [K in keyof T]: InferClientInputUnion<T[K]> }[keyof T]
@@ -606,13 +869,17 @@ export type InferClientInputUnion<T> = T extends { type: ProcedureType; input: i
 
 /**
  * Extract all output types as a union from a contract.
- * 
+ *
  * @example
  * ```typescript
  * type AllOutputs = InferClientOutputUnion<AppContract>;
  * ```
  */
-export type InferClientOutputUnion<T> = T extends { type: ProcedureType; input: unknown; output: infer O }
+export type InferClientOutputUnion<T> = T extends {
+  type: ProcedureType;
+  input: unknown;
+  output: infer O;
+}
   ? O
   : T extends object
     ? { [K in keyof T]: InferClientOutputUnion<T[K]> }[keyof T]
@@ -621,11 +888,13 @@ export type InferClientOutputUnion<T> = T extends { type: ProcedureType; input: 
 /**
  * Infer the client context type from a client (placeholder for link-based clients).
  * For actual context inference from TauriLink, use InferLinkContext from ./link.
- * 
+ *
  * @example
  * ```typescript
  * // For link-based clients, import from ./link:
  * import { InferLinkContext, InferClientContext } from './link';
  * ```
  */
-export type InferClientContext<T> = T extends { __context?: infer C } ? C : unknown;
+export type InferClientContext<T> = T extends { __context?: infer C }
+  ? C
+  : unknown;

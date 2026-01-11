@@ -55,17 +55,17 @@ export interface SubscriptionHookOptions<T> extends BaseSubscriptionOptions {
 
 /**
  * React hook for RPC subscriptions with automatic connection management.
- * 
+ *
  * For queries and mutations, use TanStack Query directly:
  * ```typescript
  * import { useQuery, useMutation } from '@tanstack/react-query';
- * 
+ *
  * // Query
  * const { data } = useQuery({
  *   queryKey: ['user', id],
  *   queryFn: () => rpc.user.get({ id }),
  * });
- * 
+ *
  * // Mutation
  * const { mutate } = useMutation({
  *   mutationFn: (input) => rpc.user.create(input),

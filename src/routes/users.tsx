@@ -140,7 +140,12 @@ function CreateUserForm({ onSuccess }: { onSuccess: () => void }) {
 }
 
 function UsersPage() {
-  const { data: users, isLoading, error, refetch } = useQuery(orpc.user.list.queryOptions());
+  const {
+    data: users,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery(orpc.user.list.queryOptions());
   const queryClient = useQueryClient();
   const deleteUser = useMutation({
     ...orpc.user.delete.mutationOptions(),

@@ -14,7 +14,6 @@ import {
   isRpcError,
   hasErrorCode,
   getProcedures,
-  type ContractRouter,
   type RpcError,
   type SubscriptionResult,
   type SubscriptionHookOptions,
@@ -118,7 +117,13 @@ export interface StockPrice {
 // Contract Definition
 // =============================================================================
 
-export interface AppContract extends ContractRouter {
+/**
+ * Application RPC Contract.
+ *
+ * Note: We don't extend ContractRouter here to preserve literal key types
+ * for type-safe batch operations. The contract still follows the same structure.
+ */
+export interface AppContract {
   health: { type: "query"; input: void; output: HealthResponse };
   greet: { type: "query"; input: { name: string }; output: string };
 
@@ -127,11 +132,19 @@ export interface AppContract extends ContractRouter {
     list: { type: "query"; input: void; output: User[] };
     create: { type: "mutation"; input: CreateUserInput; output: User };
     update: { type: "mutation"; input: UpdateUserInput; output: User };
-    delete: { type: "mutation"; input: { id: number }; output: SuccessResponse };
+    delete: {
+      type: "mutation";
+      input: { id: number };
+      output: SuccessResponse;
+    };
   };
 
   stream: {
-    counter: { type: "subscription"; input: CounterInput; output: CounterEvent };
+    counter: {
+      type: "subscription";
+      input: CounterInput;
+      output: CounterEvent;
+    };
     stocks: { type: "subscription"; input: StockInput; output: StockPrice };
     chat: { type: "subscription"; input: ChatRoomInput; output: ChatMessage };
     time: { type: "subscription"; input: void; output: string };
@@ -139,7 +152,11 @@ export interface AppContract extends ContractRouter {
 
   chat: {
     send: { type: "mutation"; input: SendMessageInput; output: ChatMessage };
-    history: { type: "query"; input: { roomId: string; limit?: number }; output: ChatMessage[] };
+    history: {
+      type: "query";
+      input: { roomId: string; limit?: number };
+      output: ChatMessage[];
+    };
   };
 }
 
@@ -164,19 +181,19 @@ export const rpc = createClientWithSubscriptions<AppContract>({
 
 /**
  * TanStack Query utilities for the RPC client.
- * 
+ *
  * @example
  * ```typescript
  * // Query
  * const { data } = useQuery(orpc.user.get.queryOptions({ input: { id: 1 } }));
  * const { data } = useQuery(orpc.health.queryOptions());
- * 
+ *
  * // Mutation
  * const { mutate } = useMutation(orpc.user.create.mutationOptions());
- * 
+ *
  * // Cache invalidation
  * queryClient.invalidateQueries({ queryKey: orpc.user.key() });
- * 
+ *
  * // Direct call
  * const user = await orpc.user.get.call({ id: 1 });
  * ```
@@ -221,18 +238,18 @@ export function useRpc() {
 /** Counter subscription */
 export function useCounter(
   input: CounterInput = {},
-  options?: SubscriptionHookOptions<CounterEvent>
+  options?: SubscriptionHookOptions<CounterEvent>,
 ): SubscriptionResult<CounterEvent> {
   return useSubscription(
     () => rpc.stream.counter(input),
     [input.start, input.maxCount, input.intervalMs],
-    options
+    options,
   );
 }
 
 /** Time subscription */
 export function useTime(
-  options?: SubscriptionHookOptions<string>
+  options?: SubscriptionHookOptions<string>,
 ): SubscriptionResult<string> {
   return useSubscription(() => rpc.stream.time(), [], options);
 }
@@ -240,25 +257,21 @@ export function useTime(
 /** Stock subscription */
 export function useStocks(
   symbols: string[],
-  options?: SubscriptionHookOptions<StockPrice>
+  options?: SubscriptionHookOptions<StockPrice>,
 ): SubscriptionResult<StockPrice> {
   return useSubscription(
     () => rpc.stream.stocks({ symbols }),
     [symbols.join(",")],
-    options
+    options,
   );
 }
 
 /** Chat subscription */
 export function useChat(
   roomId: string,
-  options?: SubscriptionHookOptions<ChatMessage>
+  options?: SubscriptionHookOptions<ChatMessage>,
 ): SubscriptionResult<ChatMessage> {
-  return useSubscription(
-    () => rpc.stream.chat({ roomId }),
-    [roomId],
-    options
-  );
+  return useSubscription(() => rpc.stream.chat({ roomId }), [roomId], options);
 }
 
 // =============================================================================
@@ -270,5 +283,11 @@ export const stream = rpc.stream;
 export const chat = rpc.chat;
 
 // Re-export utilities
-export { isRpcError, hasErrorCode, getProcedures, useSubscription, useQueryClient };
+export {
+  isRpcError,
+  hasErrorCode,
+  getProcedures,
+  useSubscription,
+  useQueryClient,
+};
 export type { RpcError, SubscriptionResult, SubscriptionHookOptions };

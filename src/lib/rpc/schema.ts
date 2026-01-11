@@ -6,7 +6,12 @@
 
 import { z } from "zod";
 import type { ProcedureType, RpcError } from "./types";
-import type { LinkInterceptor, LinkRequestContext, TauriLink, LinkRouterClient } from "./link";
+import type {
+  LinkInterceptor,
+  LinkRequestContext,
+  TauriLink,
+  LinkRouterClient,
+} from "./link";
 import { createClientFromLink } from "./link";
 
 // =============================================================================
@@ -32,7 +37,9 @@ export interface SchemaProcedure<
  * Can contain procedures or nested routers.
  */
 export type SchemaContract = {
-  [key: string]: SchemaProcedure<ProcedureType, z.ZodTypeAny | null, z.ZodTypeAny> | SchemaContract;
+  [key: string]:
+    | SchemaProcedure<ProcedureType, z.ZodTypeAny | null, z.ZodTypeAny>
+    | SchemaContract;
 };
 
 // =============================================================================
@@ -55,11 +62,17 @@ export type InferSchemaOutput<T> =
 
 /** Infer procedure type from a schema procedure */
 export type InferSchemaProcedureType<T> =
-  T extends SchemaProcedure<infer P, z.ZodTypeAny | null, z.ZodTypeAny> ? P : never;
+  T extends SchemaProcedure<infer P, z.ZodTypeAny | null, z.ZodTypeAny>
+    ? P
+    : never;
 
 /** Infer all input types from a schema contract */
 export type InferContractInputs<T> = {
-  [K in keyof T]: T[K] extends SchemaProcedure<ProcedureType, infer I, z.ZodTypeAny>
+  [K in keyof T]: T[K] extends SchemaProcedure<
+    ProcedureType,
+    infer I,
+    z.ZodTypeAny
+  >
     ? I extends z.ZodTypeAny
       ? z.input<I>
       : void
@@ -70,7 +83,11 @@ export type InferContractInputs<T> = {
 
 /** Infer all output types from a schema contract */
 export type InferContractOutputs<T> = {
-  [K in keyof T]: T[K] extends SchemaProcedure<ProcedureType, z.ZodTypeAny | null, infer O>
+  [K in keyof T]: T[K] extends SchemaProcedure<
+    ProcedureType,
+    z.ZodTypeAny | null,
+    infer O
+  >
     ? z.output<O>
     : T[K] extends object
       ? InferContractOutputs<T[K]>
@@ -114,7 +131,7 @@ export type SchemaContractToContract<T> = {
 
 /**
  * Fluent builder for creating schema-validated procedures.
- * 
+ *
  * @example
  * ```typescript
  * const getUserProcedure = procedure()
@@ -132,7 +149,7 @@ export class ProcedureBuilder<
 
   constructor(
     inputSchema: TInputSchema = null as TInputSchema,
-    outputSchema: TOutputSchema = null as TOutputSchema
+    outputSchema: TOutputSchema = null as TOutputSchema,
   ) {
     this._inputSchema = inputSchema;
     this._outputSchema = outputSchema;
@@ -200,7 +217,9 @@ export class ProcedureBuilder<
     ? SchemaProcedure<"subscription", TInputSchema, TOutputSchema>
     : never {
     if (!this._outputSchema) {
-      throw new Error("Output schema is required before calling subscription()");
+      throw new Error(
+        "Output schema is required before calling subscription()",
+      );
     }
     return {
       type: "subscription",
@@ -214,13 +233,13 @@ export class ProcedureBuilder<
 
 /**
  * Start building a new procedure with Zod schema validation.
- * 
+ *
  * @example
  * ```typescript
  * const health = procedure()
  *   .output(z.object({ status: z.string() }))
  *   .query();
- * 
+ *
  * const createUser = procedure()
  *   .input(z.object({ name: z.string(), email: z.string().email() }))
  *   .output(z.object({ id: z.number(), name: z.string(), email: z.string() }))
@@ -237,7 +256,7 @@ export function procedure(): ProcedureBuilder {
 
 /**
  * Create a router from procedures and nested routers.
- * 
+ *
  * @example
  * ```typescript
  * const contract = router({
@@ -258,7 +277,7 @@ export function router<T extends SchemaContract>(routes: T): T {
 /**
  * Merge multiple routers into one.
  * Later routers override earlier ones on key conflicts.
- * 
+ *
  * @example
  * ```typescript
  * const baseRouter = router({ health: ... });
@@ -271,7 +290,6 @@ export function mergeRouters<T extends SchemaContract[]>(
 ): T[number] {
   return Object.assign({}, ...routers);
 }
-
 
 // =============================================================================
 // Schema Map Builder
@@ -292,7 +310,9 @@ function isSchemaProcedure(value: unknown): value is SchemaProcedure {
     "type" in value &&
     "outputSchema" in value &&
     typeof (value as SchemaProcedure).type === "string" &&
-    ["query", "mutation", "subscription"].includes((value as SchemaProcedure).type)
+    ["query", "mutation", "subscription"].includes(
+      (value as SchemaProcedure).type,
+    )
   );
 }
 
@@ -302,7 +322,7 @@ function isSchemaProcedure(value: unknown): value is SchemaProcedure {
  */
 export function buildSchemaMap(
   contract: SchemaContract,
-  prefix: string = ""
+  prefix: string = "",
 ): Map<string, SchemaMapEntry> {
   const map = new Map<string, SchemaMapEntry>();
 
@@ -353,7 +373,7 @@ export interface ValidationConfig {
   /** Custom error handler for validation failures */
   onValidationError?: (
     error: z.ZodError,
-    context: { path: string; type: "input" | "output" }
+    context: { path: string; type: "input" | "output" },
   ) => void;
 }
 
@@ -367,7 +387,7 @@ export interface ValidationConfig {
 function createValidationError(
   type: "input" | "output",
   path: string,
-  error: z.ZodError
+  error: z.ZodError,
 ): RpcError {
   return {
     code: "VALIDATION_ERROR",
@@ -391,7 +411,7 @@ function createValidationError(
 /**
  * Create a validation interceptor for a schema contract.
  * Validates inputs before sending and outputs after receiving.
- * 
+ *
  * @example
  * ```typescript
  * const interceptor = createValidationInterceptor(contract, {
@@ -403,7 +423,7 @@ function createValidationError(
  */
 export function createValidationInterceptor<T extends SchemaContract>(
   contract: T,
-  config: ValidationConfig = {}
+  config: ValidationConfig = {},
 ): LinkInterceptor {
   const {
     validateInput = true,
@@ -415,13 +435,22 @@ export function createValidationInterceptor<T extends SchemaContract>(
   // Build schema map for fast lookup
   const schemaMap = buildSchemaMap(contract);
 
-  return async <T>(ctx: LinkRequestContext, next: () => Promise<T>): Promise<T> => {
+  return async <T>(
+    ctx: LinkRequestContext,
+    next: () => Promise<T>,
+  ): Promise<T> => {
     const schemas = schemaMap.get(ctx.path);
 
     // Input validation
-    if (validateInput && schemas?.inputSchema && ctx.input !== null && ctx.input !== undefined) {
+    if (
+      validateInput &&
+      schemas?.inputSchema &&
+      ctx.input !== null &&
+      ctx.input !== undefined
+    ) {
       const schema = strict
-        ? (schemas.inputSchema as z.ZodObject<z.ZodRawShape>).strict?.() ?? schemas.inputSchema
+        ? ((schemas.inputSchema as z.ZodObject<z.ZodRawShape>).strict?.() ??
+          schemas.inputSchema)
         : schemas.inputSchema;
       const result = schema.safeParse(ctx.input);
 
@@ -440,7 +469,8 @@ export function createValidationInterceptor<T extends SchemaContract>(
     // Output validation
     if (validateOutput && schemas?.outputSchema) {
       const schema = strict
-        ? (schemas.outputSchema as z.ZodObject<z.ZodRawShape>).strict?.() ?? schemas.outputSchema
+        ? ((schemas.outputSchema as z.ZodObject<z.ZodRawShape>).strict?.() ??
+          schemas.outputSchema)
         : schemas.outputSchema;
       const result = schema.safeParse(response);
 
@@ -463,7 +493,7 @@ export function createValidationInterceptor<T extends SchemaContract>(
 /**
  * Create a validated client from a schema contract.
  * Automatically validates inputs and outputs against Zod schemas.
- * 
+ *
  * @example
  * ```typescript
  * const contract = router({
@@ -474,12 +504,12 @@ export function createValidationInterceptor<T extends SchemaContract>(
  *       .query(),
  *   }),
  * });
- * 
+ *
  * const client = createValidatedClient(contract, link, {
  *   validateInput: true,
  *   validateOutput: true,
  * });
- * 
+ *
  * // Fully type-safe with runtime validation
  * const user = await client.user.get({ id: 1 });
  * ```
@@ -490,11 +520,11 @@ export function createValidatedClient<
 >(
   contract: T,
   link: TauriLink<TContext>,
-  config?: ValidationConfig
+  config?: ValidationConfig,
 ): LinkRouterClient<SchemaContractToContract<T>, TContext> {
   // Create validation interceptor
   const validationInterceptor = createValidationInterceptor(contract, config);
-  
+
   // Get existing interceptors
   const existingInterceptors = link.getConfig().interceptors ?? [];
 
@@ -504,5 +534,7 @@ export function createValidatedClient<
     interceptors: [validationInterceptor, ...existingInterceptors],
   });
 
-  return createClientFromLink<SchemaContractToContract<T>, TContext>(validatedLink);
+  return createClientFromLink<SchemaContractToContract<T>, TContext>(
+    validatedLink,
+  );
 }

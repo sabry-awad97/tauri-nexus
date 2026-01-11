@@ -213,7 +213,7 @@ const { mutate, isLoading } = useMutation(rpc.user.create);
 // Subscription hook
 const { data, isConnected } = useSubscription(
   () => subscribe("stream.counter", input),
-  []
+  [],
 );
 ```
 

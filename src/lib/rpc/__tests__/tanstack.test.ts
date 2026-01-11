@@ -12,18 +12,22 @@ import { createTanstackQueryUtils } from "../tanstack";
 function createMockClient() {
   return {
     health: vi.fn().mockResolvedValue({ status: "ok", version: "1.0.0" }),
-    greet: vi.fn().mockImplementation(({ name }) => Promise.resolve(`Hello, ${name}!`)),
+    greet: vi
+      .fn()
+      .mockImplementation(({ name }) => Promise.resolve(`Hello, ${name}!`)),
     user: {
-      get: vi.fn().mockImplementation(({ id }) => 
-        Promise.resolve({ id, name: "Test User", email: "test@example.com" })
-      ),
+      get: vi
+        .fn()
+        .mockImplementation(({ id }) =>
+          Promise.resolve({ id, name: "Test User", email: "test@example.com" }),
+        ),
       list: vi.fn().mockResolvedValue([
         { id: 1, name: "User 1", email: "user1@example.com" },
         { id: 2, name: "User 2", email: "user2@example.com" },
       ]),
-      create: vi.fn().mockImplementation((input) => 
-        Promise.resolve({ id: 1, ...input })
-      ),
+      create: vi
+        .fn()
+        .mockImplementation((input) => Promise.resolve({ id: 1, ...input })),
       delete: vi.fn().mockResolvedValue({ success: true }),
     },
   };
@@ -35,8 +39,8 @@ function createMockClient() {
 
 function createProxyMockClient() {
   const mockResponses: Record<string, unknown> = {
-    "health": { status: "ok", version: "1.0.0" },
-    "greet": "Hello, World!",
+    health: { status: "ok", version: "1.0.0" },
+    greet: "Hello, World!",
     "user.get": { id: 1, name: "Test User", email: "test@example.com" },
     "user.list": [
       { id: 1, name: "User 1", email: "user1@example.com" },
@@ -50,14 +54,27 @@ function createProxyMockClient() {
     const handler = function (input?: unknown) {
       const fullPath = pathParts.join(".");
       const response = mockResponses[fullPath];
-      if (fullPath === "greet" && input && typeof input === "object" && "name" in input) {
+      if (
+        fullPath === "greet" &&
+        input &&
+        typeof input === "object" &&
+        "name" in input
+      ) {
         return Promise.resolve(`Hello, ${(input as { name: string }).name}!`);
       }
-      if (fullPath === "user.get" && input && typeof input === "object" && "id" in input) {
-        return Promise.resolve({ ...(response as object), id: (input as { id: number }).id });
+      if (
+        fullPath === "user.get" &&
+        input &&
+        typeof input === "object" &&
+        "id" in input
+      ) {
+        return Promise.resolve({
+          ...(response as object),
+          id: (input as { id: number }).id,
+        });
       }
       if (fullPath === "user.create" && input) {
-        return Promise.resolve({ id: 1, ...input as object });
+        return Promise.resolve({ id: 1, ...(input as object) });
       }
       return Promise.resolve(response);
     };
@@ -71,14 +88,27 @@ function createProxyMockClient() {
         const fullPath = pathParts.join(".");
         const response = mockResponses[fullPath];
         const input = args[0];
-        if (fullPath === "greet" && input && typeof input === "object" && "name" in input) {
+        if (
+          fullPath === "greet" &&
+          input &&
+          typeof input === "object" &&
+          "name" in input
+        ) {
           return Promise.resolve(`Hello, ${(input as { name: string }).name}!`);
         }
-        if (fullPath === "user.get" && input && typeof input === "object" && "id" in input) {
-          return Promise.resolve({ ...(response as object), id: (input as { id: number }).id });
+        if (
+          fullPath === "user.get" &&
+          input &&
+          typeof input === "object" &&
+          "id" in input
+        ) {
+          return Promise.resolve({
+            ...(response as object),
+            id: (input as { id: number }).id,
+          });
         }
         if (fullPath === "user.create" && input) {
-          return Promise.resolve({ id: 1, ...input as object });
+          return Promise.resolve({ id: 1, ...(input as object) });
         }
         return Promise.resolve(response);
       },
@@ -192,7 +222,11 @@ describe("createTanstackQueryUtils", () => {
       const result = await options.queryFn();
 
       expect(client.user.get).toHaveBeenCalledWith({ id: 42 });
-      expect(result).toEqual({ id: 42, name: "Test User", email: "test@example.com" });
+      expect(result).toEqual({
+        id: 42,
+        name: "Test User",
+        email: "test@example.com",
+      });
     });
   });
 
@@ -212,10 +246,20 @@ describe("createTanstackQueryUtils", () => {
       const utils = createUtils(client);
 
       const options = utils.user.create.mutationOptions();
-      const result = await options.mutationFn({ name: "New User", email: "new@example.com" });
+      const result = await options.mutationFn({
+        name: "New User",
+        email: "new@example.com",
+      });
 
-      expect(client.user.create).toHaveBeenCalledWith({ name: "New User", email: "new@example.com" });
-      expect(result).toEqual({ id: 1, name: "New User", email: "new@example.com" });
+      expect(client.user.create).toHaveBeenCalledWith({
+        name: "New User",
+        email: "new@example.com",
+      });
+      expect(result).toEqual({
+        id: 1,
+        name: "New User",
+        email: "new@example.com",
+      });
     });
   });
 
@@ -316,7 +360,12 @@ describe("createTanstackQueryUtils", () => {
       expect(utils.key()).toEqual(["api"]);
       expect(utils.health.queryKey()).toEqual(["api", "health"]);
       expect(utils.user.key()).toEqual(["api", "user"]);
-      expect(utils.user.get.queryKey({ input: { id: 1 } })).toEqual(["api", "user", "get", { id: 1 }]);
+      expect(utils.user.get.queryKey({ input: { id: 1 } })).toEqual([
+        "api",
+        "user",
+        "get",
+        { id: 1 },
+      ]);
     });
 
     it("works with nested base paths", () => {
@@ -333,7 +382,10 @@ describe("createTanstackQueryUtils", () => {
       const utils = createUtils(client);
 
       const options = utils.user.list.infiniteOptions({
-        input: (pageParam: number | undefined) => ({ limit: 10, offset: pageParam ?? 0 }),
+        input: (pageParam: number | undefined) => ({
+          limit: 10,
+          offset: pageParam ?? 0,
+        }),
         initialPageParam: undefined as number | undefined,
         getNextPageParam: (lastPage: any) => lastPage.nextOffset,
       });
@@ -398,7 +450,6 @@ describe("createTanstackQueryUtils", () => {
     });
   });
 });
-
 
 describe("createTanstackQueryUtils with proxy client", () => {
   describe("query options", () => {
@@ -469,7 +520,11 @@ describe("createTanstackQueryUtils with proxy client", () => {
       const options = utils.user.get.queryOptions({ input: { id: 42 } });
       const result = await options.queryFn();
 
-      expect(result).toEqual({ id: 42, name: "Test User", email: "test@example.com" });
+      expect(result).toEqual({
+        id: 42,
+        name: "Test User",
+        email: "test@example.com",
+      });
     });
   });
 
@@ -489,9 +544,16 @@ describe("createTanstackQueryUtils with proxy client", () => {
       const utils = createProxyUtils(client);
 
       const options = utils.user.create.mutationOptions();
-      const result = await options.mutationFn({ name: "New User", email: "new@example.com" });
+      const result = await options.mutationFn({
+        name: "New User",
+        email: "new@example.com",
+      });
 
-      expect(result).toEqual({ id: 1, name: "New User", email: "new@example.com" });
+      expect(result).toEqual({
+        id: 1,
+        name: "New User",
+        email: "new@example.com",
+      });
     });
   });
 

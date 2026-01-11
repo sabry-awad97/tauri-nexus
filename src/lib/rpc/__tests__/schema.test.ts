@@ -19,7 +19,7 @@ import type { LinkRequestContext } from "../link";
 /** Create a mock context for testing interceptors */
 function createMockContext(
   path: string,
-  input: unknown = null
+  input: unknown = null,
 ): LinkRequestContext {
   return {
     path,
@@ -78,23 +78,17 @@ describe("ProcedureBuilder", () => {
 
     it("should throw when calling query() without output schema", () => {
       const builder = new ProcedureBuilder().input(z.string());
-      expect(() => builder.query()).toThrow(
-        "Output schema is required"
-      );
+      expect(() => builder.query()).toThrow("Output schema is required");
     });
 
     it("should throw when calling mutation() without output schema", () => {
       const builder = new ProcedureBuilder().input(z.string());
-      expect(() => builder.mutation()).toThrow(
-        "Output schema is required"
-      );
+      expect(() => builder.mutation()).toThrow("Output schema is required");
     });
 
     it("should throw when calling subscription() without output schema", () => {
       const builder = new ProcedureBuilder().input(z.string());
-      expect(() => builder.subscription()).toThrow(
-        "Output schema is required"
-      );
+      expect(() => builder.subscription()).toThrow("Output schema is required");
     });
   });
 });
@@ -110,7 +104,7 @@ describe("Property 1: Contract Builder produces correct procedure types", () => 
         const proc = procedure().output(z.string()).query();
         expect(proc.type).toBe("query");
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -120,7 +114,7 @@ describe("Property 1: Contract Builder produces correct procedure types", () => 
         const proc = procedure().output(z.string()).mutation();
         expect(proc.type).toBe("mutation");
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -130,7 +124,7 @@ describe("Property 1: Contract Builder produces correct procedure types", () => 
         const proc = procedure().output(z.string()).subscription();
         expect(proc.type).toBe("subscription");
       }),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 
@@ -138,15 +132,12 @@ describe("Property 1: Contract Builder produces correct procedure types", () => 
     const types = ["query", "mutation", "subscription"] as const;
 
     fc.assert(
-      fc.property(
-        fc.constantFrom(...types),
-        (procedureType) => {
-          const builder = procedure().output(z.string());
-          const proc = builder[procedureType]();
-          expect(proc.type).toBe(procedureType);
-        }
-      ),
-      { numRuns: 100 }
+      fc.property(fc.constantFrom(...types), (procedureType) => {
+        const builder = procedure().output(z.string());
+        const proc = builder[procedureType]();
+        expect(proc.type).toBe(procedureType);
+      }),
+      { numRuns: 100 },
     );
   });
 });
@@ -158,7 +149,9 @@ describe("Property 1: Contract Builder produces correct procedure types", () => 
 describe("Router Utilities", () => {
   it("router() creates a router from procedures", () => {
     const contract = router({
-      health: procedure().output(z.object({ status: z.string() })).query(),
+      health: procedure()
+        .output(z.object({ status: z.string() }))
+        .query(),
     });
 
     expect(contract.health).toBeDefined();
@@ -208,27 +201,24 @@ describe("Property 2: Nested router structures are correctly built", () => {
 
   it("schemas are preserved at all depths", () => {
     fc.assert(
-      fc.property(
-        fc.integer({ min: 1, max: 5 }),
-        (depth) => {
-          // Build a nested router of given depth
-          let innerRouter: SchemaContract = {
-            leaf: procedure().input(z.number()).output(z.string()).query(),
-          };
+      fc.property(fc.integer({ min: 1, max: 5 }), (depth) => {
+        // Build a nested router of given depth
+        let innerRouter: SchemaContract = {
+          leaf: procedure().input(z.number()).output(z.string()).query(),
+        };
 
-          for (let i = 0; i < depth; i++) {
-            innerRouter = router({ nested: innerRouter });
-          }
-
-          const schemaMap = buildSchemaMap(innerRouter);
-          const expectedPath = "nested.".repeat(depth) + "leaf";
-
-          expect(schemaMap.has(expectedPath)).toBe(true);
-          expect(schemaMap.get(expectedPath)?.inputSchema).toBeDefined();
-          expect(schemaMap.get(expectedPath)?.outputSchema).toBeDefined();
+        for (let i = 0; i < depth; i++) {
+          innerRouter = router({ nested: innerRouter });
         }
-      ),
-      { numRuns: 100 }
+
+        const schemaMap = buildSchemaMap(innerRouter);
+        const expectedPath = "nested.".repeat(depth) + "leaf";
+
+        expect(schemaMap.has(expectedPath)).toBe(true);
+        expect(schemaMap.get(expectedPath)?.inputSchema).toBeDefined();
+        expect(schemaMap.get(expectedPath)?.outputSchema).toBeDefined();
+      }),
+      { numRuns: 100 },
     );
   });
 });
@@ -273,11 +263,14 @@ describe("Property 10: Router merge combines all procedures", () => {
   it("merge is associative for non-conflicting keys", () => {
     fc.assert(
       fc.property(
-        fc.array(fc.string().filter(s => /^[a-z]+$/.test(s)), { minLength: 1, maxLength: 5 }),
+        fc.array(
+          fc.string().filter((s) => /^[a-z]+$/.test(s)),
+          { minLength: 1, maxLength: 5 },
+        ),
         (keys) => {
           const uniqueKeys = [...new Set(keys)];
-          const routers = uniqueKeys.map(key =>
-            router({ [key]: procedure().output(z.string()).query() })
+          const routers = uniqueKeys.map((key) =>
+            router({ [key]: procedure().output(z.string()).query() }),
           );
 
           if (routers.length === 0) return;
@@ -288,13 +281,12 @@ describe("Property 10: Router merge combines all procedures", () => {
           for (const key of uniqueKeys) {
             expect(schemaMap.has(key)).toBe(true);
           }
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });
-
 
 // =============================================================================
 // Task 4.1-4.2: Schema Map and Input Validation Tests
@@ -364,11 +356,13 @@ describe("Property 3: Valid input passes validation", () => {
         async (input) => {
           const contract = router({
             test: procedure()
-              .input(z.object({
-                str: z.string(),
-                num: z.number(),
-                bool: z.boolean(),
-              }))
+              .input(
+                z.object({
+                  str: z.string(),
+                  num: z.number(),
+                  bool: z.boolean(),
+                }),
+              )
               .output(z.string())
               .query(),
           });
@@ -379,9 +373,9 @@ describe("Property 3: Valid input passes validation", () => {
 
           const result = await interceptor(ctx, next);
           expect(result).toBe("ok");
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });
@@ -425,7 +419,10 @@ describe("Property 4: Invalid input produces VALIDATION_ERROR with Zod details",
       await interceptor(ctx, next);
       expect.fail("Should have thrown");
     } catch (error: unknown) {
-      const rpcError = error as { code: string; details: { issues: Array<{ path: string; message: string }> } };
+      const rpcError = error as {
+        code: string;
+        details: { issues: Array<{ path: string; message: string }> };
+      };
       expect(rpcError.code).toBe("VALIDATION_ERROR");
       expect(rpcError.details.issues).toBeInstanceOf(Array);
       expect(rpcError.details.issues.length).toBeGreaterThan(0);
@@ -451,9 +448,9 @@ describe("Property 4: Invalid input produces VALIDATION_ERROR with Zod details",
           await expect(interceptor(ctx, next)).rejects.toMatchObject({
             code: "VALIDATION_ERROR",
           });
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });
@@ -490,11 +487,13 @@ describe("Property 6: Valid output passes validation", () => {
         async (output) => {
           const contract = router({
             test: procedure()
-              .output(z.object({
-                id: z.number(),
-                name: z.string(),
-                active: z.boolean(),
-              }))
+              .output(
+                z.object({
+                  id: z.number(),
+                  name: z.string(),
+                  active: z.boolean(),
+                }),
+              )
               .query(),
           });
 
@@ -504,9 +503,9 @@ describe("Property 6: Valid output passes validation", () => {
 
           const result = await interceptor(ctx, next);
           expect(result).toEqual(output);
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });
@@ -544,7 +543,10 @@ describe("Property 7: Invalid output produces VALIDATION_ERROR with details", ()
       await interceptor(ctx, next);
       expect.fail("Should have thrown");
     } catch (error: unknown) {
-      const rpcError = error as { code: string; details: { type: string; issues: unknown[] } };
+      const rpcError = error as {
+        code: string;
+        details: { type: string; issues: unknown[] };
+      };
       expect(rpcError.code).toBe("VALIDATION_ERROR");
       expect(rpcError.details.type).toBe("output");
       expect(rpcError.details.issues.length).toBeGreaterThan(0);
@@ -560,7 +562,7 @@ describe("Property 5: Zod transforms are applied correctly", () => {
   it("input transforms are applied before passing to next", async () => {
     const contract = router({
       test: procedure()
-        .input(z.string().transform(s => s.toUpperCase()))
+        .input(z.string().transform((s) => s.toUpperCase()))
         .output(z.string())
         .query(),
     });
@@ -578,7 +580,7 @@ describe("Property 5: Zod transforms are applied correctly", () => {
   it("output transforms are applied to response", async () => {
     const contract = router({
       test: procedure()
-        .output(z.string().transform(s => s.toLowerCase()))
+        .output(z.string().transform((s) => s.toLowerCase()))
         .query(),
     });
 
@@ -594,12 +596,16 @@ describe("Property 5: Zod transforms are applied correctly", () => {
   it("date transforms work correctly", async () => {
     const contract = router({
       test: procedure()
-        .input(z.object({
-          date: z.string().transform(s => new Date(s)),
-        }))
-        .output(z.object({
-          timestamp: z.number(),
-        }))
+        .input(
+          z.object({
+            date: z.string().transform((s) => new Date(s)),
+          }),
+        )
+        .output(
+          z.object({
+            timestamp: z.number(),
+          }),
+        )
         .query(),
     });
 
@@ -616,10 +622,11 @@ describe("Property 5: Zod transforms are applied correctly", () => {
     const contract = router({
       test: procedure()
         .input(
-          z.string()
-            .transform(s => s.trim())
-            .transform(s => s.toUpperCase())
-            .transform(s => `[${s}]`)
+          z
+            .string()
+            .transform((s) => s.trim())
+            .transform((s) => s.toUpperCase())
+            .transform((s) => `[${s}]`),
         )
         .output(z.string())
         .query(),
@@ -634,7 +641,6 @@ describe("Property 5: Zod transforms are applied correctly", () => {
     expect(ctx.input).toBe("[HELLO]");
   });
 });
-
 
 // =============================================================================
 // Task 6: Validation Configuration Tests
@@ -681,30 +687,26 @@ describe("Property 8: Disabled validation passes data unchanged", () => {
 
   it("both validations disabled passes everything through", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        fc.anything(),
-        fc.anything(),
-        async (input, output) => {
-          const contract = router({
-            test: procedure()
-              .input(z.object({ strict: z.literal(true) }))
-              .output(z.object({ strict: z.literal(true) }))
-              .query(),
-          });
+      fc.asyncProperty(fc.anything(), fc.anything(), async (input, output) => {
+        const contract = router({
+          test: procedure()
+            .input(z.object({ strict: z.literal(true) }))
+            .output(z.object({ strict: z.literal(true) }))
+            .query(),
+        });
 
-          const interceptor = createValidationInterceptor(contract, {
-            validateInput: false,
-            validateOutput: false,
-          });
-          const ctx = createMockContext("test", input);
-          const next = createMockNext(output);
+        const interceptor = createValidationInterceptor(contract, {
+          validateInput: false,
+          validateOutput: false,
+        });
+        const ctx = createMockContext("test", input);
+        const next = createMockNext(output);
 
-          const result = await interceptor(ctx, next);
+        const result = await interceptor(ctx, next);
 
-          expect(result).toEqual(output);
-        }
-      ),
-      { numRuns: 100 }
+        expect(result).toEqual(output);
+      }),
+      { numRuns: 100 },
     );
   });
 });
@@ -771,7 +773,7 @@ describe("Property 9: Strict mode rejects unknown keys", () => {
   it("strict mode with random extra keys always rejects", async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.string().filter(s => s !== "id" && /^[a-z]+$/.test(s)),
+        fc.string().filter((s) => s !== "id" && /^[a-z]+$/.test(s)),
         fc.anything(),
         async (extraKey, extraValue) => {
           const contract = router({
@@ -784,15 +786,18 @@ describe("Property 9: Strict mode rejects unknown keys", () => {
           const interceptor = createValidationInterceptor(contract, {
             strict: true,
           });
-          const ctx = createMockContext("test", { id: 1, [extraKey]: extraValue });
+          const ctx = createMockContext("test", {
+            id: 1,
+            [extraKey]: extraValue,
+          });
           const next = createMockNext("ok");
 
           await expect(interceptor(ctx, next)).rejects.toMatchObject({
             code: "VALIDATION_ERROR",
           });
-        }
+        },
       ),
-      { numRuns: 100 }
+      { numRuns: 100 },
     );
   });
 });
@@ -816,10 +821,10 @@ describe("Custom error handler", () => {
 
     await expect(interceptor(ctx, next)).rejects.toThrow();
 
-    expect(onValidationError).toHaveBeenCalledWith(
-      expect.any(z.ZodError),
-      { path: "test", type: "input" }
-    );
+    expect(onValidationError).toHaveBeenCalledWith(expect.any(z.ZodError), {
+      path: "test",
+      type: "input",
+    });
   });
 
   it("calls custom error handler on output validation failure", async () => {
@@ -839,10 +844,10 @@ describe("Custom error handler", () => {
 
     await expect(interceptor(ctx, next)).rejects.toThrow();
 
-    expect(onValidationError).toHaveBeenCalledWith(
-      expect.any(z.ZodError),
-      { path: "test", type: "output" }
-    );
+    expect(onValidationError).toHaveBeenCalledWith(expect.any(z.ZodError), {
+      path: "test",
+      type: "output",
+    });
   });
 });
 
@@ -893,15 +898,19 @@ describe("Integration: End-to-end validation flow", () => {
     const contract = router({
       user: router({
         create: procedure()
-          .input(z.object({
-            name: z.string().min(1),
-            email: z.string().email(),
-          }))
-          .output(z.object({
-            id: z.number(),
-            name: z.string(),
-            email: z.string(),
-          }))
+          .input(
+            z.object({
+              name: z.string().min(1),
+              email: z.string().email(),
+            }),
+          )
+          .output(
+            z.object({
+              id: z.number(),
+              name: z.string(),
+              email: z.string(),
+            }),
+          )
           .mutation(),
       }),
     });

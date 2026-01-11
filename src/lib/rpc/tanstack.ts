@@ -5,7 +5,6 @@
 // TanStack Query options automatically, similar to oRPC's approach.
 
 import type { QueryKey } from "@tanstack/react-query";
-import type { ContractRouter } from "./types";
 
 // =============================================================================
 // Types
@@ -48,8 +47,11 @@ type InferProcedureType<T> = T extends { type: infer P } ? P : never;
 interface QueryProcedureUtils<TInput, TOutput> {
   queryOptions: TInput extends void
     ? (opts?: { enabled?: boolean }) => QueryOptionsResult<TOutput>
-    : (opts: { input: TInput; enabled?: boolean }) => QueryOptionsResult<TOutput>;
-  
+    : (opts: {
+        input: TInput;
+        enabled?: boolean;
+      }) => QueryOptionsResult<TOutput>;
+
   infiniteOptions: <TPageParam = unknown>(opts: {
     input: (pageParam: TPageParam) => TInput;
     initialPageParam: TPageParam;
@@ -66,12 +68,14 @@ interface QueryProcedureUtils<TInput, TOutput> {
   };
 
   infiniteKey: (opts?: { input?: TInput }) => QueryKey;
-  
+
   queryKey: TInput extends void
     ? () => QueryKey
     : (opts: { input: TInput }) => QueryKey;
   key: (opts?: KeyOptions<TInput>) => QueryKey;
-  call: TInput extends void ? () => Promise<TOutput> : (input: TInput) => Promise<TOutput>;
+  call: TInput extends void
+    ? () => Promise<TOutput>
+    : (input: TInput) => Promise<TOutput>;
 }
 
 /** Mutation procedure utils interface */
@@ -79,19 +83,28 @@ interface MutationProcedureUtils<TInput, TOutput> {
   mutationOptions: () => MutationOptionsResult<TInput, TOutput>;
   mutationKey: () => QueryKey;
   key: () => QueryKey;
-  call: TInput extends void ? () => Promise<TOutput> : (input: TInput) => Promise<TOutput>;
+  call: TInput extends void
+    ? () => Promise<TOutput>
+    : (input: TInput) => Promise<TOutput>;
 }
 
 /** Convert a contract router to TanStack Query utils */
 export type TanstackQueryUtils<TContract> = {
-  [K in keyof TContract]: TContract[K] extends { type: "query" | "mutation" | "subscription" }
+  [K in keyof TContract]: TContract[K] extends {
+    type: "query" | "mutation" | "subscription";
+  }
     ? InferProcedureType<TContract[K]> extends "query"
       ? QueryProcedureUtils<InferInput<TContract[K]>, InferOutput<TContract[K]>>
       : InferProcedureType<TContract[K]> extends "mutation"
-        ? MutationProcedureUtils<InferInput<TContract[K]>, InferOutput<TContract[K]>>
+        ? MutationProcedureUtils<
+            InferInput<TContract[K]>,
+            InferOutput<TContract[K]>
+          >
         : never
     : TContract[K] extends object
-      ? TanstackQueryUtils<TContract[K]> & { key: (opts?: KeyOptions) => QueryKey }
+      ? TanstackQueryUtils<TContract[K]> & {
+          key: (opts?: KeyOptions) => QueryKey;
+        }
       : never;
 } & {
   key: (opts?: KeyOptions) => QueryKey;
@@ -108,34 +121,34 @@ export interface CreateTanstackQueryUtilsOptions {
 
 /**
  * Create TanStack Query utilities from an RPC client.
- * 
+ *
  * @example
  * ```typescript
  * const orpc = createTanstackQueryUtils(rpc);
- * 
+ *
  * // Query options
  * const query = useQuery(orpc.user.get.queryOptions({ input: { id: 1 } }));
- * 
+ *
  * // Infinite query options
  * const infinite = useInfiniteQuery(orpc.user.list.infiniteOptions({
  *   input: (pageParam) => ({ limit: 10, offset: pageParam }),
  *   initialPageParam: 0,
  *   getNextPageParam: (lastPage) => lastPage.nextOffset,
  * }));
- * 
+ *
  * // Mutation options
  * const mutation = useMutation(orpc.user.create.mutationOptions());
- * 
+ *
  * // Cache invalidation
  * queryClient.invalidateQueries({ queryKey: orpc.user.key() });
- * 
+ *
  * // Direct call
  * const user = await orpc.user.get.call({ id: 1 });
  * ```
  */
-export function createTanstackQueryUtils<TContract extends ContractRouter>(
+export function createTanstackQueryUtils<TContract extends object>(
   client: unknown,
-  options: CreateTanstackQueryUtilsOptions = {}
+  options: CreateTanstackQueryUtilsOptions = {},
 ): TanstackQueryUtils<TContract> {
   const basePath = options.path ?? [];
 
@@ -145,7 +158,7 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
     // Instead, we create a proxy that provides both namespace traversal AND procedure utils.
     // The procedure utils (queryOptions, mutationOptions, etc.) are available at every level,
     // and they use the current path to call the underlying client.
-    
+
     return new Proxy(
       {},
       {
@@ -163,7 +176,10 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
           // Procedure utils - these are available at every level
           if (prop === "queryOptions") {
             return (opts?: { input?: unknown; enabled?: boolean }) => ({
-              queryKey: opts?.input !== undefined ? [...currentPath, opts.input] : currentPath,
+              queryKey:
+                opts?.input !== undefined
+                  ? [...currentPath, opts.input]
+                  : currentPath,
               queryFn: () => {
                 const fn = getClientFn(target, currentPath);
                 return opts?.input !== undefined ? fn(opts.input) : fn();
@@ -174,7 +190,9 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
 
           if (prop === "queryKey") {
             return (opts?: { input?: unknown }) =>
-              opts?.input !== undefined ? [...currentPath, opts.input] : currentPath;
+              opts?.input !== undefined
+                ? [...currentPath, opts.input]
+                : currentPath;
           }
 
           if (prop === "infiniteOptions") {
@@ -182,7 +200,9 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
               input: (pageParam: TPageParam) => unknown;
               initialPageParam: TPageParam;
               getNextPageParam: (lastPage: unknown) => TPageParam | undefined;
-              getPreviousPageParam?: (firstPage: unknown) => TPageParam | undefined;
+              getPreviousPageParam?: (
+                firstPage: unknown,
+              ) => TPageParam | undefined;
               enabled?: boolean;
             }) => ({
               queryKey: [...currentPath, "infinite"],
@@ -199,8 +219,8 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
 
           if (prop === "infiniteKey") {
             return (opts?: { input?: unknown }) =>
-              opts?.input !== undefined 
-                ? [...currentPath, "infinite", opts.input] 
+              opts?.input !== undefined
+                ? [...currentPath, "infinite", opts.input]
                 : [...currentPath, "infinite"];
           }
 
@@ -236,7 +256,7 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
 
           return createUtils(clientProp, nextPath);
         },
-      }
+      },
     );
   }
 
@@ -245,7 +265,10 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
    * For proxy-based clients, the target itself is callable.
    * For plain object clients, we need to traverse to find the function.
    */
-  function getClientFn(target: unknown, path: string[]): (input?: unknown) => Promise<unknown> {
+  function getClientFn(
+    target: unknown,
+    path: string[],
+  ): (input?: unknown) => Promise<unknown> {
     // If path is empty, target itself should be callable (for proxy clients at root)
     if (path.length === 0) {
       if (typeof target === "function") {

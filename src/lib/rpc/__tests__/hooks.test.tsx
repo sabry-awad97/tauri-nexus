@@ -15,7 +15,7 @@ import type { RpcError, EventIterator } from "../types";
 
 function createMockEventIterator<T>(
   events: T[],
-  error?: RpcError
+  error?: RpcError,
 ): EventIterator<T> {
   let index = 0;
   let returned = false;
@@ -76,7 +76,7 @@ describe("useSubscription", () => {
       () => {
         expect(result.current.data.length).toBe(3);
       },
-      { timeout: 1000 }
+      { timeout: 1000 },
     );
 
     expect(result.current.data).toEqual([1, 2, 3]);
@@ -105,7 +105,7 @@ describe("useSubscription", () => {
       () => {
         expect(result.current.isError).toBe(true);
       },
-      { timeout: 1000 }
+      { timeout: 1000 },
     );
 
     expect(result.current.error).toMatchObject({ code: "SUBSCRIPTION_ERROR" });
@@ -132,7 +132,7 @@ describe("useSubscription", () => {
       () => {
         expect(onEvent).toHaveBeenCalledTimes(2);
       },
-      { timeout: 1000 }
+      { timeout: 1000 },
     );
 
     expect(onEvent).toHaveBeenCalledWith(1);
@@ -151,7 +151,7 @@ describe("useSubscription", () => {
       () => {
         expect(result.current.data.length).toBe(3);
       },
-      { timeout: 1000 }
+      { timeout: 1000 },
     );
 
     act(() => {
@@ -169,14 +169,14 @@ describe("useSubscription", () => {
       .mockResolvedValue(createMockEventIterator(events));
 
     const { result } = renderHook(() =>
-      useSubscription(subscribeFn, [], { maxEvents: 3 })
+      useSubscription(subscribeFn, [], { maxEvents: 3 }),
     );
 
     await waitFor(
       () => {
         expect(result.current.data.length).toBe(3);
       },
-      { timeout: 1000 }
+      { timeout: 1000 },
     );
 
     // Should keep only the last 3 events
@@ -227,7 +227,7 @@ describe("Property-Based Tests", () => {
 
             // Simulate connection delay
             await new Promise((resolve) =>
-              setTimeout(resolve, Math.random() * 30)
+              setTimeout(resolve, Math.random() * 30),
             );
 
             let eventIndex = 0;
@@ -263,7 +263,7 @@ describe("Property-Based Tests", () => {
 
           const { rerender, unmount } = renderHook(
             ({ dep }) => useSubscription(subscribeFn, [dep]),
-            { initialProps: { dep: 0 } }
+            { initialProps: { dep: 0 } },
           );
 
           // Trigger multiple rapid reconnections by changing deps
@@ -280,9 +280,9 @@ describe("Property-Based Tests", () => {
 
           // Clean up
           unmount();
-        }
+        },
       ),
-      { numRuns: 5 }
+      { numRuns: 5 },
     );
   });
 
@@ -299,17 +299,17 @@ describe("Property-Based Tests", () => {
             .mockResolvedValue(createMockEventIterator(events));
 
           const { result } = renderHook(() =>
-            useSubscription(subscribeFn, [], { maxEvents })
+            useSubscription(subscribeFn, [], { maxEvents }),
           );
 
           await waitFor(
             () => {
               // Either all events received or maxEvents limit reached
               expect(result.current.data.length).toBe(
-                Math.min(numEvents, maxEvents)
+                Math.min(numEvents, maxEvents),
               );
             },
-            { timeout: 2000 }
+            { timeout: 2000 },
           );
 
           // Buffer should never exceed maxEvents
@@ -320,9 +320,9 @@ describe("Property-Based Tests", () => {
             const expectedLastEvent = numEvents - 1;
             expect(result.current.latestEvent).toBe(expectedLastEvent);
           }
-        }
+        },
       ),
-      { numRuns: 10 }
+      { numRuns: 10 },
     );
   });
 });

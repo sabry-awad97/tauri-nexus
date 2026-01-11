@@ -39,24 +39,24 @@ export interface LinkResponse<TOutput = unknown> {
 /** Interceptor function type */
 export type LinkInterceptor<TClientContext = unknown> = <T>(
   ctx: LinkRequestContext<TClientContext>,
-  next: () => Promise<T>
+  next: () => Promise<T>,
 ) => Promise<T>;
 
 /** Error handler function */
 export type ErrorHandler<TClientContext = unknown> = (
   error: RpcError,
-  ctx: LinkRequestContext<TClientContext>
+  ctx: LinkRequestContext<TClientContext>,
 ) => void | Promise<void>;
 
 /** Request handler function */
 export type RequestHandler<TClientContext = unknown> = (
-  ctx: LinkRequestContext<TClientContext>
+  ctx: LinkRequestContext<TClientContext>,
 ) => void | Promise<void>;
 
 /** Response handler function */
 export type ResponseHandler<TClientContext = unknown> = <T>(
   data: T,
-  ctx: LinkRequestContext<TClientContext>
+  ctx: LinkRequestContext<TClientContext>,
 ) => void | Promise<void>;
 
 // =============================================================================
@@ -86,7 +86,7 @@ export interface TauriLinkConfig<TClientContext = unknown> {
 function createRpcError(
   code: RpcErrorCode | string,
   message: string,
-  details?: unknown
+  details?: unknown,
 ): RpcError {
   return { code, message, details };
 }
@@ -108,7 +108,11 @@ function parseError(error: unknown, timeoutMs?: number): RpcError {
   if (error instanceof Error) {
     if (error.name === "AbortError") {
       if (timeoutMs !== undefined) {
-        return createRpcError("TIMEOUT", `Request timed out after ${timeoutMs}ms`, { timeoutMs });
+        return createRpcError(
+          "TIMEOUT",
+          `Request timed out after ${timeoutMs}ms`,
+          { timeoutMs },
+        );
       }
       return createRpcError("CANCELLED", "Request was cancelled");
     }
@@ -135,14 +139,23 @@ function validatePath(path: string): void {
     throw createRpcError("VALIDATION_ERROR", "Procedure path cannot be empty");
   }
   if (path.startsWith(".") || path.endsWith(".")) {
-    throw createRpcError("VALIDATION_ERROR", "Procedure path cannot start or end with a dot");
+    throw createRpcError(
+      "VALIDATION_ERROR",
+      "Procedure path cannot start or end with a dot",
+    );
   }
   if (path.includes("..")) {
-    throw createRpcError("VALIDATION_ERROR", "Procedure path cannot contain consecutive dots");
+    throw createRpcError(
+      "VALIDATION_ERROR",
+      "Procedure path cannot contain consecutive dots",
+    );
   }
   for (const ch of path) {
     if (!/[a-zA-Z0-9_.]/.test(ch)) {
-      throw createRpcError("VALIDATION_ERROR", `Procedure path contains invalid character: '${ch}'`);
+      throw createRpcError(
+        "VALIDATION_ERROR",
+        `Procedure path contains invalid character: '${ch}'`,
+      );
     }
   }
 }
@@ -153,17 +166,17 @@ function validatePath(path: string): void {
 
 /**
  * TauriLink - A configurable link for Tauri RPC calls.
- * 
+ *
  * Similar to oRPC's RPCLink, but adapted for Tauri's invoke system.
  * Supports client context, interceptors, and lifecycle hooks.
- * 
+ *
  * @example
  * ```typescript
  * interface ClientContext {
  *   userId?: string;
  *   token?: string;
  * }
- * 
+ *
  * const link = new TauriLink<ClientContext>({
  *   interceptors: [
  *     // Logging interceptor
@@ -185,9 +198,9 @@ function validatePath(path: string): void {
  *     console.error(`Error in ${ctx.path}:`, error);
  *   },
  * });
- * 
+ *
  * const client = createClientFromLink<AppContract, ClientContext>(link);
- * 
+ *
  * // Call with context
  * const user = await client.user.get({ id: 1 }, { context: { token: 'abc' } });
  * ```
@@ -202,10 +215,10 @@ export class TauriLink<TClientContext = unknown> {
   /** Execute interceptor chain */
   private async executeInterceptors<T>(
     ctx: LinkRequestContext<TClientContext>,
-    fn: () => Promise<T>
+    fn: () => Promise<T>,
   ): Promise<T> {
     const interceptors = this.config.interceptors ?? [];
-    
+
     let next = fn;
     for (let i = interceptors.length - 1; i >= 0; i--) {
       const interceptor = interceptors[i];
@@ -220,7 +233,7 @@ export class TauriLink<TClientContext = unknown> {
   async call<T>(
     path: string,
     input: unknown,
-    options: LinkCallOptions<TClientContext> = {}
+    options: LinkCallOptions<TClientContext> = {},
   ): Promise<T> {
     validatePath(path);
 
@@ -244,7 +257,10 @@ export class TauriLink<TClientContext = unknown> {
           const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
           try {
-            const result = await invoke<T>("plugin:rpc|rpc_call", { path, input });
+            const result = await invoke<T>("plugin:rpc|rpc_call", {
+              path,
+              input,
+            });
             clearTimeout(timeoutId);
             return result;
           } catch (error) {
@@ -269,7 +285,7 @@ export class TauriLink<TClientContext = unknown> {
   async subscribe<T>(
     path: string,
     input: unknown,
-    options: LinkSubscribeOptions<TClientContext> = {}
+    options: LinkSubscribeOptions<TClientContext> = {},
   ): Promise<AsyncIterable<T>> {
     validatePath(path);
 
@@ -318,7 +334,9 @@ export interface LinkCallOptions<TClientContext = unknown> {
   meta?: Record<string, unknown>;
 }
 
-export interface LinkSubscribeOptions<TClientContext = unknown> extends LinkCallOptions<TClientContext> {
+export interface LinkSubscribeOptions<
+  TClientContext = unknown,
+> extends LinkCallOptions<TClientContext> {
   /** Last event ID for resumption */
   lastEventId?: string;
   /** Auto-reconnect on disconnect */
@@ -338,11 +356,24 @@ const CLIENT_PROXY = Symbol("rpc-link-client-proxy");
 
 /** Client with context support */
 export type LinkRouterClient<T, TClientContext = unknown> = {
-  [K in keyof T]: T[K] extends { type: "subscription"; input: infer I; output: infer O }
+  [K in keyof T]: T[K] extends {
+    type: "subscription";
+    input: infer I;
+    output: infer O;
+  }
     ? I extends void
-      ? (options?: LinkSubscribeOptions<TClientContext>) => Promise<AsyncIterable<O>>
-      : (input: I, options?: LinkSubscribeOptions<TClientContext>) => Promise<AsyncIterable<O>>
-    : T[K] extends { type: "query" | "mutation"; input: infer I; output: infer O }
+      ? (
+          options?: LinkSubscribeOptions<TClientContext>,
+        ) => Promise<AsyncIterable<O>>
+      : (
+          input: I,
+          options?: LinkSubscribeOptions<TClientContext>,
+        ) => Promise<AsyncIterable<O>>
+    : T[K] extends {
+          type: "query" | "mutation";
+          input: infer I;
+          output: infer O;
+        }
       ? I extends void
         ? (options?: LinkCallOptions<TClientContext>) => Promise<O>
         : (input: I, options?: LinkCallOptions<TClientContext>) => Promise<O>
@@ -353,40 +384,47 @@ export type LinkRouterClient<T, TClientContext = unknown> = {
 
 /**
  * Create a type-safe RPC client from a TauriLink.
- * 
+ *
  * @example
  * ```typescript
  * const link = new TauriLink<{ token?: string }>({
  *   interceptors: [authInterceptor],
  * });
- * 
+ *
  * const client = createClientFromLink<AppContract, { token?: string }>(link);
- * 
+ *
  * // Call with context
  * const user = await client.user.get({ id: 1 }, { context: { token: 'abc' } });
  * ```
  */
 export function createClientFromLink<T, TClientContext = unknown>(
-  link: TauriLink<TClientContext>
+  link: TauriLink<TClientContext>,
 ): LinkRouterClient<T, TClientContext> {
   function createProxy(pathParts: string[]): unknown {
     const handler = function (
       inputOrOptions?: unknown,
-      maybeOptions?: LinkCallOptions<TClientContext> | LinkSubscribeOptions<TClientContext>
+      maybeOptions?:
+        | LinkCallOptions<TClientContext>
+        | LinkSubscribeOptions<TClientContext>,
     ) {
       const fullPath = pathParts.join(".");
 
       // Detect if first argument is options (for void-input procedures)
       // Options objects have specific keys: context, signal, timeout, meta
-      const isOptionsObject = (obj: unknown): obj is LinkCallOptions<TClientContext> => {
+      const isOptionsObject = (
+        obj: unknown,
+      ): obj is LinkCallOptions<TClientContext> => {
         if (typeof obj !== "object" || obj === null) return false;
         const keys = Object.keys(obj);
         const optionKeys = ["context", "signal", "timeout", "meta"];
-        return keys.length > 0 && keys.every(k => optionKeys.includes(k));
+        return keys.length > 0 && keys.every((k) => optionKeys.includes(k));
       };
 
       let input: unknown = null;
-      let options: LinkCallOptions<TClientContext> | LinkSubscribeOptions<TClientContext> | undefined;
+      let options:
+        | LinkCallOptions<TClientContext>
+        | LinkSubscribeOptions<TClientContext>
+        | undefined;
 
       if (maybeOptions !== undefined) {
         // Two arguments: input and options
@@ -403,10 +441,18 @@ export function createClientFromLink<T, TClientContext = unknown>(
       }
 
       if (link.isSubscription(fullPath)) {
-        return link.subscribe(fullPath, input, options as LinkSubscribeOptions<TClientContext>);
+        return link.subscribe(
+          fullPath,
+          input,
+          options as LinkSubscribeOptions<TClientContext>,
+        );
       }
 
-      return link.call(fullPath, input, options as LinkCallOptions<TClientContext>);
+      return link.call(
+        fullPath,
+        input,
+        options as LinkCallOptions<TClientContext>,
+      );
     };
 
     return new Proxy(handler, {
@@ -419,15 +465,20 @@ export function createClientFromLink<T, TClientContext = unknown>(
         const fullPath = pathParts.join(".");
 
         // Same logic as handler
-        const isOptionsObject = (obj: unknown): obj is LinkCallOptions<TClientContext> => {
+        const isOptionsObject = (
+          obj: unknown,
+        ): obj is LinkCallOptions<TClientContext> => {
           if (typeof obj !== "object" || obj === null) return false;
           const keys = Object.keys(obj);
           const optionKeys = ["context", "signal", "timeout", "meta"];
-          return keys.length > 0 && keys.every(k => optionKeys.includes(k));
+          return keys.length > 0 && keys.every((k) => optionKeys.includes(k));
         };
 
         let input: unknown = null;
-        let options: LinkCallOptions<TClientContext> | LinkSubscribeOptions<TClientContext> | undefined;
+        let options:
+          | LinkCallOptions<TClientContext>
+          | LinkSubscribeOptions<TClientContext>
+          | undefined;
 
         if (args.length >= 2 && args[1] !== undefined) {
           input = args[0];
@@ -441,10 +492,18 @@ export function createClientFromLink<T, TClientContext = unknown>(
         }
 
         if (link.isSubscription(fullPath)) {
-          return link.subscribe(fullPath, input, options as LinkSubscribeOptions<TClientContext>);
+          return link.subscribe(
+            fullPath,
+            input,
+            options as LinkSubscribeOptions<TClientContext>,
+          );
         }
 
-        return link.call(fullPath, input, options as LinkCallOptions<TClientContext>);
+        return link.call(
+          fullPath,
+          input,
+          options as LinkCallOptions<TClientContext>,
+        );
       },
     });
   }
@@ -458,7 +517,7 @@ export function createClientFromLink<T, TClientContext = unknown>(
 
 /**
  * Create an error handler interceptor.
- * 
+ *
  * @example
  * ```typescript
  * const link = new TauriLink({
@@ -471,7 +530,7 @@ export function createClientFromLink<T, TClientContext = unknown>(
  * ```
  */
 export function onError<TClientContext = unknown>(
-  handler: (error: RpcError, ctx: LinkRequestContext<TClientContext>) => void
+  handler: (error: RpcError, ctx: LinkRequestContext<TClientContext>) => void,
 ): LinkInterceptor<TClientContext> {
   return async (ctx, next) => {
     try {
@@ -487,7 +546,7 @@ export function onError<TClientContext = unknown>(
 
 /**
  * Create a logging interceptor.
- * 
+ *
  * @example
  * ```typescript
  * const link = new TauriLink({
@@ -496,7 +555,7 @@ export function onError<TClientContext = unknown>(
  * ```
  */
 export function logging<TClientContext = unknown>(
-  options: { prefix?: string } = {}
+  options: { prefix?: string } = {},
 ): LinkInterceptor<TClientContext> {
   const prefix = options.prefix ?? "[RPC]";
   return async (ctx, next) => {
@@ -517,7 +576,7 @@ export function logging<TClientContext = unknown>(
 
 /**
  * Create a retry interceptor.
- * 
+ *
  * @example
  * ```typescript
  * const link = new TauriLink({
@@ -528,26 +587,37 @@ export function logging<TClientContext = unknown>(
  * ```
  */
 export function retry<TClientContext = unknown>(
-  options: { maxRetries?: number; delay?: number; shouldRetry?: (error: RpcError) => boolean } = {}
+  options: {
+    maxRetries?: number;
+    delay?: number;
+    shouldRetry?: (error: RpcError) => boolean;
+  } = {},
 ): LinkInterceptor<TClientContext> {
   const maxRetries = options.maxRetries ?? 3;
   const delay = options.delay ?? 1000;
-  const shouldRetry = options.shouldRetry ?? ((error) => 
-    error.code === "SERVICE_UNAVAILABLE" || error.code === "TIMEOUT"
-  );
+  const shouldRetry =
+    options.shouldRetry ??
+    ((error) =>
+      error.code === "SERVICE_UNAVAILABLE" || error.code === "TIMEOUT");
 
   return async (_ctx, next) => {
     let lastError: RpcError | undefined;
-    
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await next();
       } catch (error) {
-        if (!isRpcError(error) || !shouldRetry(error) || attempt === maxRetries) {
+        if (
+          !isRpcError(error) ||
+          !shouldRetry(error) ||
+          attempt === maxRetries
+        ) {
           throw error;
         }
         lastError = error;
-        await new Promise(resolve => setTimeout(resolve, delay * (attempt + 1)));
+        await new Promise((resolve) =>
+          setTimeout(resolve, delay * (attempt + 1)),
+        );
       }
     }
 
@@ -561,7 +631,7 @@ export function retry<TClientContext = unknown>(
 
 /**
  * Infer the client context type from a link.
- * 
+ *
  * @example
  * ```typescript
  * const link = new TauriLink<{ token: string }>();
@@ -572,11 +642,12 @@ export type InferLinkContext<T> = T extends TauriLink<infer C> ? C : never;
 
 /**
  * Infer the client context type from a client.
- * 
+ *
  * @example
  * ```typescript
  * const client = createClientFromLink<AppContract, { token: string }>(link);
  * type Context = InferClientContext<typeof client>; // { token: string }
  * ```
  */
-export type InferClientContext<T> = T extends LinkRouterClient<infer _, infer C> ? C : never;
+export type InferClientContext<T> =
+  T extends LinkRouterClient<infer _, infer C> ? C : never;

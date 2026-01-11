@@ -111,7 +111,6 @@ impl Default for DbService {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,10 +136,10 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 let db = DbService::new();
-                
+
                 // Track created user IDs
                 let created_ids = Arc::new(RwLock::new(Vec::<u32>::new()));
-                
+
                 // Spawn concurrent readers
                 let mut reader_handles = Vec::new();
                 for _ in 0..num_readers {
@@ -151,7 +150,7 @@ mod tests {
                             let users = db_clone.list_users().await;
                             // Verify we got a valid list (not corrupted)
                             prop_assert!(users.iter().all(|u| !u.name.is_empty()));
-                            
+
                             // Also try to get individual users
                             for user in &users {
                                 let fetched = db_clone.get_user(user.id).await;
@@ -159,7 +158,7 @@ mod tests {
                                     prop_assert_eq!(u.id, user.id);
                                 }
                             }
-                            
+
                             // Small yield to allow interleaving
                             tokio::task::yield_now().await;
                         }
@@ -167,7 +166,7 @@ mod tests {
                     });
                     reader_handles.push(handle);
                 }
-                
+
                 // Spawn concurrent writers
                 let mut writer_handles = Vec::new();
                 for i in 0..num_writers {
@@ -178,26 +177,26 @@ mod tests {
                         let name = format!("User{}", i);
                         let email = format!("user{}@test.com", i);
                         let user = db_clone.create_user(&name, &email).await?;
-                        
+
                         // Track the created ID
                         {
                             let mut ids = created_ids_clone.write().await;
                             ids.push(user.id);
                         }
-                        
+
                         // Verify the user was created
                         let fetched = db_clone.get_user(user.id).await;
                         prop_assert!(fetched.is_some(), "Created user should be fetchable");
                         prop_assert_eq!(fetched.unwrap().name, name);
-                        
+
                         // Small yield to allow interleaving
                         tokio::task::yield_now().await;
-                        
+
                         Ok::<_, proptest::test_runner::TestCaseError>(())
                     });
                     writer_handles.push(handle);
                 }
-                
+
                 // Wait for all operations to complete
                 for handle in reader_handles {
                     handle.await.unwrap()?;
@@ -205,25 +204,25 @@ mod tests {
                 for handle in writer_handles {
                     handle.await.unwrap()?;
                 }
-                
+
                 // Verify final state consistency
                 let final_users = db.list_users().await;
                 let created_ids_final = created_ids.read().await;
-                
+
                 // All created users should exist
                 for id in created_ids_final.iter() {
                     let user = db.get_user(*id).await;
                     prop_assert!(user.is_some(), "Created user {} should exist", id);
                 }
-                
+
                 // No duplicate IDs
                 let ids: HashSet<_> = final_users.iter().map(|u| u.id).collect();
                 prop_assert_eq!(ids.len(), final_users.len(), "No duplicate user IDs");
-                
+
                 // Count should match
                 let count = db.count_users().await;
                 prop_assert_eq!(count as usize, final_users.len(), "Count should match list length");
-                
+
                 Ok(())
             })?;
         }
@@ -235,7 +234,7 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 let db = DbService::new();
-                
+
                 // Spawn many concurrent readers
                 let mut handles = Vec::new();
                 for _ in 0..num_readers {
@@ -250,12 +249,12 @@ mod tests {
                     });
                     handles.push(handle);
                 }
-                
+
                 // All readers should complete without deadlock
                 for handle in handles {
                     handle.await.unwrap();
                 }
-                
+
                 Ok::<_, proptest::test_runner::TestCaseError>(())
             })?;
         }
@@ -268,7 +267,7 @@ mod tests {
             rt.block_on(async {
                 let db = DbService::new();
                 let initial_count = db.count_users().await;
-                
+
                 // Spawn concurrent writers
                 let mut handles = Vec::new();
                 for i in 0..num_writes {
@@ -280,7 +279,7 @@ mod tests {
                     });
                     handles.push(handle);
                 }
-                
+
                 // Collect results
                 let mut created_users = Vec::new();
                 for handle in handles {
@@ -288,11 +287,11 @@ mod tests {
                     prop_assert!(result.is_ok(), "Create should succeed");
                     created_users.push(result.unwrap());
                 }
-                
+
                 // Verify all users were created with unique IDs
                 let ids: HashSet<_> = created_users.iter().map(|u| u.id).collect();
                 prop_assert_eq!(ids.len(), num_writes, "All users should have unique IDs");
-                
+
                 // Verify final count
                 let final_count = db.count_users().await;
                 prop_assert_eq!(
@@ -300,7 +299,7 @@ mod tests {
                     initial_count + num_writes as u32,
                     "Count should increase by number of writes"
                 );
-                
+
                 Ok(())
             })?;
         }
@@ -313,31 +312,31 @@ mod tests {
     #[tokio::test]
     async fn test_db_service_basic_operations() {
         let db = DbService::new();
-        
+
         // Initial state
         let users = db.list_users().await;
         assert_eq!(users.len(), 2);
-        
+
         // Get user
         let alice = db.get_user(1).await;
         assert!(alice.is_some());
         assert_eq!(alice.unwrap().name, "Alice");
-        
+
         // Create user
         let new_user = db.create_user("Charlie", "charlie@test.com").await;
         assert!(new_user.is_ok());
         let charlie = new_user.unwrap();
         assert_eq!(charlie.name, "Charlie");
-        
+
         // Update user
         let updated = db.update_user(charlie.id, Some("Charles"), None).await;
         assert!(updated.is_some());
         assert_eq!(updated.unwrap().name, "Charles");
-        
+
         // Delete user
         let deleted = db.delete_user(charlie.id).await;
         assert!(deleted);
-        
+
         // Verify deletion
         let not_found = db.get_user(charlie.id).await;
         assert!(not_found.is_none());
@@ -346,12 +345,12 @@ mod tests {
     #[tokio::test]
     async fn test_db_service_count() {
         let db = DbService::new();
-        
+
         let initial_count = db.count_users().await;
         assert_eq!(initial_count, 2);
-        
+
         db.create_user("Test", "test@test.com").await.unwrap();
-        
+
         let new_count = db.count_users().await;
         assert_eq!(new_count, 3);
     }

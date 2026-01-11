@@ -29,7 +29,10 @@ function TauriLinkDemo() {
   const [isLoading, setIsLoading] = useState(false);
 
   const addLog = (msg: string) => {
-    setLogs((prev) => [...prev.slice(-9), `[${new Date().toLocaleTimeString()}] ${msg}`]);
+    setLogs((prev) => [
+      ...prev.slice(-9),
+      `[${new Date().toLocaleTimeString()}] ${msg}`,
+    ]);
   };
 
   const runDemo = async () => {
@@ -98,10 +101,15 @@ function TauriLinkDemo() {
         <span className="demo-badge">New</span>
       </div>
       <p className="demo-description">
-        Create a client with custom interceptors, client context, and lifecycle hooks.
+        Create a client with custom interceptors, client context, and lifecycle
+        hooks.
       </p>
 
-      <button onClick={runDemo} disabled={isLoading} className="demo-btn primary">
+      <button
+        onClick={runDemo}
+        disabled={isLoading}
+        className="demo-btn primary"
+      >
         {isLoading ? "Running..." : "Run Demo"}
       </button>
 
@@ -109,10 +117,14 @@ function TauriLinkDemo() {
         <h4>Interceptor Logs</h4>
         <div className="logs-list">
           {logs.length === 0 ? (
-            <span className="no-logs">Click "Run Demo" to see interceptor logs</span>
+            <span className="no-logs">
+              Click "Run Demo" to see interceptor logs
+            </span>
           ) : (
             logs.map((log, i) => (
-              <div key={i} className="log-item">{log}</div>
+              <div key={i} className="log-item">
+                {log}
+              </div>
             ))
           )}
         </div>
@@ -156,7 +168,10 @@ function ErrorHandlingDemo() {
     const results: string[] = [];
 
     // Test isRpcError
-    const validError: RpcError = { code: "NOT_FOUND", message: "User not found" };
+    const validError: RpcError = {
+      code: "NOT_FOUND",
+      message: "User not found",
+    };
     const invalidError = { foo: "bar" };
 
     results.push(`isRpcError(validError): ${isRpcError(validError)}`);
@@ -164,8 +179,12 @@ function ErrorHandlingDemo() {
     results.push(`isRpcError("string"): ${isRpcError("string")}`);
 
     // Test hasErrorCode
-    results.push(`hasErrorCode(validError, "NOT_FOUND"): ${hasErrorCode(validError, "NOT_FOUND")}`);
-    results.push(`hasErrorCode(validError, "UNAUTHORIZED"): ${hasErrorCode(validError, "UNAUTHORIZED")}`);
+    results.push(
+      `hasErrorCode(validError, "NOT_FOUND"): ${hasErrorCode(validError, "NOT_FOUND")}`,
+    );
+    results.push(
+      `hasErrorCode(validError, "UNAUTHORIZED"): ${hasErrorCode(validError, "UNAUTHORIZED")}`,
+    );
 
     // Error with details
     const detailedError: RpcError = {
@@ -185,7 +204,8 @@ function ErrorHandlingDemo() {
         <span className="demo-badge">Utils</span>
       </div>
       <p className="demo-description">
-        Type-safe error checking with <code>isRpcError</code> and <code>hasErrorCode</code>.
+        Type-safe error checking with <code>isRpcError</code> and{" "}
+        <code>hasErrorCode</code>.
       </p>
 
       <button onClick={runErrorTests} className="demo-btn primary">
@@ -280,7 +300,9 @@ function BackendInfoDemo() {
           <h4>Available Procedures</h4>
           <div className="procedures-grid">
             {procedures.map((proc) => (
-              <span key={proc} className="procedure-tag">{proc}</span>
+              <span key={proc} className="procedure-tag">
+                {proc}
+              </span>
             ))}
           </div>
         </div>
@@ -309,7 +331,10 @@ function MiddlewareDemo() {
   const setupMiddleware = () => {
     setLogs([]);
     const addLog = (msg: string) => {
-      setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+      setLogs((prev) => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] ${msg}`,
+      ]);
     };
 
     configureRpc({
@@ -361,10 +386,14 @@ function MiddlewareDemo() {
         <h4>Middleware Logs</h4>
         <div className="logs-list">
           {logs.length === 0 ? (
-            <span className="no-logs">Click "Setup Middleware" to configure</span>
+            <span className="no-logs">
+              Click "Setup Middleware" to configure
+            </span>
           ) : (
             logs.map((log, i) => (
-              <div key={i} className="log-item">{log}</div>
+              <div key={i} className="log-item">
+                {log}
+              </div>
             ))
           )}
         </div>
@@ -449,7 +478,8 @@ const link = new TauriLink({
         <span className="demo-badge">Helpers</span>
       </div>
       <p className="demo-description">
-        Pre-built interceptors for common patterns: logging, retry, error handling.
+        Pre-built interceptors for common patterns: logging, retry, error
+        handling.
       </p>
 
       <button onClick={showHelpers} className="demo-btn primary">

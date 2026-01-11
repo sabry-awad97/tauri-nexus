@@ -14,7 +14,7 @@
 // Quick Start:
 // ```typescript
 // // 1. Define your contract
-// interface MyContract extends ContractRouter {
+// interface MyContract {
 //   health: { type: 'query'; input: void; output: { status: string } };
 //   user: {
 //     get: { type: 'query'; input: { id: number }; output: User };
@@ -55,6 +55,13 @@ export type {
   BatchResult,
   BatchResponse,
   BatchCallOptions,
+  // Type-safe batch types
+  ExtractCallablePaths,
+  GetInputAtPath,
+  GetOutputAtPath,
+  TypedSingleRequest,
+  TypedBatchResult,
+  BatchRequestEntry,
   // Procedure definition types
   ProcedureType,
   ProcedureDef,
@@ -62,7 +69,6 @@ export type {
   MutationDef,
   SubscriptionDef,
   // Contract types
-  ContractRouter,
   IsProcedure,
   IsRouter,
   // Type inference utilities
@@ -121,10 +127,10 @@ export {
   // Core functions
   call,
   subscribe,
-  // Batch functions
-  callBatch,
-  createBatch,
-  BatchBuilder,
+  // Type-safe batch
+  TypedBatchBuilder,
+  TypedBatchResponseWrapper,
+  TypedBatchResponseWrapper as TypedBatchResponse,
   // Validation
   validatePath,
   // Error utilities
@@ -136,6 +142,7 @@ export {
   getSubscriptionCount,
   // Types
   type RpcClientConfig,
+  type RpcClient,
 } from "./client";
 
 // =============================================================================

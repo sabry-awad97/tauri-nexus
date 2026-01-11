@@ -663,7 +663,7 @@ try {
 function UserProfile({ id }: { id: number }) {
   const { data, isLoading, error, refetch } = useQuery(
     () => rpc.user.get({ id }),
-    [id]
+    [id],
   );
 
   if (isLoading) return <Spinner />;
@@ -701,7 +701,7 @@ function CounterDisplay() {
   const { data, isConnected, error } = useSubscription<CounterEvent>(
     () => subscribe("stream.counter", { start: 0, maxCount: 100 }),
     [],
-    { onEvent: (event) => console.log(event) }
+    { onEvent: (event) => console.log(event) },
   );
 
   return (

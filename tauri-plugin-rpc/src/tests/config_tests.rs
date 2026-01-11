@@ -18,21 +18,21 @@ proptest! {
     #[test]
     fn prop_configuration_defaults_are_valid(_dummy in 0..1i32) {
         let config = RpcConfig::default();
-        
+
         // All defaults should pass validation
         prop_assert!(config.validate().is_ok(), "Default config should be valid");
-        
+
         // max_input_size should be non-zero and reasonable (at least 1KB)
         prop_assert!(config.max_input_size > 0, "max_input_size should be > 0");
         prop_assert!(config.max_input_size >= 1024, "max_input_size should be at least 1KB");
-        
+
         // default_channel_buffer should be non-zero and reasonable
         prop_assert!(config.default_channel_buffer > 0, "default_channel_buffer should be > 0");
         prop_assert!(config.default_channel_buffer >= 1, "default_channel_buffer should be at least 1");
-        
+
         // cleanup_interval_secs should be non-zero
         prop_assert!(config.cleanup_interval_secs > 0, "cleanup_interval_secs should be > 0");
-        
+
         // debug_logging default should be false (production-safe)
         prop_assert!(!config.debug_logging, "debug_logging should default to false");
     }
@@ -51,9 +51,9 @@ proptest! {
             cleanup_interval_secs: cleanup_interval,
             ..RpcConfig::default()
         };
-        
+
         let result = config.validate();
-        
+
         // If any critical field is 0, validation should fail
         if max_input_size == 0 || channel_buffer == 0 || cleanup_interval == 0 {
             prop_assert!(result.is_err(), "Config with zero values should be invalid");
@@ -76,7 +76,7 @@ proptest! {
             .with_channel_buffer(channel_buffer)
             .with_cleanup_interval(cleanup_interval)
             .with_debug_logging(debug_logging);
-        
+
         prop_assert!(config.validate().is_ok(), "Builder-created config should be valid");
         prop_assert_eq!(config.max_input_size, max_input_size);
         prop_assert_eq!(config.default_channel_buffer, channel_buffer);
@@ -93,9 +93,9 @@ proptest! {
             BackpressureStrategy::Error,
         ];
         let strategy = strategies[strategy_idx];
-        
+
         let config = RpcConfig::new().with_backpressure_strategy(strategy);
-        
+
         prop_assert!(config.validate().is_ok());
         prop_assert_eq!(config.backpressure_strategy, strategy);
     }
@@ -108,7 +108,7 @@ proptest! {
 #[test]
 fn test_default_config_values() {
     let config = RpcConfig::default();
-    
+
     assert_eq!(config.max_input_size, 1024 * 1024); // 1MB
     assert_eq!(config.default_channel_buffer, 32);
     assert_eq!(config.backpressure_strategy, BackpressureStrategy::Block);
@@ -123,21 +123,30 @@ fn test_config_validation_errors() {
         max_input_size: 0,
         ..RpcConfig::default()
     };
-    assert_eq!(config.validate(), Err(ConfigValidationError::InvalidMaxInputSize));
-    
+    assert_eq!(
+        config.validate(),
+        Err(ConfigValidationError::InvalidMaxInputSize)
+    );
+
     // Zero channel buffer
     let config = RpcConfig {
         default_channel_buffer: 0,
         ..RpcConfig::default()
     };
-    assert_eq!(config.validate(), Err(ConfigValidationError::InvalidChannelBuffer));
-    
+    assert_eq!(
+        config.validate(),
+        Err(ConfigValidationError::InvalidChannelBuffer)
+    );
+
     // Zero cleanup interval
     let config = RpcConfig {
         cleanup_interval_secs: 0,
         ..RpcConfig::default()
     };
-    assert_eq!(config.validate(), Err(ConfigValidationError::InvalidCleanupInterval));
+    assert_eq!(
+        config.validate(),
+        Err(ConfigValidationError::InvalidCleanupInterval)
+    );
 }
 
 #[test]
@@ -148,10 +157,13 @@ fn test_config_builder_chain() {
         .with_backpressure_strategy(BackpressureStrategy::DropOldest)
         .with_debug_logging(true)
         .with_cleanup_interval(30);
-    
+
     assert_eq!(config.max_input_size, 512 * 1024);
     assert_eq!(config.default_channel_buffer, 64);
-    assert_eq!(config.backpressure_strategy, BackpressureStrategy::DropOldest);
+    assert_eq!(
+        config.backpressure_strategy,
+        BackpressureStrategy::DropOldest
+    );
     assert!(config.debug_logging);
     assert_eq!(config.cleanup_interval_secs, 30);
     assert!(config.validate().is_ok());
