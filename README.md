@@ -2,350 +2,303 @@
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/tauri/tauri-original.svg" width="100" alt="Tauri Logo">
 </p>
 
-<h1 align="center">⚡ Tauri RPC Demo</h1>
+<h1 align="center">⚡ Tauri Nexus</h1>
 
 <p align="center">
-  <strong>A production-ready Tauri v2 application showcasing type-safe RPC communication</strong>
+  <strong>Type-safe RPC for Tauri v2 — End-to-end type safety from Rust to React</strong>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Tauri-v2-blue?style=flat-square&logo=tauri" alt="Tauri v2">
-  <img src="https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react" alt="React 18">
-  <img src="https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square&logo=typescript" alt="TypeScript">
+  <img src="https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react" alt="React 19">
+  <img src="https://img.shields.io/badge/TypeScript-5.9-blue?style=flat-square&logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Rust-1.70+-orange?style=flat-square&logo=rust" alt="Rust">
-  <img src="https://img.shields.io/badge/Vite-5-646cff?style=flat-square&logo=vite" alt="Vite">
 </p>
 
 ---
 
-## 🎯 Overview
+## 📦 Packages
 
-This project demonstrates a complete, production-ready RPC system for Tauri v2 applications with:
-
-- **Type-safe communication** between Rust backend and TypeScript frontend
-- **Real-time subscriptions** with async iterators and auto-reconnect
-- **React hooks** for queries, mutations, and subscriptions
-- **Middleware support** for logging, authentication, and more
-- **Structured error handling** with typed error codes
-
----
-
-## 🏗️ Architecture
-
-```mermaid
-flowchart TB
-    subgraph Frontend["Frontend (React + TypeScript)"]
-        UI[React Components]
-        HK[React Hooks]
-        CL[RPC Client]
-        EI[Event Iterator]
-    end
-
-    subgraph Bridge["Tauri Bridge"]
-        INV[invoke API]
-        EVT[Event System]
-    end
-
-    subgraph Backend["Backend (Rust)"]
-        PLG[tauri-plugin-rpc]
-        RTR[Router]
-        MW[Middleware]
-        HD[Handlers]
-        SM[Subscription Manager]
-    end
-
-    UI --> HK
-    HK --> CL
-    CL --> INV
-    EI --> EVT
-
-    INV --> PLG
-    EVT --> SM
-    PLG --> RTR
-    RTR --> MW
-    MW --> HD
-    HD --> SM
-
-    style Frontend fill:#e3f2fd
-    style Bridge fill:#fff3e0
-    style Backend fill:#e8f5e9
-```
+| Package                                          | Description                              | Version                                                                       |
+| ------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------- |
+| [`@tauri-nexus/rpc-core`](./packages/rpc-core)   | Core RPC client — framework agnostic     | ![npm](https://img.shields.io/npm/v/@tauri-nexus/rpc-core?style=flat-square)  |
+| [`@tauri-nexus/rpc-react`](./packages/rpc-react) | React hooks + TanStack Query integration | ![npm](https://img.shields.io/npm/v/@tauri-nexus/rpc-react?style=flat-square) |
+| [`@tauri-nexus/rpc-docs`](./packages/rpc-docs)   | Auto-generated API documentation         | ![npm](https://img.shields.io/npm/v/@tauri-nexus/rpc-docs?style=flat-square)  |
 
 ---
 
 ## ✨ Features
 
-| Feature                | Description                                    |
-| ---------------------- | ---------------------------------------------- |
-| 🔒 **Type-Safe RPC**   | End-to-end type safety from Rust to TypeScript |
-| 📡 **Subscriptions**   | Real-time streaming with backpressure handling |
-| ⚛️ **React Hooks**     | `useQuery`, `useMutation`, `useSubscription`   |
-| 🔗 **Middleware**      | Logging, auth, rate limiting support           |
-| 🛡️ **Error Handling**  | Structured errors with typed codes             |
-| ⚡ **Compiled Router** | Pre-built middleware chains for O(1) execution |
-| 🔄 **Auto-Reconnect**  | Resilient subscription connections             |
+- 🔒 **End-to-end type safety** — Define your contract once, get full inference everywhere
+- 📦 **Batch requests** — Execute multiple calls in a single IPC round-trip
+- 📡 **Real-time subscriptions** — First-class streaming with async iterators
+- 🔗 **TauriLink** — Composable interceptor chain (like tRPC/oRPC links)
+- ✅ **Zod validation** — Optional runtime validation with schema inference
+- ⚛️ **React hooks** — `useSubscription`, `useBatch`, TanStack Query integration
+- 📚 **Auto-generated docs** — Interactive API explorer with live testing
+
+---
+
+## 🚀 Quick Start
+
+### Installation
+
+```bash
+# Core package (framework-agnostic)
+npm install @tauri-nexus/rpc-core
+
+# React integration
+npm install @tauri-nexus/rpc-react @tanstack/react-query
+
+# API documentation (optional)
+npm install @tauri-nexus/rpc-docs
+```
+
+### Define Your Contract
+
+```typescript
+// contract.ts
+interface AppContract {
+  health: { type: "query"; input: void; output: { status: string } };
+
+  user: {
+    get: { type: "query"; input: { id: number }; output: User };
+    create: { type: "mutation"; input: CreateUserInput; output: User };
+  };
+
+  notifications: {
+    stream: { type: "subscription"; input: void; output: Notification };
+  };
+}
+```
+
+### Create a Client
+
+```typescript
+import {
+  createClientWithSubscriptions,
+  createTanstackQueryUtils,
+} from "@tauri-nexus/rpc-react";
+
+export const rpc = createClientWithSubscriptions<AppContract>({
+  subscriptionPaths: ["notifications.stream"],
+});
+
+export const api = createTanstackQueryUtils<AppContract>(rpc);
+```
+
+### Use in React
+
+```tsx
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useSubscription } from "@tauri-nexus/rpc-react";
+import { api, rpc } from "./contract";
+
+function App() {
+  // Queries
+  const { data: user } = useQuery(
+    api.user.get.queryOptions({ input: { id: 1 } })
+  );
+
+  // Mutations
+  const createUser = useMutation(api.user.create.mutationOptions());
+
+  // Subscriptions
+  const { data: notification, isConnected } = useSubscription(
+    () => rpc.notifications.stream(),
+    []
+  );
+
+  return <div>{user?.name}</div>;
+}
+```
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        React Application                         │
+├─────────────────────────────────────────────────────────────────┤
+│  useQuery  │  useMutation  │  useSubscription  │  useBatch      │
+├─────────────────────────────────────────────────────────────────┤
+│                    @tauri-nexus/rpc-react                        │
+│              TanStack Query Utils • React Hooks                  │
+├─────────────────────────────────────────────────────────────────┤
+│                    @tauri-nexus/rpc-core                         │
+│     TauriLink • Interceptors • Batch • Subscriptions • Zod      │
+├─────────────────────────────────────────────────────────────────┤
+│                      Tauri IPC Bridge                            │
+│                   invoke() • listen()                            │
+├─────────────────────────────────────────────────────────────────┤
+│                    tauri-plugin-rpc (Rust)                       │
+│           Router • Middleware • Subscription Manager             │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 📁 Project Structure
 
 ```
-tauri-rpc-demo/
-├── src/                          # Frontend (React + TypeScript)
-│   ├── lib/
-│   │   └── rpc/                  # RPC Client Library
-│   │       ├── client.ts         # Client implementation
-│   │       ├── hooks.ts          # React hooks
-│   │       ├── event-iterator.ts # Subscription handling
-│   │       └── types.ts          # Type definitions
-│   ├── rpc/
-│   │   └── contract.ts           # Contract definition
-│   ├── routes/                   # TanStack Router pages
-│   │   ├── streams/              # Subscription demos
-│   │   │   ├── counter.tsx       # Counter stream
-│   │   │   ├── stocks.tsx        # Stock prices
-│   │   │   ├── chat.tsx          # Chat room
-│   │   │   └── time.tsx          # Server time
-│   │   └── ...
-│   └── components/               # React components
+tauri-nexus/
+├── packages/
+│   ├── rpc-core/           # Core RPC client (framework-agnostic)
+│   │   ├── src/
+│   │   │   ├── client.ts       # Client implementation
+│   │   │   ├── link.ts         # TauriLink & interceptors
+│   │   │   ├── schema.ts       # Zod validation
+│   │   │   ├── event-iterator.ts
+│   │   │   └── types.ts
+│   │   └── README.md
+│   │
+│   ├── rpc-react/          # React integration
+│   │   ├── src/
+│   │   │   ├── hooks.ts        # useSubscription, useBatch
+│   │   │   └── tanstack.ts     # TanStack Query utils
+│   │   └── README.md
+│   │
+│   └── rpc-docs/           # API documentation
+│       ├── src/
+│       │   ├── ApiDocs.tsx
+│       │   ├── ProcedureCard.tsx
+│       │   └── ...
+│       └── README.md
 │
-├── src-tauri/                    # Backend (Rust)
-│   ├── src/
-│   │   ├── lib.rs                # Tauri setup
-│   │   └── rpc/
-│   │       ├── mod.rs            # Module exports
-│   │       ├── context.rs        # App context
-│   │       ├── handlers.rs       # RPC handlers
-│   │       └── types.rs          # Rust types
-│   └── capabilities/
-│       └── default.json          # Permissions
+├── apps/
+│   └── app/                # Demo application
+│       ├── src/
+│       │   ├── rpc/contract.tsx
+│       │   └── routes/
+│       └── src-tauri/      # Rust backend
 │
-└── tauri-plugin-rpc/             # RPC Plugin
-    └── src/
-        ├── lib.rs                # Plugin exports
-        ├── router.rs             # Router implementation
-        ├── subscription.rs       # Subscription system
-        ├── middleware.rs         # Middleware types
-        └── error.rs              # Error handling
-```
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- [Rust](https://rustup.rs/) (1.70+)
-- [Node.js](https://nodejs.org/) (18+)
-- [Bun](https://bun.sh/) (recommended) or npm/yarn
-
-### Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd tauri-rpc-demo
-
-# Install frontend dependencies
-bun install
-
-# Run in development mode
-bun tauri dev
-```
-
-### Build for Production
-
-```bash
-bun tauri build
+└── README.md
 ```
 
 ---
 
 ## 📖 Documentation
 
-| Document                                                   | Description                     |
-| ---------------------------------------------------------- | ------------------------------- |
-| [tauri-plugin-rpc/README.md](./tauri-plugin-rpc/README.md) | Rust plugin documentation       |
-| [src/lib/rpc/README.md](./src/lib/rpc/README.md)           | TypeScript client documentation |
+| Package | README                                                         |
+| ------- | -------------------------------------------------------------- |
+| Core    | [packages/rpc-core/README.md](./packages/rpc-core/README.md)   |
+| React   | [packages/rpc-react/README.md](./packages/rpc-react/README.md) |
+| Docs    | [packages/rpc-docs/README.md](./packages/rpc-docs/README.md)   |
 
 ---
 
-## 🎮 Demo Features
+## 🎮 Examples
 
-### Queries & Mutations
-
-```typescript
-// Type-safe queries
-const user = await rpc.user.get({ id: 1 });
-const users = await rpc.user.list();
-
-// Type-safe mutations
-const newUser = await rpc.user.create({
-  name: "Alice",
-  email: "alice@example.com",
-});
-```
-
-### Subscriptions
+### Batch Requests
 
 ```typescript
-// Counter stream
-const stream = await rpc.stream.counter({
-  start: 0,
-  maxCount: 100,
-  intervalMs: 500,
-});
+const response = await rpc
+  .batch()
+  .add("health", "health", undefined)
+  .add("user1", "user.get", { id: 1 })
+  .add("user2", "user.get", { id: 2 })
+  .execute();
 
-for await (const event of stream) {
-  console.log(`Count: ${event.count}`);
-}
+const health = response.getResult("health");
+const user1 = response.getResult("user1");
 ```
 
-### React Hooks
+### TauriLink with Interceptors
 
-```tsx
-// Query hook
-const { data, isLoading, error } = useQuery(() => rpc.user.get({ id }), [id]);
+```typescript
+import {
+  TauriLink,
+  createClientFromLink,
+  logging,
+  retry,
+} from "@tauri-nexus/rpc-core";
 
-// Mutation hook
-const { mutate, isLoading } = useMutation(rpc.user.create);
+const link = new TauriLink({
+  interceptors: [
+    logging({ prefix: "[RPC]" }),
+    retry({ maxRetries: 3 }),
+    async (ctx, next) => {
+      const start = Date.now();
+      const result = await next();
+      console.log(`${ctx.path} took ${Date.now() - start}ms`);
+      return result;
+    },
+  ],
+});
 
-// Subscription hook
-const { data, isConnected } = useSubscription(
-  () => subscribe("stream.counter", input),
-  [],
-);
+const rpc = createClientFromLink<AppContract>(link);
+```
+
+### Zod Validation
+
+```typescript
+import { z } from "zod";
+import {
+  procedure,
+  router,
+  createValidatedClient,
+} from "@tauri-nexus/rpc-core";
+
+const contract = router({
+  user: router({
+    create: procedure()
+      .input(
+        z.object({
+          name: z.string().min(1),
+          email: z.string().email(),
+        })
+      )
+      .output(z.object({ id: z.number(), name: z.string() }))
+      .mutation(),
+  }),
+});
+
+const rpc = createValidatedClient(contract, link);
 ```
 
 ---
 
 ## 🛠️ Development
 
-### IDE Setup
+### Prerequisites
 
-- [VS Code](https://code.visualstudio.com/)
-- [Tauri Extension](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode)
-- [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- [Rust](https://rustup.rs/) 1.70+
+- [Node.js](https://nodejs.org/) 18+
+- [Bun](https://bun.sh/) (recommended)
 
-### Commands
+### Setup
 
 ```bash
-# Development
-bun tauri dev
-
-# Build
-bun tauri build
+# Install dependencies
+bun install
 
 # Run tests
-bun test
+bun run test              # All packages
+bun run test --filter rpc-core   # Single package
 
-# Generate Rust docs
-cd tauri-plugin-rpc && cargo doc --open
+# Development
+cd apps/app && bun tauri dev
 ```
 
----
+### Build
 
-## 📊 Request Flow
+```bash
+# Build packages
+bun run build
 
-```mermaid
-sequenceDiagram
-    participant C as React Component
-    participant H as useQuery Hook
-    participant CL as RPC Client
-    participant T as Tauri invoke
-    participant P as Plugin
-    participant R as Router
-    participant M as Middleware
-    participant HD as Handler
-
-    C->>H: render
-    H->>CL: rpc.user.get({ id })
-    CL->>T: invoke("plugin:rpc|rpc_call")
-    T->>P: rpc_call(path, input)
-    P->>R: route(path)
-    R->>M: execute chain
-    M->>HD: handler(ctx, input)
-    HD-->>M: Result<User>
-    M-->>R: Response
-    R-->>P: JSON
-    P-->>T: Result
-    T-->>CL: User
-    CL-->>H: data
-    H-->>C: { data, isLoading: false }
-```
-
----
-
-## 📡 Subscription Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Component
-    participant H as useSubscription
-    participant EI as EventIterator
-    participant T as Tauri Events
-    participant SM as SubscriptionManager
-    participant HD as Handler
-
-    C->>H: mount
-    H->>EI: subscribe(path, input)
-    EI->>T: listen(event_name)
-    EI->>SM: rpc_subscribe
-    SM->>HD: start handler
-    HD-->>SM: EventStream
-
-    loop Stream Events
-        HD->>T: emit(event)
-        T->>EI: event data
-        EI->>H: yield event
-        H->>C: update state
-    end
-
-    C->>H: unmount
-    H->>EI: return()
-    EI->>SM: rpc_unsubscribe
-    SM->>HD: cancel signal
-```
-
----
-
-## 🔧 Configuration
-
-### Tauri Permissions
-
-```json
-// src-tauri/capabilities/default.json
-{
-  "permissions": ["core:default", "rpc:default"]
-}
-```
-
-### RPC Configuration
-
-```rust
-use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy};
-
-let config = RpcConfig::new()
-    .with_max_input_size(1024 * 1024)
-    .with_channel_buffer(64)
-    .with_backpressure_strategy(BackpressureStrategy::DropOldest);
+# Build Tauri app
+cd apps/app && bun tauri build
 ```
 
 ---
 
 ## 📄 License
 
-MIT © 2024-2026
+MIT © Tauri Nexus
 
 ---
 
 <p align="center">
   <strong>Built with ❤️ using Tauri, React, and Rust</strong>
-</p>
-
-<p align="center">
-  <a href="https://tauri.app">Tauri</a> •
-  <a href="https://react.dev">React</a> •
-  <a href="https://www.rust-lang.org">Rust</a> •
-  <a href="https://vitejs.dev">Vite</a>
 </p>
