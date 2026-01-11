@@ -10,8 +10,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { call } from "../generated/client";
-import { health, user } from "../generated/router";
+import { call } from "../lib/rpc/client";
+import { rpc } from "../rpc/contract";
 
 // Mock is set up in setup.ts
 const mockInvoke = vi.mocked(invoke);
@@ -72,7 +72,7 @@ describe("Unit Type Serialization", () => {
     it("should send null input for void procedure", async () => {
       mockInvoke.mockResolvedValue({ status: "ok", version: "1.0.0" });
 
-      await health();
+      await rpc.health();
 
       expect(mockInvoke).toHaveBeenCalledWith("plugin:rpc|rpc_call", {
         path: "health",
@@ -85,7 +85,7 @@ describe("Unit Type Serialization", () => {
     it("should send null input for void procedure", async () => {
       mockInvoke.mockResolvedValue([]);
 
-      await user.list();
+      await rpc.user.list();
 
       expect(mockInvoke).toHaveBeenCalledWith("plugin:rpc|rpc_call", {
         path: "user.list",
@@ -103,7 +103,7 @@ describe("Unit Type Serialization", () => {
         createdAt: "",
       });
 
-      await user.get({ id: 1 });
+      await rpc.user.get({ id: 1 });
 
       expect(mockInvoke).toHaveBeenCalledWith("plugin:rpc|rpc_call", {
         path: "user.get",
@@ -121,7 +121,7 @@ describe("Unit Type Serialization", () => {
         createdAt: "",
       });
 
-      await user.create({ name: "Test", email: "test@test.com" });
+      await rpc.user.create({ name: "Test", email: "test@test.com" });
 
       expect(mockInvoke).toHaveBeenCalledWith("plugin:rpc|rpc_call", {
         path: "user.create",

@@ -1,6 +1,6 @@
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { RpcProvider, useHealth } from "../generated";
+import { RpcProvider, useHealth } from "../rpc/contract";
 import "../styles/global.css";
 
 function HealthStatus() {

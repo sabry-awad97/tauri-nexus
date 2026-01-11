@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useHealth, useUsers } from "../generated";
+import { useHealth, useUsers } from "../rpc/contract";
 
 function StatCard({
   icon,

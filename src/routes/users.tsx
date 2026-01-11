@@ -5,7 +5,7 @@ import {
   useCreateUser,
   useDeleteUser,
   type User,
-} from "../generated";
+} from "../rpc/contract";
 
 function UserCard({
   user,

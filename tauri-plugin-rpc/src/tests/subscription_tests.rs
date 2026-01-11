@@ -361,7 +361,7 @@ proptest! {
             }
 
             // Publish events to each channel with channel-specific data
-            for (_i, name) in channel_names.iter().enumerate() {
+            for name in channel_names.iter() {
                 for j in 0..events_per_channel {
                     let data = format!("{}_{}", name, j);
                     let _ = publisher.publish_data(name, data).await;

@@ -10,8 +10,19 @@
 import {
   createClientWithSubscriptions,
   createHooks,
+  useQuery,
+  useMutation,
+  isRpcError,
+  hasErrorCode,
+  getProcedures,
   type ContractRouter,
+  type RpcError,
+  type QueryResult,
+  type MutationResult,
+  type QueryOptions,
+  type MutationOptions,
 } from "../lib/rpc";
+import { createContext, useContext, type ReactNode } from "react";
 
 // =============================================================================
 // Domain Types
@@ -184,6 +195,63 @@ export const { useRpcQuery, useRpcMutation, useRpcSubscription } =
   createHooks(rpc);
 
 // =============================================================================
+// RPC Provider
+// =============================================================================
+
+const RpcContext = createContext<typeof rpc>(rpc);
+
+export function RpcProvider({ children }: { children: ReactNode }) {
+  return <RpcContext.Provider value={rpc}>{children}</RpcContext.Provider>;
+}
+
+export function useRpc() {
+  return useContext(RpcContext);
+}
+
+// =============================================================================
+// Typed Query Hooks
+// =============================================================================
+
+/** Health check hook */
+export function useHealth(options?: QueryOptions) {
+  return useQuery(() => rpc.health(), [], options);
+}
+
+/** Greet hook */
+export function useGreet(input: { name: string }, options?: QueryOptions) {
+  return useQuery(() => rpc.greet(input), [input.name], options);
+}
+
+/** Get user by ID hook */
+export function useUser(id: number, options?: QueryOptions) {
+  return useQuery(() => rpc.user.get({ id }), [id], options);
+}
+
+/** List all users hook */
+export function useUsers(options?: QueryOptions) {
+  return useQuery(() => rpc.user.list(), [], options);
+}
+
+// =============================================================================
+// Typed Mutation Hooks
+// =============================================================================
+
+/** Create user mutation hook */
+export function useCreateUser(options?: MutationOptions<CreateUserInput, User>) {
+  return useMutation((input: CreateUserInput) => rpc.user.create(input), options);
+}
+
+/** Update user mutation hook */
+export function useUpdateUser(options?: MutationOptions<UpdateUserInput, User>) {
+  return useMutation((input: UpdateUserInput) => rpc.user.update(input), options);
+}
+
+/** Delete user mutation hook */
+export function useDeleteUser(options?: MutationOptions<{ id: number }, SuccessResponse>) {
+  return useMutation((input: { id: number }) => rpc.user.delete(input), options);
+}
+
+// =============================================================================
 // Namespace Exports
 // =============================================================================
 // Export namespaces for convenient access.
@@ -191,3 +259,7 @@ export const { useRpcQuery, useRpcMutation, useRpcSubscription } =
 export const user = rpc.user;
 export const stream = rpc.stream;
 export const chat = rpc.chat;
+
+// Re-export utilities
+export { isRpcError, hasErrorCode, getProcedures };
+export type { RpcError, QueryResult, MutationResult, QueryOptions, MutationOptions };

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useGreet, rpc } from "../generated";
+import { useGreet, rpc } from "../rpc/contract";
 
 function DirectCallDemo() {
   const [name, setName] = useState("");
