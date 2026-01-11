@@ -23,17 +23,16 @@ struct TestContext {
     execution_log: Arc<Mutex<Vec<String>>>,
 }
 
+/// Type alias for middleware future return type
+type MiddlewareFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = RpcResult<Response>> + Send>>;
+
 /// Create a middleware that logs its execution order
+#[allow(clippy::type_complexity)]
 fn create_logging_middleware(
     name: String,
-) -> impl Fn(
-    Context<TestContext>,
-    Request,
-    Next<TestContext>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = RpcResult<Response>> + Send>>
-+ Send
-+ Sync
-+ 'static {
+) -> impl Fn(Context<TestContext>, Request, Next<TestContext>) -> MiddlewareFuture + Send + Sync + 'static
+{
     move |ctx: Context<TestContext>, req: Request, next: Next<TestContext>| {
         let name = name.clone();
         Box::pin(async move {
@@ -58,17 +57,12 @@ fn create_logging_middleware(
 }
 
 /// Create a middleware that returns early without calling next
+#[allow(clippy::type_complexity)]
 fn create_early_return_middleware(
     name: String,
     return_value: serde_json::Value,
-) -> impl Fn(
-    Context<TestContext>,
-    Request,
-    Next<TestContext>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = RpcResult<Response>> + Send>>
-+ Send
-+ Sync
-+ 'static {
+) -> impl Fn(Context<TestContext>, Request, Next<TestContext>) -> MiddlewareFuture + Send + Sync + 'static
+{
     move |ctx: Context<TestContext>, _req: Request, _next: Next<TestContext>| {
         let name = name.clone();
         let return_value = return_value.clone();
@@ -86,17 +80,12 @@ fn create_early_return_middleware(
 }
 
 /// Create a middleware that returns an error
+#[allow(clippy::type_complexity)]
 fn create_error_middleware(
     name: String,
     error_message: String,
-) -> impl Fn(
-    Context<TestContext>,
-    Request,
-    Next<TestContext>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = RpcResult<Response>> + Send>>
-+ Send
-+ Sync
-+ 'static {
+) -> impl Fn(Context<TestContext>, Request, Next<TestContext>) -> MiddlewareFuture + Send + Sync + 'static
+{
     move |ctx: Context<TestContext>, _req: Request, _next: Next<TestContext>| {
         let name = name.clone();
         let error_message = error_message.clone();
