@@ -140,10 +140,17 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
   const basePath = options.path ?? [];
 
   function createUtils(target: unknown, currentPath: string[]): unknown {
+    // For proxy-based clients, we can't distinguish between namespaces and procedures
+    // by checking typeof, because the proxy returns callable proxies for everything.
+    // Instead, we create a proxy that provides both namespace traversal AND procedure utils.
+    // The procedure utils (queryOptions, mutationOptions, etc.) are available at every level,
+    // and they use the current path to call the underlying client.
+    
     return new Proxy(
       {},
       {
         get(_, prop: string) {
+          // Handle special keys
           if (prop === "key") {
             return (opts?: KeyOptions) => {
               if (opts?.input !== undefined) {
@@ -153,74 +160,119 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
             };
           }
 
-          const nextPath = [...currentPath, prop];
-          const clientProp = (target as Record<string, unknown>)[prop];
-
-          // If it's a function, it's a procedure
-          if (typeof clientProp === "function") {
-            const procedureFn = clientProp as (input?: unknown) => Promise<unknown>;
-
-            return {
-              // Query utils
-              queryOptions: (opts?: { input?: unknown; enabled?: boolean }) => ({
-                queryKey: opts?.input !== undefined ? [...nextPath, opts.input] : nextPath,
-                queryFn: () =>
-                  opts?.input !== undefined
-                    ? procedureFn(opts.input)
-                    : procedureFn(),
-                enabled: opts?.enabled,
-              }),
-              queryKey: (opts?: { input?: unknown }) =>
-                opts?.input !== undefined ? [...nextPath, opts.input] : nextPath,
-
-              // Infinite query utils
-              infiniteOptions: <TPageParam>(opts: {
-                input: (pageParam: TPageParam) => unknown;
-                initialPageParam: TPageParam;
-                getNextPageParam: (lastPage: unknown) => TPageParam | undefined;
-                getPreviousPageParam?: (firstPage: unknown) => TPageParam | undefined;
-                enabled?: boolean;
-              }) => ({
-                queryKey: [...nextPath, "infinite"],
-                queryFn: ({ pageParam }: { pageParam: TPageParam }) => 
-                  procedureFn(opts.input(pageParam)),
-                initialPageParam: opts.initialPageParam,
-                getNextPageParam: opts.getNextPageParam,
-                getPreviousPageParam: opts.getPreviousPageParam,
-                enabled: opts.enabled,
-              }),
-              infiniteKey: (opts?: { input?: unknown }) =>
-                opts?.input !== undefined 
-                  ? [...nextPath, "infinite", opts.input] 
-                  : [...nextPath, "infinite"],
-
-              // Mutation utils
-              mutationOptions: () => ({
-                mutationKey: nextPath,
-                mutationFn: (input: unknown) => procedureFn(input),
-              }),
-              mutationKey: () => nextPath,
-
-              // Common utils
-              key: (opts?: KeyOptions) => {
-                if (opts?.input !== undefined) {
-                  return [...nextPath, opts.input];
-                }
-                return nextPath;
+          // Procedure utils - these are available at every level
+          if (prop === "queryOptions") {
+            return (opts?: { input?: unknown; enabled?: boolean }) => ({
+              queryKey: opts?.input !== undefined ? [...currentPath, opts.input] : currentPath,
+              queryFn: () => {
+                const fn = getClientFn(target, currentPath);
+                return opts?.input !== undefined ? fn(opts.input) : fn();
               },
-              call: procedureFn,
+              enabled: opts?.enabled,
+            });
+          }
+
+          if (prop === "queryKey") {
+            return (opts?: { input?: unknown }) =>
+              opts?.input !== undefined ? [...currentPath, opts.input] : currentPath;
+          }
+
+          if (prop === "infiniteOptions") {
+            return <TPageParam>(opts: {
+              input: (pageParam: TPageParam) => unknown;
+              initialPageParam: TPageParam;
+              getNextPageParam: (lastPage: unknown) => TPageParam | undefined;
+              getPreviousPageParam?: (firstPage: unknown) => TPageParam | undefined;
+              enabled?: boolean;
+            }) => ({
+              queryKey: [...currentPath, "infinite"],
+              queryFn: ({ pageParam }: { pageParam: TPageParam }) => {
+                const fn = getClientFn(target, currentPath);
+                return fn(opts.input(pageParam));
+              },
+              initialPageParam: opts.initialPageParam,
+              getNextPageParam: opts.getNextPageParam,
+              getPreviousPageParam: opts.getPreviousPageParam,
+              enabled: opts.enabled,
+            });
+          }
+
+          if (prop === "infiniteKey") {
+            return (opts?: { input?: unknown }) =>
+              opts?.input !== undefined 
+                ? [...currentPath, "infinite", opts.input] 
+                : [...currentPath, "infinite"];
+          }
+
+          if (prop === "mutationOptions") {
+            return () => ({
+              mutationKey: currentPath,
+              mutationFn: (input: unknown) => {
+                const fn = getClientFn(target, currentPath);
+                return fn(input);
+              },
+            });
+          }
+
+          if (prop === "mutationKey") {
+            return () => currentPath;
+          }
+
+          if (prop === "call") {
+            return (input?: unknown) => {
+              const fn = getClientFn(target, currentPath);
+              return input !== undefined ? fn(input) : fn();
             };
           }
 
-          // If it's an object, recurse
-          if (typeof clientProp === "object" && clientProp !== null) {
-            return createUtils(clientProp, nextPath);
+          // For any other property, recurse into the namespace
+          const nextPath = [...currentPath, prop];
+          const clientProp = (target as Record<string, unknown>)[prop];
+
+          // Skip undefined/null
+          if (clientProp === null || clientProp === undefined) {
+            return undefined;
           }
 
-          return undefined;
+          return createUtils(clientProp, nextPath);
         },
       }
     );
+  }
+
+  /**
+   * Get the callable function from the client at the current path.
+   * For proxy-based clients, the target itself is callable.
+   * For plain object clients, we need to traverse to find the function.
+   */
+  function getClientFn(target: unknown, path: string[]): (input?: unknown) => Promise<unknown> {
+    // If path is empty, target itself should be callable (for proxy clients at root)
+    if (path.length === 0) {
+      if (typeof target === "function") {
+        return target as (input?: unknown) => Promise<unknown>;
+      }
+      throw new Error("Cannot call root of client");
+    }
+
+    // For proxy-based clients, the target is already the callable for this path
+    if (typeof target === "function") {
+      return target as (input?: unknown) => Promise<unknown>;
+    }
+
+    // For plain object clients, traverse the path
+    let current: unknown = target;
+    for (const segment of path) {
+      if (current === null || current === undefined) {
+        throw new Error(`Cannot find procedure at path: ${path.join(".")}`);
+      }
+      current = (current as Record<string, unknown>)[segment];
+    }
+
+    if (typeof current !== "function") {
+      throw new Error(`Path ${path.join(".")} is not a callable procedure`);
+    }
+
+    return current as (input?: unknown) => Promise<unknown>;
   }
 
   return createUtils(client, basePath) as TanstackQueryUtils<TContract>;

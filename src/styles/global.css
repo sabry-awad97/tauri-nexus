@@ -1900,3 +1900,122 @@ body {
     font-size: 32px;
   }
 }
+
+
+/* =============================================================================
+   Advanced Page
+   ============================================================================= */
+
+.advanced-page .demos-grid.two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 24px;
+}
+
+.advanced-page .demo-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.advanced-page .demo-result {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.advanced-page .demo-result pre {
+  font-family: "Fira Code", "Monaco", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  width: 100%;
+}
+
+.logs-panel {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.logs-panel h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.logs-list {
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: "Fira Code", "Monaco", monospace;
+  font-size: 11px;
+}
+
+.log-item {
+  padding: 4px 0;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.log-item:last-child {
+  border-bottom: none;
+}
+
+.no-logs {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.info-grid-small {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.info-grid-small .info-item {
+  background: var(--bg-tertiary);
+  padding: 12px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-grid-small .info-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.info-grid-small .info-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent-blue);
+}
+
+.procedures-list {
+  margin-top: 16px;
+}
+
+.procedures-list h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.procedures-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.procedure-tag {
+  font-size: 11px;
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: "Fira Code", "Monaco", monospace;
+}

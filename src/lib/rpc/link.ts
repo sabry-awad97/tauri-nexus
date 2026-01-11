@@ -376,11 +376,37 @@ export function createClientFromLink<T, TClientContext = unknown>(
     ) {
       const fullPath = pathParts.join(".");
 
-      if (link.isSubscription(fullPath)) {
-        return link.subscribe(fullPath, inputOrOptions, maybeOptions as LinkSubscribeOptions<TClientContext>);
+      // Detect if first argument is options (for void-input procedures)
+      // Options objects have specific keys: context, signal, timeout, meta
+      const isOptionsObject = (obj: unknown): obj is LinkCallOptions<TClientContext> => {
+        if (typeof obj !== "object" || obj === null) return false;
+        const keys = Object.keys(obj);
+        const optionKeys = ["context", "signal", "timeout", "meta"];
+        return keys.length > 0 && keys.every(k => optionKeys.includes(k));
+      };
+
+      let input: unknown = null;
+      let options: LinkCallOptions<TClientContext> | LinkSubscribeOptions<TClientContext> | undefined;
+
+      if (maybeOptions !== undefined) {
+        // Two arguments: input and options
+        input = inputOrOptions;
+        options = maybeOptions;
+      } else if (isOptionsObject(inputOrOptions)) {
+        // Single argument that looks like options: void input
+        input = null;
+        options = inputOrOptions;
+      } else {
+        // Single argument that's input data
+        input = inputOrOptions ?? null;
+        options = undefined;
       }
 
-      return link.call(fullPath, inputOrOptions, maybeOptions as LinkCallOptions<TClientContext>);
+      if (link.isSubscription(fullPath)) {
+        return link.subscribe(fullPath, input, options as LinkSubscribeOptions<TClientContext>);
+      }
+
+      return link.call(fullPath, input, options as LinkCallOptions<TClientContext>);
     };
 
     return new Proxy(handler, {
@@ -392,11 +418,33 @@ export function createClientFromLink<T, TClientContext = unknown>(
       apply(_, __, args: unknown[]) {
         const fullPath = pathParts.join(".");
 
-        if (link.isSubscription(fullPath)) {
-          return link.subscribe(fullPath, args[0], args[1] as LinkSubscribeOptions<TClientContext>);
+        // Same logic as handler
+        const isOptionsObject = (obj: unknown): obj is LinkCallOptions<TClientContext> => {
+          if (typeof obj !== "object" || obj === null) return false;
+          const keys = Object.keys(obj);
+          const optionKeys = ["context", "signal", "timeout", "meta"];
+          return keys.length > 0 && keys.every(k => optionKeys.includes(k));
+        };
+
+        let input: unknown = null;
+        let options: LinkCallOptions<TClientContext> | LinkSubscribeOptions<TClientContext> | undefined;
+
+        if (args.length >= 2 && args[1] !== undefined) {
+          input = args[0];
+          options = args[1] as LinkCallOptions<TClientContext>;
+        } else if (isOptionsObject(args[0])) {
+          input = null;
+          options = args[0];
+        } else {
+          input = args[0] ?? null;
+          options = undefined;
         }
 
-        return link.call(fullPath, args[0], args[1] as LinkCallOptions<TClientContext>);
+        if (link.isSubscription(fullPath)) {
+          return link.subscribe(fullPath, input, options as LinkSubscribeOptions<TClientContext>);
+        }
+
+        return link.call(fullPath, input, options as LinkCallOptions<TClientContext>);
       },
     });
   }

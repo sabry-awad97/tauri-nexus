@@ -64,6 +64,18 @@ function RootLayout() {
           </div>
 
           <div className="nav-section">
+            <span className="nav-label">Advanced</span>
+            <Link
+              to="/advanced"
+              className="nav-link"
+              activeProps={{ className: "nav-link active" }}
+            >
+              <span className="nav-icon">🔧</span>
+              Advanced
+            </Link>
+          </div>
+
+          <div className="nav-section">
             <span className="nav-label">Subscriptions</span>
             <Link
               to="/streams/counter"

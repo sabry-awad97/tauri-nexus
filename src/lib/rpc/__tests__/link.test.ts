@@ -9,8 +9,8 @@ import {
   onError,
   logging,
   retry,
-  type LinkInterceptor,
   type LinkRequestContext,
+  type LinkInterceptor,
 } from "../link";
 
 // Mock Tauri invoke
@@ -139,13 +139,13 @@ describe("TauriLink", () => {
 
       const link = new TauriLink({
         interceptors: [
-          async (ctx, next) => {
+          async (_ctx, next) => {
             order.push(1);
             const result = await next();
             order.push(4);
             return result;
           },
-          async (ctx, next) => {
+          async (_ctx, next) => {
             order.push(2);
             const result = await next();
             order.push(3);
@@ -188,10 +188,11 @@ describe("TauriLink", () => {
 
       const link = new TauriLink({
         interceptors: [
-          async (ctx, next) => {
-            const result = (await next()) as { value: number };
-            return { value: result.value * 2 };
-          },
+          // Type assertion needed because interceptor transforms the result type
+          (async (_ctx, next) => {
+            const result = await next();
+            return { value: (result as { value: number }).value * 2 };
+          }) as LinkInterceptor<unknown>,
         ],
       });
 

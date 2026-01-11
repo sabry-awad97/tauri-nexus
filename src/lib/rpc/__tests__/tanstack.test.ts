@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createTanstackQueryUtils } from "../tanstack";
 
 // =============================================================================
-// Mock Client
+// Mock Client (Plain Object)
 // =============================================================================
 
 function createMockClient() {
@@ -29,6 +29,65 @@ function createMockClient() {
   };
 }
 
+// =============================================================================
+// Mock Client (Proxy-based, mimics real RPC client)
+// =============================================================================
+
+function createProxyMockClient() {
+  const mockResponses: Record<string, unknown> = {
+    "health": { status: "ok", version: "1.0.0" },
+    "greet": "Hello, World!",
+    "user.get": { id: 1, name: "Test User", email: "test@example.com" },
+    "user.list": [
+      { id: 1, name: "User 1", email: "user1@example.com" },
+      { id: 2, name: "User 2", email: "user2@example.com" },
+    ],
+    "user.create": { id: 1, name: "New User", email: "new@example.com" },
+    "user.delete": { success: true },
+  };
+
+  function createClientProxy(pathParts: string[]): unknown {
+    const handler = function (input?: unknown) {
+      const fullPath = pathParts.join(".");
+      const response = mockResponses[fullPath];
+      if (fullPath === "greet" && input && typeof input === "object" && "name" in input) {
+        return Promise.resolve(`Hello, ${(input as { name: string }).name}!`);
+      }
+      if (fullPath === "user.get" && input && typeof input === "object" && "id" in input) {
+        return Promise.resolve({ ...(response as object), id: (input as { id: number }).id });
+      }
+      if (fullPath === "user.create" && input) {
+        return Promise.resolve({ id: 1, ...input as object });
+      }
+      return Promise.resolve(response);
+    };
+
+    return new Proxy(handler, {
+      get(_target, prop: string | symbol) {
+        if (typeof prop === "symbol") return undefined;
+        return createClientProxy([...pathParts, prop]);
+      },
+      apply(_, __, args: unknown[]) {
+        const fullPath = pathParts.join(".");
+        const response = mockResponses[fullPath];
+        const input = args[0];
+        if (fullPath === "greet" && input && typeof input === "object" && "name" in input) {
+          return Promise.resolve(`Hello, ${(input as { name: string }).name}!`);
+        }
+        if (fullPath === "user.get" && input && typeof input === "object" && "id" in input) {
+          return Promise.resolve({ ...(response as object), id: (input as { id: number }).id });
+        }
+        if (fullPath === "user.create" && input) {
+          return Promise.resolve({ id: 1, ...input as object });
+        }
+        return Promise.resolve(response);
+      },
+    });
+  }
+
+  return createClientProxy([]);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function createUtils(client: any) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -39,6 +98,12 @@ function createUtils(client: any) {
 function createUtilsWithPath(client: any, path: string[]) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return createTanstackQueryUtils(client, { path }) as any;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createProxyUtils(client: any) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return createTanstackQueryUtils(client) as any;
 }
 
 // =============================================================================
@@ -330,6 +395,163 @@ describe("createTanstackQueryUtils", () => {
       });
 
       expect(options.getPreviousPageParam).toBe(getPreviousPageParam);
+    });
+  });
+});
+
+
+describe("createTanstackQueryUtils with proxy client", () => {
+  describe("query options", () => {
+    it("generates query options for procedure without input", () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const options = utils.health.queryOptions();
+
+      expect(options.queryKey).toEqual(["health"]);
+      expect(options.queryFn).toBeInstanceOf(Function);
+    });
+
+    it("generates query options for procedure with input", () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const options = utils.greet.queryOptions({ input: { name: "World" } });
+
+      expect(options.queryKey).toEqual(["greet", { name: "World" }]);
+      expect(options.queryFn).toBeInstanceOf(Function);
+    });
+
+    it("queryFn calls the underlying client function", async () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const options = utils.greet.queryOptions({ input: { name: "Test" } });
+      const result = await options.queryFn();
+
+      expect(result).toBe("Hello, Test!");
+    });
+
+    it("queryFn works for procedures without input", async () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const options = utils.health.queryOptions();
+      const result = await options.queryFn();
+
+      expect(result).toEqual({ status: "ok", version: "1.0.0" });
+    });
+  });
+
+  describe("nested routers", () => {
+    it("generates query options for nested procedures", () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const options = utils.user.get.queryOptions({ input: { id: 1 } });
+
+      expect(options.queryKey).toEqual(["user", "get", { id: 1 }]);
+    });
+
+    it("generates query options for nested procedures without input", () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const options = utils.user.list.queryOptions();
+
+      expect(options.queryKey).toEqual(["user", "list"]);
+    });
+
+    it("queryFn calls nested client function", async () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const options = utils.user.get.queryOptions({ input: { id: 42 } });
+      const result = await options.queryFn();
+
+      expect(result).toEqual({ id: 42, name: "Test User", email: "test@example.com" });
+    });
+  });
+
+  describe("mutation options", () => {
+    it("generates mutation options", () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const options = utils.user.create.mutationOptions();
+
+      expect(options.mutationKey).toEqual(["user", "create"]);
+      expect(options.mutationFn).toBeInstanceOf(Function);
+    });
+
+    it("mutationFn calls the underlying client function", async () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const options = utils.user.create.mutationOptions();
+      const result = await options.mutationFn({ name: "New User", email: "new@example.com" });
+
+      expect(result).toEqual({ id: 1, name: "New User", email: "new@example.com" });
+    });
+  });
+
+  describe("query keys", () => {
+    it("generates queryKey for procedure without input", () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const key = utils.health.queryKey();
+
+      expect(key).toEqual(["health"]);
+    });
+
+    it("generates queryKey for procedure with input", () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const key = utils.greet.queryKey({ input: { name: "World" } });
+
+      expect(key).toEqual(["greet", { name: "World" }]);
+    });
+  });
+
+  describe("partial keys for invalidation", () => {
+    it("generates partial key for namespace", () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const key = utils.user.key();
+
+      expect(key).toEqual(["user"]);
+    });
+
+    it("generates partial key for procedure", () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const key = utils.user.get.key();
+
+      expect(key).toEqual(["user", "get"]);
+    });
+  });
+
+  describe("direct call", () => {
+    it("calls procedure directly", async () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const result = await utils.greet.call({ name: "Direct" });
+
+      expect(result).toBe("Hello, Direct!");
+    });
+
+    it("calls nested procedure directly", async () => {
+      const client = createProxyMockClient();
+      const utils = createProxyUtils(client);
+
+      const result = await utils.user.list.call();
+
+      expect(result).toHaveLength(2);
     });
   });
 });
