@@ -22,6 +22,15 @@ export interface MutationOptionsResult<TInput, TOutput> {
   mutationFn: (input: TInput) => Promise<TOutput>;
 }
 
+export interface InfiniteOptionsResult<TOutput, TPageParam> {
+  queryKey: QueryKey;
+  queryFn: (context: { pageParam: TPageParam }) => Promise<TOutput>;
+  initialPageParam: TPageParam;
+  getNextPageParam: (lastPage: TOutput) => TPageParam | undefined;
+  getPreviousPageParam?: (firstPage: TOutput) => TPageParam | undefined;
+  enabled?: boolean;
+}
+
 export interface KeyOptions<TInput = unknown> {
   input?: TInput;
   type?: "query" | "mutation" | "infinite";
@@ -40,6 +49,24 @@ interface QueryProcedureUtils<TInput, TOutput> {
   queryOptions: TInput extends void
     ? (opts?: { enabled?: boolean }) => QueryOptionsResult<TOutput>
     : (opts: { input: TInput; enabled?: boolean }) => QueryOptionsResult<TOutput>;
+  
+  infiniteOptions: <TPageParam = unknown>(opts: {
+    input: (pageParam: TPageParam) => TInput;
+    initialPageParam: TPageParam;
+    getNextPageParam: (lastPage: TOutput) => TPageParam | undefined;
+    getPreviousPageParam?: (firstPage: TOutput) => TPageParam | undefined;
+    enabled?: boolean;
+  }) => {
+    queryKey: QueryKey;
+    queryFn: (context: { pageParam: TPageParam }) => Promise<TOutput>;
+    initialPageParam: TPageParam;
+    getNextPageParam: (lastPage: TOutput) => TPageParam | undefined;
+    getPreviousPageParam?: (firstPage: TOutput) => TPageParam | undefined;
+    enabled?: boolean;
+  };
+
+  infiniteKey: (opts?: { input?: TInput }) => QueryKey;
+  
   queryKey: TInput extends void
     ? () => QueryKey
     : (opts: { input: TInput }) => QueryKey;
@@ -88,6 +115,13 @@ export interface CreateTanstackQueryUtilsOptions {
  * 
  * // Query options
  * const query = useQuery(orpc.user.get.queryOptions({ input: { id: 1 } }));
+ * 
+ * // Infinite query options
+ * const infinite = useInfiniteQuery(orpc.user.list.infiniteOptions({
+ *   input: (pageParam) => ({ limit: 10, offset: pageParam }),
+ *   initialPageParam: 0,
+ *   getNextPageParam: (lastPage) => lastPage.nextOffset,
+ * }));
  * 
  * // Mutation options
  * const mutation = useMutation(orpc.user.create.mutationOptions());
@@ -138,6 +172,27 @@ export function createTanstackQueryUtils<TContract extends ContractRouter>(
               }),
               queryKey: (opts?: { input?: unknown }) =>
                 opts?.input !== undefined ? [...nextPath, opts.input] : nextPath,
+
+              // Infinite query utils
+              infiniteOptions: <TPageParam>(opts: {
+                input: (pageParam: TPageParam) => unknown;
+                initialPageParam: TPageParam;
+                getNextPageParam: (lastPage: unknown) => TPageParam | undefined;
+                getPreviousPageParam?: (firstPage: unknown) => TPageParam | undefined;
+                enabled?: boolean;
+              }) => ({
+                queryKey: [...nextPath, "infinite"],
+                queryFn: ({ pageParam }: { pageParam: TPageParam }) => 
+                  procedureFn(opts.input(pageParam)),
+                initialPageParam: opts.initialPageParam,
+                getNextPageParam: opts.getNextPageParam,
+                getPreviousPageParam: opts.getPreviousPageParam,
+                enabled: opts.enabled,
+              }),
+              infiniteKey: (opts?: { input?: unknown }) =>
+                opts?.input !== undefined 
+                  ? [...nextPath, "infinite", opts.input] 
+                  : [...nextPath, "infinite"],
 
               // Mutation utils
               mutationOptions: () => ({

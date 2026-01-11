@@ -152,6 +152,7 @@ export {
   type CreateTanstackQueryUtilsOptions,
   type QueryOptionsResult,
   type MutationOptionsResult,
+  type InfiniteOptionsResult,
   type KeyOptions,
 } from "./tanstack";
 

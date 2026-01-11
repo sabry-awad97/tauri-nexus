@@ -261,4 +261,75 @@ describe("createTanstackQueryUtils", () => {
       expect(utils.health.queryKey()).toEqual(["v1", "api", "health"]);
     });
   });
+
+  describe("infinite query options", () => {
+    it("generates infinite options with input function", () => {
+      const client = createMockClient();
+      const utils = createUtils(client);
+
+      const options = utils.user.list.infiniteOptions({
+        input: (pageParam: number | undefined) => ({ limit: 10, offset: pageParam ?? 0 }),
+        initialPageParam: undefined as number | undefined,
+        getNextPageParam: (lastPage: any) => lastPage.nextOffset,
+      });
+
+      expect(options.queryKey).toEqual(["user", "list", "infinite"]);
+      expect(options.queryFn).toBeInstanceOf(Function);
+      expect(options.initialPageParam).toBeUndefined();
+      expect(options.getNextPageParam).toBeInstanceOf(Function);
+    });
+
+    it("queryFn calls procedure with input from pageParam", async () => {
+      const client = createMockClient();
+      const utils = createUtils(client);
+
+      const options = utils.user.list.infiniteOptions({
+        input: (pageParam: number) => ({ limit: 10, offset: pageParam }),
+        initialPageParam: 0,
+        getNextPageParam: () => undefined,
+      });
+
+      await options.queryFn({ pageParam: 20 });
+
+      expect(client.user.list).toHaveBeenCalledWith({ limit: 10, offset: 20 });
+    });
+
+    it("generates infiniteKey", () => {
+      const client = createMockClient();
+      const utils = createUtils(client);
+
+      const key = utils.user.list.infiniteKey();
+
+      expect(key).toEqual(["user", "list", "infinite"]);
+    });
+
+    it("supports enabled option", () => {
+      const client = createMockClient();
+      const utils = createUtils(client);
+
+      const options = utils.user.list.infiniteOptions({
+        input: (pageParam: number) => ({ limit: 10, offset: pageParam }),
+        initialPageParam: 0,
+        getNextPageParam: () => undefined,
+        enabled: false,
+      });
+
+      expect(options.enabled).toBe(false);
+    });
+
+    it("supports getPreviousPageParam", () => {
+      const client = createMockClient();
+      const utils = createUtils(client);
+
+      const getPreviousPageParam = (firstPage: any) => firstPage.prevOffset;
+      const options = utils.user.list.infiniteOptions({
+        input: (pageParam: number) => ({ limit: 10, offset: pageParam }),
+        initialPageParam: 0,
+        getNextPageParam: () => undefined,
+        getPreviousPageParam,
+      });
+
+      expect(options.getPreviousPageParam).toBe(getPreviousPageParam);
+    });
+  });
 });
