@@ -283,6 +283,7 @@
 //! use tauri_plugin_rpc::prelude::*;
 //! ```
 
+pub mod batch;
 mod config;
 mod context;
 mod error;
@@ -298,6 +299,9 @@ pub mod validation;
 mod tests;
 
 // Public API
+pub use batch::{
+    BatchConfig, BatchRequest, BatchResponse, BatchResult, BatchResultData, SingleRequest,
+};
 pub use config::{BackpressureStrategy, ConfigValidationError, RpcConfig};
 pub use context::{Context, EmptyContext};
 pub use error::{RpcError, RpcErrorCode, RpcResult};
@@ -328,6 +332,11 @@ pub mod prelude {
     pub use crate::{
         // Configuration
         BackpressureStrategy,
+        // Batch processing
+        BatchConfig,
+        BatchRequest,
+        BatchResponse,
+        BatchResult,
         // Subscription types
         ChannelPublisher,
         // Router
@@ -341,6 +350,8 @@ pub mod prelude {
         EventPublisher,
         EventSender,
         EventStream,
+        // Validation
+        FieldError,
         // Handler
         Handler,
         // Middleware
@@ -358,14 +369,13 @@ pub mod prelude {
         RpcError,
         RpcErrorCode,
         RpcResult,
+        SingleRequest,
         SubscriptionContext,
         SubscriptionEvent,
         SubscriptionHandler,
         SubscriptionId,
         SubscriptionManager,
         SuccessResponse,
-        // Validation
-        FieldError,
         Validate,
         ValidationResult,
         ValidationRules,

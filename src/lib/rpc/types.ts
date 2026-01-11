@@ -87,6 +87,66 @@ export interface EventMeta {
 }
 
 // =============================================================================
+// Batch Request Types
+// =============================================================================
+
+/**
+ * A single request within a batch.
+ * Matches the Rust SingleRequest struct.
+ */
+export interface SingleRequest {
+  /** Unique identifier for this request within the batch */
+  id: string;
+  /** The procedure path to call (e.g., "user.get", "post.create") */
+  path: string;
+  /** Input data for the procedure */
+  input: unknown;
+}
+
+/**
+ * A batch of RPC requests to be processed together.
+ * Matches the Rust BatchRequest struct.
+ */
+export interface BatchRequest {
+  /** The list of requests to process */
+  requests: SingleRequest[];
+}
+
+/**
+ * Result of a single request within a batch.
+ * Contains either the successful result or an error.
+ */
+export interface BatchResult<T = unknown> {
+  /** The ID of the request this result corresponds to */
+  id: string;
+  /** The result data (present on success) */
+  data?: T;
+  /** The error (present on failure) */
+  error?: RpcError;
+}
+
+/**
+ * Response containing results for all requests in a batch.
+ * Matches the Rust BatchResponse struct.
+ */
+export interface BatchResponse<T = unknown> {
+  /** Results for each request, in the same order as the input requests */
+  results: BatchResult<T>[];
+}
+
+/**
+ * Options for batch calls.
+ */
+export interface BatchCallOptions {
+  /** Abort signal for cancellation */
+  signal?: AbortSignal;
+  /** Request timeout in milliseconds (applies to entire batch) */
+  timeout?: number;
+  /** Custom headers/metadata */
+  meta?: Record<string, unknown>;
+}
+
+// =============================================================================
 // Procedure Definition Types
 // =============================================================================
 

@@ -20,3 +20,6 @@ pub mod middleware_tests;
 
 #[cfg(test)]
 pub mod config_tests;
+
+#[cfg(test)]
+pub mod batch_tests;

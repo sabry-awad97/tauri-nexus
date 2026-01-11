@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsersRouteImport } from './routes/users'
 import { Route as GreetRouteImport } from './routes/greet'
+import { Route as BatchRouteImport } from './routes/batch'
 import { Route as AdvancedRouteImport } from './routes/advanced'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StreamsTimeRouteImport } from './routes/streams/time'
@@ -26,6 +27,11 @@ const UsersRoute = UsersRouteImport.update({
 const GreetRoute = GreetRouteImport.update({
   id: '/greet',
   path: '/greet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BatchRoute = BatchRouteImport.update({
+  id: '/batch',
+  path: '/batch',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdvancedRoute = AdvancedRouteImport.update({
@@ -62,6 +68,7 @@ const StreamsChatRoute = StreamsChatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/advanced': typeof AdvancedRoute
+  '/batch': typeof BatchRoute
   '/greet': typeof GreetRoute
   '/users': typeof UsersRoute
   '/streams/chat': typeof StreamsChatRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/advanced': typeof AdvancedRoute
+  '/batch': typeof BatchRoute
   '/greet': typeof GreetRoute
   '/users': typeof UsersRoute
   '/streams/chat': typeof StreamsChatRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/advanced': typeof AdvancedRoute
+  '/batch': typeof BatchRoute
   '/greet': typeof GreetRoute
   '/users': typeof UsersRoute
   '/streams/chat': typeof StreamsChatRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/advanced'
+    | '/batch'
     | '/greet'
     | '/users'
     | '/streams/chat'
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/advanced'
+    | '/batch'
     | '/greet'
     | '/users'
     | '/streams/chat'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/advanced'
+    | '/batch'
     | '/greet'
     | '/users'
     | '/streams/chat'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdvancedRoute: typeof AdvancedRoute
+  BatchRoute: typeof BatchRoute
   GreetRoute: typeof GreetRoute
   UsersRoute: typeof UsersRoute
   StreamsChatRoute: typeof StreamsChatRoute
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/greet'
       fullPath: '/greet'
       preLoaderRoute: typeof GreetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/batch': {
+      id: '/batch'
+      path: '/batch'
+      fullPath: '/batch'
+      preLoaderRoute: typeof BatchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/advanced': {
@@ -198,6 +218,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdvancedRoute: AdvancedRoute,
+  BatchRoute: BatchRoute,
   GreetRoute: GreetRoute,
   UsersRoute: UsersRoute,
   StreamsChatRoute: StreamsChatRoute,

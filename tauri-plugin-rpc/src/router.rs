@@ -31,6 +31,7 @@
 
 use crate::{
     Context, EmptyContext, RpcError, RpcResult,
+    batch::{BatchConfig, BatchRequest, BatchResponse, BatchResult},
     handler::{BoxedHandler, Handler, into_boxed, into_boxed_validated},
     middleware::{MiddlewareFn, Next, ProcedureType, Request, Response},
     plugin::DynRouter,
@@ -177,6 +178,78 @@ impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
         );
 
         (handler)(ctx, sub_ctx, input).await
+    }
+
+    /// Execute a batch of RPC calls in parallel.
+    ///
+    /// This method processes multiple procedure calls in a single operation,
+    /// executing them in parallel (if configured) and returning results in
+    /// the same order as the input requests.
+    ///
+    /// # Arguments
+    ///
+    /// * `batch` - The batch request containing multiple procedure calls
+    /// * `config` - Configuration for batch processing (max size, parallel execution)
+    ///
+    /// # Returns
+    ///
+    /// A `BatchResponse` containing results for each request in order.
+    /// Individual failures do not affect other requests in the batch.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let batch = BatchRequest::new()
+    ///     .add("1", "user.get", json!({"id": 1}))
+    ///     .add("2", "user.list", json!(null));
+    ///
+    /// let config = BatchConfig::default();
+    /// let response = router.call_batch(batch, &config).await?;
+    ///
+    /// for result in response.results {
+    ///     println!("{}: {:?}", result.id, result.result);
+    /// }
+    /// ```
+    pub async fn call_batch(
+        &self,
+        batch: BatchRequest,
+        config: &BatchConfig,
+    ) -> RpcResult<BatchResponse> {
+        // Validate batch against configuration
+        batch.validate(config)?;
+
+        if config.parallel_execution {
+            // Execute all requests in parallel using futures::join_all pattern
+            let futures: Vec<_> = batch
+                .requests
+                .iter()
+                .map(|req| {
+                    let id = req.id.clone();
+                    let path = req.path.clone();
+                    let input = req.input.clone();
+                    async move {
+                        match self.call(&path, input).await {
+                            Ok(data) => BatchResult::success(id, data),
+                            Err(error) => BatchResult::error(id, error),
+                        }
+                    }
+                })
+                .collect();
+
+            let results = futures::future::join_all(futures).await;
+            Ok(BatchResponse::new(results))
+        } else {
+            // Execute requests sequentially
+            let mut results = Vec::with_capacity(batch.requests.len());
+            for req in batch.requests {
+                let result = match self.call(&req.path, req.input).await {
+                    Ok(data) => BatchResult::success(req.id, data),
+                    Err(error) => BatchResult::error(req.id, error),
+                };
+                results.push(result);
+            }
+            Ok(BatchResponse::new(results))
+        }
     }
 }
 
@@ -640,6 +713,78 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
             Procedure::Handler { .. } => Err(RpcError::bad_request(
                 "Cannot subscribe to non-subscription procedure. Use 'call' instead.",
             )),
+        }
+    }
+
+    /// Execute a batch of RPC calls in parallel.
+    ///
+    /// This method processes multiple procedure calls in a single operation,
+    /// executing them in parallel (if configured) and returning results in
+    /// the same order as the input requests.
+    ///
+    /// # Arguments
+    ///
+    /// * `batch` - The batch request containing multiple procedure calls
+    /// * `config` - Configuration for batch processing (max size, parallel execution)
+    ///
+    /// # Returns
+    ///
+    /// A `BatchResponse` containing results for each request in order.
+    /// Individual failures do not affect other requests in the batch.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let batch = BatchRequest::new()
+    ///     .add("1", "user.get", json!({"id": 1}))
+    ///     .add("2", "user.list", json!(null));
+    ///
+    /// let config = BatchConfig::default();
+    /// let response = router.call_batch(batch, &config).await?;
+    ///
+    /// for result in response.results {
+    ///     println!("{}: {:?}", result.id, result.result);
+    /// }
+    /// ```
+    pub async fn call_batch(
+        &self,
+        batch: BatchRequest,
+        config: &BatchConfig,
+    ) -> RpcResult<BatchResponse> {
+        // Validate batch against configuration
+        batch.validate(config)?;
+
+        if config.parallel_execution {
+            // Execute all requests in parallel using futures::join_all pattern
+            let futures: Vec<_> = batch
+                .requests
+                .iter()
+                .map(|req| {
+                    let id = req.id.clone();
+                    let path = req.path.clone();
+                    let input = req.input.clone();
+                    async move {
+                        match self.call(&path, input).await {
+                            Ok(data) => BatchResult::success(id, data),
+                            Err(error) => BatchResult::error(id, error),
+                        }
+                    }
+                })
+                .collect();
+
+            let results = futures::future::join_all(futures).await;
+            Ok(BatchResponse::new(results))
+        } else {
+            // Execute requests sequentially
+            let mut results = Vec::with_capacity(batch.requests.len());
+            for req in batch.requests {
+                let result = match self.call(&req.path, req.input).await {
+                    Ok(data) => BatchResult::success(req.id, data),
+                    Err(error) => BatchResult::error(req.id, error),
+                };
+                results.push(result);
+            }
+            Ok(BatchResponse::new(results))
         }
     }
 }

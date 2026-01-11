@@ -12,6 +12,10 @@ import type {
   SubscriptionOptions,
   Middleware,
   RequestContext,
+  BatchRequest,
+  BatchResponse,
+  SingleRequest,
+  BatchCallOptions,
 } from "./types";
 import { createEventIterator } from "./event-iterator";
 
@@ -280,6 +284,149 @@ export async function subscribe<T>(
     globalConfig.onError?.(ctx, rpcError);
     throw rpcError;
   }
+}
+
+// =============================================================================
+// Batch Call Functions
+// =============================================================================
+
+/**
+ * Execute multiple RPC calls in a single batch request.
+ * 
+ * This function sends multiple procedure calls to the backend in a single
+ * request, reducing IPC overhead. Results are returned in the same order
+ * as the input requests.
+ * 
+ * @param requests - Array of requests to execute
+ * @param options - Optional batch call options
+ * @returns BatchResponse containing results for each request
+ * 
+ * @example
+ * ```typescript
+ * const response = await callBatch([
+ *   { id: '1', path: 'user.get', input: { id: 1 } },
+ *   { id: '2', path: 'user.get', input: { id: 2 } },
+ *   { id: '3', path: 'post.list', input: { limit: 10 } },
+ * ]);
+ * 
+ * for (const result of response.results) {
+ *   if (result.error) {
+ *     console.error(`Request ${result.id} failed:`, result.error);
+ *   } else {
+ *     console.log(`Request ${result.id} succeeded:`, result.data);
+ *   }
+ * }
+ * ```
+ */
+export async function callBatch<T = unknown>(
+  requests: SingleRequest[],
+  options?: BatchCallOptions,
+): Promise<BatchResponse<T>> {
+  // Validate all paths
+  for (const req of requests) {
+    validatePath(req.path);
+  }
+
+  const batchRequest: BatchRequest = { requests };
+  const timeoutMs = options?.timeout;
+
+  try {
+    // Handle timeout
+    if (timeoutMs) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const result = await invoke<BatchResponse<T>>("plugin:rpc|rpc_call_batch", {
+          batch: batchRequest,
+        });
+        clearTimeout(timeoutId);
+        return result;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+      }
+    }
+
+    return await invoke<BatchResponse<T>>("plugin:rpc|rpc_call_batch", {
+      batch: batchRequest,
+    });
+  } catch (error) {
+    const rpcError = parseError(error, timeoutMs);
+    throw rpcError;
+  }
+}
+
+/**
+ * Helper class for building batch requests with a fluent API.
+ * 
+ * @example
+ * ```typescript
+ * const response = await new BatchBuilder()
+ *   .add('1', 'user.get', { id: 1 })
+ *   .add('2', 'user.get', { id: 2 })
+ *   .add('3', 'post.list', { limit: 10 })
+ *   .execute();
+ * ```
+ */
+export class BatchBuilder {
+  private requests: SingleRequest[] = [];
+
+  /**
+   * Add a request to the batch.
+   * @param id - Unique identifier for this request
+   * @param path - Procedure path to call
+   * @param input - Input data for the procedure
+   */
+  add(id: string, path: string, input: unknown = null): this {
+    this.requests.push({ id, path, input });
+    return this;
+  }
+
+  /**
+   * Get the current requests in the batch.
+   */
+  getRequests(): SingleRequest[] {
+    return [...this.requests];
+  }
+
+  /**
+   * Get the number of requests in the batch.
+   */
+  size(): number {
+    return this.requests.length;
+  }
+
+  /**
+   * Clear all requests from the batch.
+   */
+  clear(): this {
+    this.requests = [];
+    return this;
+  }
+
+  /**
+   * Execute the batch and return results.
+   * @param options - Optional batch call options
+   */
+  async execute<T = unknown>(options?: BatchCallOptions): Promise<BatchResponse<T>> {
+    return callBatch<T>(this.requests, options);
+  }
+}
+
+/**
+ * Create a new batch builder for fluent batch request construction.
+ * 
+ * @example
+ * ```typescript
+ * const response = await createBatch()
+ *   .add('1', 'user.get', { id: 1 })
+ *   .add('2', 'user.list', {})
+ *   .execute();
+ * ```
+ */
+export function createBatch(): BatchBuilder {
+  return new BatchBuilder();
 }
 
 // =============================================================================

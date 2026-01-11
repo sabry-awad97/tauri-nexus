@@ -49,6 +49,12 @@ export type {
   // Event types
   Event,
   EventMeta,
+  // Batch types
+  SingleRequest,
+  BatchRequest,
+  BatchResult,
+  BatchResponse,
+  BatchCallOptions,
   // Procedure definition types
   ProcedureType,
   ProcedureDef,
@@ -115,6 +121,10 @@ export {
   // Core functions
   call,
   subscribe,
+  // Batch functions
+  callBatch,
+  createBatch,
+  BatchBuilder,
   // Validation
   validatePath,
   // Error utilities

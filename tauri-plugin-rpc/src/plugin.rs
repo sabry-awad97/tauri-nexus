@@ -1,6 +1,7 @@
 //! Tauri plugin integration
 
 use crate::RpcError;
+use crate::batch::{BatchConfig, BatchRequest, BatchResponse, BatchResult};
 use crate::config::RpcConfig;
 use crate::subscription::{
     Event, SubscriptionContext, SubscriptionEvent, SubscriptionId, SubscriptionManager,
@@ -22,7 +23,9 @@ use tokio::sync::mpsc;
 
 /// Future type for subscription results
 pub type SubscriptionFuture<'a> = Pin<
-    Box<dyn Future<Output = Result<mpsc::Receiver<Event<serde_json::Value>>, RpcError>> + Send + 'a>,
+    Box<
+        dyn Future<Output = Result<mpsc::Receiver<Event<serde_json::Value>>, RpcError>> + Send + 'a,
+    >,
 >;
 
 // =============================================================================
@@ -47,7 +50,8 @@ pub fn validate_path(path: &str) -> Result<(), RpcError> {
     for ch in path.chars() {
         if !ch.is_ascii_alphanumeric() && ch != '_' && ch != '.' {
             return Err(RpcError::validation(format!(
-                "Procedure path contains invalid character: '{}'", ch
+                "Procedure path contains invalid character: '{}'",
+                ch
             )));
         }
     }
@@ -85,7 +89,6 @@ pub fn validate_rpc_input(
     validate_input_size(input, config)?;
     Ok(())
 }
-
 
 // =============================================================================
 // Router Trait
@@ -156,8 +159,54 @@ async fn rpc_call(
 ) -> Result<serde_json::Value, String> {
     validate_rpc_input(&path, &input, &config.0)
         .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
-    state.0.call(&path, input).await
+    state
+        .0
+        .call(&path, input)
+        .await
         .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))
+}
+
+#[tauri::command]
+async fn rpc_call_batch(
+    batch: BatchRequest,
+    state: State<'_, RouterState>,
+    config: State<'_, ConfigState>,
+) -> Result<BatchResponse, String> {
+    // Use default batch config for now
+    // TODO: Make batch config configurable via RpcConfig
+    let batch_config = BatchConfig::default();
+
+    // Validate batch
+    batch
+        .validate(&batch_config)
+        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+
+    // Validate each request's path and input
+    for req in &batch.requests {
+        validate_rpc_input(&req.path, &req.input, &config.0)
+            .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+    }
+
+    // Execute batch using parallel execution
+    let futures: Vec<_> = batch
+        .requests
+        .iter()
+        .map(|req| {
+            let id = req.id.clone();
+            let path = req.path.clone();
+            let input = req.input.clone();
+            let router = state.0.clone();
+            async move {
+                match router.call(&path, input).await {
+                    Ok(data) => BatchResult::success(id, data),
+                    Err(error) => BatchResult::error(id, error),
+                }
+            }
+        })
+        .collect();
+
+    let results = futures::future::join_all(futures).await;
+    Ok(BatchResponse::new(results))
 }
 
 #[tauri::command]
@@ -173,8 +222,13 @@ async fn rpc_subscribe<R: Runtime>(
     sub_state: State<'_, SubscriptionState>,
     config: State<'_, ConfigState>,
 ) -> Result<String, String> {
-    let SubscribeRequest { id, path, input, last_event_id } = request;
-    
+    let SubscribeRequest {
+        id,
+        path,
+        input,
+        last_event_id,
+    } = request;
+
     validate_rpc_input(&path, &input, &config.0)
         .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
 
@@ -187,15 +241,16 @@ async fn rpc_subscribe<R: Runtime>(
 
     if !router_state.0.is_subscription(&path) {
         return Err(serde_json::to_string(&RpcError::bad_request(format!(
-            "'{}' is not a subscription procedure", path
-        ))).unwrap());
+            "'{}' is not a subscription procedure",
+            path
+        )))
+        .unwrap());
     }
 
     let sub_ctx = SubscriptionContext::new(subscription_id, last_event_id);
     let signal = sub_ctx.signal();
-    let handle = crate::subscription::SubscriptionHandle::new(
-        subscription_id, path.clone(), signal.clone()
-    );
+    let handle =
+        crate::subscription::SubscriptionHandle::new(subscription_id, path.clone(), signal.clone());
     sub_state.0.subscribe(handle).await;
 
     let event_name = format!("rpc:subscription:{}", subscription_id);
@@ -204,24 +259,31 @@ async fn rpc_subscribe<R: Runtime>(
 
     // Use spawn_subscription for tracked task management instead of tokio::spawn
     // This ensures proper cleanup during shutdown
-    sub_state.0.spawn_subscription(subscription_id, async move {
-        match router.subscribe(&path, input, sub_ctx).await {
-            Ok(mut stream) => {
-                while let Some(event) = stream.recv().await {
-                    if signal.is_cancelled() { break; }
-                    let sub_event = SubscriptionEvent::data(event);
-                    if app.emit(&event_name, &sub_event).is_err() { break; }
+    sub_state
+        .0
+        .spawn_subscription(subscription_id, async move {
+            match router.subscribe(&path, input, sub_ctx).await {
+                Ok(mut stream) => {
+                    while let Some(event) = stream.recv().await {
+                        if signal.is_cancelled() {
+                            break;
+                        }
+                        let sub_event = SubscriptionEvent::data(event);
+                        if app.emit(&event_name, &sub_event).is_err() {
+                            break;
+                        }
+                    }
+                    if !signal.is_cancelled() {
+                        let _ = app.emit(&event_name, &SubscriptionEvent::completed());
+                    }
                 }
-                if !signal.is_cancelled() {
-                    let _ = app.emit(&event_name, &SubscriptionEvent::completed());
+                Err(err) => {
+                    let _ = app.emit(&event_name, &SubscriptionEvent::error(err));
                 }
             }
-            Err(err) => {
-                let _ = app.emit(&event_name, &SubscriptionEvent::error(err));
-            }
-        }
-        sub_manager.unsubscribe(&subscription_id).await;
-    }).await;
+            sub_manager.unsubscribe(&subscription_id).await;
+        })
+        .await;
 
     Ok(subscription_id.to_string())
 }
@@ -241,13 +303,12 @@ async fn rpc_subscription_count(sub_state: State<'_, SubscriptionState>) -> Resu
     Ok(sub_state.0.count().await)
 }
 
-
 // =============================================================================
 // Plugin Initialization
 // =============================================================================
 
 /// Initialize the RPC plugin with a router
-/// 
+///
 /// # Example
 /// ```rust,ignore
 /// tauri::Builder::default()
@@ -263,12 +324,12 @@ where
 }
 
 /// Initialize the RPC plugin with a router and custom configuration
-/// 
+///
 /// # Panics
-/// 
+///
 /// Panics if the configuration is invalid (e.g., max_input_size is 0).
 /// Use `RpcConfig::validate()` to check configuration before passing it.
-/// 
+///
 /// # Example
 /// ```rust,ignore
 /// use tauri_plugin_rpc::RpcConfig;
@@ -297,6 +358,7 @@ where
     Builder::new("rpc")
         .invoke_handler(tauri::generate_handler![
             rpc_call,
+            rpc_call_batch,
             rpc_procedures,
             rpc_subscribe,
             rpc_unsubscribe,
