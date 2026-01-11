@@ -296,6 +296,7 @@ mod plugin;
 pub mod procedure;
 pub mod rate_limit;
 mod router;
+pub mod schema;
 pub mod subscription;
 pub mod types;
 pub mod validation;
@@ -343,6 +344,11 @@ pub use router::{
     CompiledRouter, ContextTransformedChain, ContextTransformedTypedChain,
     ContextTransformedValidatedChain, ProcedureChain, Router, TypedProcedureChain,
     ValidatedProcedureChain,
+};
+pub use schema::{
+    OpenApiComponents, OpenApiInfo, OpenApiMediaType, OpenApiOperation, OpenApiPathItem,
+    OpenApiRequestBody, OpenApiResponse, OpenApiSchema, ProcedureSchema, ProcedureTypeSchema,
+    RouterSchema, SchemaBuilder, TypeSchema,
 };
 pub use subscription::{
     CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, EventSender,
@@ -423,12 +429,16 @@ pub mod prelude {
         // Common types
         NoInput,
         NoOpTransformer,
+        // Schema
+        OpenApiSchema,
         PaginatedResponse,
         PaginationInput,
         // Procedure Builder
         ProcedureBuilder,
         ProcedureChain,
+        ProcedureSchema,
         ProcedureType,
+        ProcedureTypeSchema,
         // Rate limiting
         RateLimit,
         RateLimitConfig,
@@ -440,11 +450,13 @@ pub mod prelude {
         RequestId,
         RequestMeta,
         Router,
+        RouterSchema,
         RpcConfig,
         // Error handling
         RpcError,
         RpcErrorCode,
         RpcResult,
+        SchemaBuilder,
         SingleRequest,
         SubscriptionContext,
         SubscriptionEvent,
@@ -453,6 +465,7 @@ pub mod prelude {
         SubscriptionManager,
         SuccessResponse,
         TracingLogger,
+        TypeSchema,
         TypedProcedureChain,
         Validate,
         ValidatedProcedureBuilder,

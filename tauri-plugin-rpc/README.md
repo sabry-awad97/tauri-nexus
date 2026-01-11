@@ -31,17 +31,25 @@
 
 ## ✨ Features
 
-| Feature                  | Description                                              |
-| ------------------------ | -------------------------------------------------------- |
-| 🔒 **Type-Safe**         | End-to-end type safety from Rust to TypeScript           |
-| �️ **Router-Based**       | ORPC-style nested routers with namespacing               |
-| 🎯 **Context Injection** | Dependency injection for services and state              |
-| 🔗 **Middleware**        | Async middleware chain with onion-model execution        |
-| 📡 **Subscriptions**     | Real-time streaming with backpressure handling           |
-| ⚛️ **React Hooks**       | Built-in hooks for queries, mutations, and subscriptions |
-| ⚡ **Compiled Routers**  | Pre-computed middleware chains for O(1) execution        |
-| �️ **Error Handling**     | Structured error codes with detailed messages            |
-| 📦 **Zero Codegen**      | No build step required - just mirror your types          |
+| Feature                   | Description                                              |
+| ------------------------- | -------------------------------------------------------- |
+| 🔒 **Type-Safe**          | End-to-end type safety from Rust to TypeScript           |
+| 🛣️ **Router-Based**       | ORPC-style nested routers with namespacing               |
+| 🎯 **Context Injection**  | Dependency injection for services and state              |
+| 🔗 **Middleware**         | Async middleware chain with onion-model execution        |
+| 📡 **Subscriptions**      | Real-time streaming with backpressure handling           |
+| ⚛️ **React Hooks**        | Built-in hooks for queries, mutations, and subscriptions |
+| ⚡ **Compiled Routers**   | Pre-computed middleware chains for O(1) execution        |
+| 🛡️ **Error Handling**     | Structured error codes with detailed messages            |
+| 📦 **Zero Codegen**       | No build step required - just mirror your types          |
+| ✅ **Input Validation**   | Built-in validation framework with common rules          |
+| 📦 **Batch Processing**   | Execute multiple RPC calls in a single request           |
+| ⏱️ **Rate Limiting**      | Configurable rate limits with multiple strategies        |
+| 📝 **Structured Logging** | Request/response logging with field redaction            |
+| 🔐 **Auth Middleware**    | Authentication and role-based authorization              |
+| 💾 **Caching Layer**      | LRU cache with TTL and pattern-based invalidation        |
+| 📋 **Schema Export**      | Export router schema as JSON or OpenAPI format           |
+| 🏗️ **Procedure Builder**  | Fluent API for per-procedure middleware and validation   |
 
 ---
 
@@ -490,6 +498,356 @@ Router::new()
 
 ---
 
+## ✅ Input Validation
+
+### Implementing the Validate Trait
+
+```rust
+use tauri_plugin_rpc::prelude::*;
+
+#[derive(Debug, Deserialize)]
+pub struct CreateUserInput {
+    pub name: String,
+    pub email: String,
+    pub age: Option<i32>,
+}
+
+impl Validate for CreateUserInput {
+    fn validate(&self) -> ValidationResult {
+        ValidationRules::new()
+            .required("name", &self.name)
+            .min_length("name", &self.name, 2)
+            .max_length("name", &self.name, 100)
+            .email("email", &self.email)
+            .range("age", self.age.unwrap_or(0) as i64, 0, 150)
+            .validate()
+    }
+}
+```
+
+### Using Validated Handlers
+
+```rust
+// Register with automatic validation
+Router::new()
+    .context(AppContext::new())
+    .mutation_validated("user.create", create_user)  // Auto-validates input
+```
+
+### Validation Rules
+
+| Rule         | Description                | Example                                     |
+| ------------ | -------------------------- | ------------------------------------------- |
+| `required`   | Field must not be empty    | `.required("name", &self.name)`             |
+| `min_length` | Minimum string length      | `.min_length("name", &self.name, 2)`        |
+| `max_length` | Maximum string length      | `.max_length("name", &self.name, 100)`      |
+| `range`      | Numeric range (inclusive)  | `.range("age", age, 0, 150)`                |
+| `pattern`    | Regex pattern match        | `.pattern("code", &self.code, r"^[A-Z]+$")` |
+| `email`      | Valid email format         | `.email("email", &self.email)`              |
+| `custom`     | Custom validation function | `.custom(\|_\| None)`                       |
+
+---
+
+## 📦 Batch Processing
+
+### Sending Batch Requests
+
+```rust
+use tauri_plugin_rpc::prelude::*;
+
+// Configure batch processing
+let config = BatchConfig::new()
+    .with_max_size(100);  // Max 100 requests per batch
+
+// Execute batch on compiled router
+let requests = BatchRequest::new()
+    .add("req-1", "user.get", json!({"id": 1}))
+    .add("req-2", "user.get", json!({"id": 2}))
+    .add("req-3", "user.list", json!({}));
+
+let response = router.call_batch(requests, &config).await;
+
+// Results maintain order
+for result in response.results {
+    match result.data {
+        BatchResultData::Success(value) => println!("{}: {:?}", result.id, value),
+        BatchResultData::Error(error) => println!("{}: Error - {}", result.id, error.message),
+    }
+}
+```
+
+### TypeScript Batch Calls
+
+```typescript
+const results = await callBatch([
+  { id: "1", path: "user.get", input: { id: 1 } },
+  { id: "2", path: "user.get", input: { id: 2 } },
+  { id: "3", path: "user.list", input: {} },
+]);
+```
+
+---
+
+## ⏱️ Rate Limiting
+
+### Configuring Rate Limits
+
+```rust
+use tauri_plugin_rpc::prelude::*;
+
+let config = RateLimitConfig::new()
+    .with_default_limit(RateLimit::new(100, Duration::from_secs(60)))  // 100 req/min
+    .with_procedure_limit(
+        "user.create",
+        RateLimit::new(10, Duration::from_secs(60))  // 10 creates/min
+    );
+
+let limiter = RateLimiter::new(config);
+```
+
+### Rate Limit Strategies
+
+| Strategy        | Description                                 |
+| --------------- | ------------------------------------------- |
+| `FixedWindow`   | Reset counter at fixed intervals            |
+| `SlidingWindow` | Rolling window for smoother rate limiting   |
+| `TokenBucket`   | Allows bursts with configurable refill rate |
+
+### Using Rate Limit Middleware
+
+```rust
+use tauri_plugin_rpc::rate_limit::rate_limit_middleware;
+
+let limiter = Arc::new(RateLimiter::new(config));
+
+Router::new()
+    .middleware_fn(rate_limit_middleware(limiter))
+    .query("api.endpoint", handler)
+```
+
+---
+
+## 📝 Structured Logging
+
+### Configuring Logging
+
+```rust
+use tauri_plugin_rpc::prelude::*;
+
+let log_config = LogConfig::new()
+    .with_level(LogLevel::Info)
+    .with_redacted_fields(vec!["password", "token", "secret"])
+    .with_excluded_paths(vec!["health"]);  // Don't log health checks
+```
+
+### Using Logging Middleware
+
+```rust
+use tauri_plugin_rpc::logging::logging_middleware;
+
+Router::new()
+    .middleware_fn(logging_middleware(log_config))
+    .query("user.get", get_user)
+```
+
+### Request IDs
+
+Every request gets a unique UUID for tracing:
+
+```rust
+let request_id = RequestId::new();  // Generates UUID v4
+println!("Request: {}", request_id);  // Request: 550e8400-e29b-41d4-a716-446655440000
+```
+
+---
+
+## 🔐 Authentication & Authorization
+
+### Setting Up Auth
+
+```rust
+use tauri_plugin_rpc::prelude::*;
+
+// Define auth rules
+let auth_config = AuthConfig::new()
+    .public("health")                           // No auth required
+    .public("user.login")
+    .requires_auth("user.*")                    // Auth required
+    .requires_roles("admin.*", vec!["admin"]);  // Admin role required
+
+// Create auth provider
+struct MyAuthProvider;
+
+impl AuthProvider for MyAuthProvider {
+    async fn authenticate(&self, request: &Request) -> AuthResult {
+        // Validate token from request
+        if let Some(token) = request.input.get("token").and_then(|v| v.as_str()) {
+            if is_valid_token(token) {
+                return AuthResult::authenticated("user-123")
+                    .with_roles(vec!["user", "admin"]);
+            }
+        }
+        AuthResult::unauthenticated()
+    }
+}
+```
+
+### Using Auth Middleware
+
+```rust
+use tauri_plugin_rpc::auth::{auth_middleware, auth_with_config};
+
+// Simple auth (just checks authentication)
+Router::new()
+    .middleware_fn(auth_middleware(Arc::new(MyAuthProvider)))
+    .query("protected", protected_handler)
+
+// Auth with role-based rules
+Router::new()
+    .middleware_fn(auth_with_config(Arc::new(MyAuthProvider), auth_config))
+    .query("admin.users", admin_handler)
+```
+
+---
+
+## 💾 Caching Layer
+
+### Configuring Cache
+
+```rust
+use tauri_plugin_rpc::prelude::*;
+
+let cache_config = CacheConfig::new()
+    .with_default_ttl(Duration::from_secs(300))  // 5 min default
+    .with_max_entries(1000)                       // LRU eviction at 1000 entries
+    .with_procedure_ttl("user.profile", Duration::from_secs(60))
+    .with_excluded_pattern("admin.*");            // Don't cache admin queries
+
+let cache = Cache::new(cache_config);
+```
+
+### Using Cache Middleware
+
+```rust
+use tauri_plugin_rpc::cache::{cache_middleware, invalidation_middleware};
+
+let cache = Arc::new(Cache::new(cache_config));
+
+Router::new()
+    .middleware_fn(cache_middleware(cache.clone()))        // Cache queries
+    .middleware_fn(invalidation_middleware(cache.clone())) // Invalidate on mutations
+    .query("user.get", get_user)
+    .mutation("user.update", update_user)  // Invalidates user.* cache
+```
+
+### Manual Cache Operations
+
+```rust
+// Get cached value
+if let Some(value) = cache.get("user.get:{\"id\":1}") {
+    return Ok(value);
+}
+
+// Invalidate specific key
+cache.invalidate("user.get:{\"id\":1}");
+
+// Invalidate by pattern
+cache.invalidate_pattern("user.*");
+
+// Clear all
+cache.invalidate_all();
+```
+
+---
+
+## 📋 Schema Export
+
+### Exporting Router Schema
+
+```rust
+use tauri_plugin_rpc::prelude::*;
+
+// Build schema manually
+let schema = SchemaBuilder::new()
+    .version("1.0.0")
+    .name("My API")
+    .description("User management API")
+    .query("user.get", ProcedureSchema::query()
+        .with_description("Get user by ID")
+        .with_input(TypeSchema::object()
+            .with_property("id", TypeSchema::integer())
+            .with_required("id"))
+        .with_output(TypeSchema::object()
+            .with_property("id", TypeSchema::integer())
+            .with_property("name", TypeSchema::string())
+            .with_property("email", TypeSchema::string().with_format("email"))))
+    .mutation("user.create", ProcedureSchema::mutation()
+        .with_description("Create a new user")
+        .with_tag("users"))
+    .build();
+
+// Export as JSON
+let json = schema.to_json_pretty();
+println!("{}", json);
+
+// Export as OpenAPI 3.0.3
+let openapi = schema.to_openapi();
+let openapi_json = openapi.to_json_pretty();
+```
+
+### TypeSchema Types
+
+| Type      | Description       | Example                          |
+| --------- | ----------------- | -------------------------------- |
+| `string`  | String value      | `TypeSchema::string()`           |
+| `number`  | Floating point    | `TypeSchema::number()`           |
+| `integer` | Integer value     | `TypeSchema::integer()`          |
+| `boolean` | Boolean value     | `TypeSchema::boolean()`          |
+| `object`  | Object with props | `TypeSchema::object()`           |
+| `array`   | Array of items    | `TypeSchema::array(item_schema)` |
+| `null`    | Null value        | `TypeSchema::null()`             |
+
+---
+
+## 🏗️ Procedure Builder API
+
+### Fluent Procedure Definition
+
+```rust
+use tauri_plugin_rpc::prelude::*;
+
+Router::new()
+    .context(AppContext::new())
+    // Using procedure builder
+    .procedure("user.create")
+        .input_validated::<CreateUserInput>()  // Auto-validation
+        .use_middleware(logging)               // Per-procedure middleware
+        .use_middleware(rate_limit)
+        .mutation(create_user)
+    // Context transformation
+    .procedure("admin.action")
+        .context(|ctx: Context<AppContext>| async move {
+            // Transform context for this procedure
+            Ok(AdminContext::from(ctx.inner().clone()))
+        })
+        .mutation(admin_action)
+```
+
+### Procedure Builder Methods
+
+| Method              | Description                          |
+| ------------------- | ------------------------------------ |
+| `input<T>()`        | Set input type                       |
+| `input_validated()` | Set input type with auto-validation  |
+| `use_middleware()`  | Add per-procedure middleware         |
+| `output()`          | Add output transformer               |
+| `context()`         | Transform context for this procedure |
+| `query()`           | Register as query                    |
+| `mutation()`        | Register as mutation                 |
+| `subscription()`    | Register as subscription             |
+
+---
+
 ## 🛡️ Error Handling
 
 ### Error Codes
@@ -663,7 +1021,7 @@ try {
 function UserProfile({ id }: { id: number }) {
   const { data, isLoading, error, refetch } = useQuery(
     () => rpc.user.get({ id }),
-    [id],
+    [id]
   );
 
   if (isLoading) return <Spinner />;
@@ -701,7 +1059,7 @@ function CounterDisplay() {
   const { data, isConnected, error } = useSubscription<CounterEvent>(
     () => subscribe("stream.counter", { start: 0, maxCount: 100 }),
     [],
-    { onEvent: (event) => console.log(event) },
+    { onEvent: (event) => console.log(event) }
   );
 
   return (
@@ -781,10 +1139,18 @@ your-app/
         ├── handler.rs             # Handler trait
         ├── middleware.rs          # Middleware types
         ├── subscription.rs        # Subscription system
-        ├── error.rs               # Error types
+        ├── error.rs               # Error types & transformers
         ├── plugin.rs              # Tauri integration
         ├── config.rs              # Configuration
-        └── types.rs               # Common types (NoInput, etc.)
+        ├── types.rs               # Common types (NoInput, etc.)
+        ├── validation.rs          # Input validation framework
+        ├── batch.rs               # Batch request processing
+        ├── rate_limit.rs          # Rate limiting strategies
+        ├── logging.rs             # Structured logging
+        ├── auth.rs                # Authentication & authorization
+        ├── cache.rs               # LRU caching layer
+        ├── schema.rs              # Schema export (JSON/OpenAPI)
+        └── procedure.rs           # Procedure builder API
 ```
 
 ---
@@ -805,6 +1171,14 @@ use tauri_plugin_rpc::prelude::*;
 // - SubscriptionContext, SubscriptionHandler
 // - NoInput, SuccessResponse, PaginatedResponse
 // - init, init_with_config
+// - Validation: Validate, ValidationResult, ValidationRules, FieldError
+// - Batch: BatchConfig, BatchRequest, BatchResponse, BatchResult
+// - Rate Limiting: RateLimiter, RateLimitConfig, RateLimit, RateLimitStrategy
+// - Logging: LogConfig, LogEntry, LogLevel, RequestId, RequestMeta
+// - Auth: AuthProvider, AuthResult, AuthConfig, AuthRule
+// - Cache: Cache, CacheConfig, CacheEntry, CacheStats
+// - Schema: RouterSchema, ProcedureSchema, TypeSchema, OpenApiSchema, SchemaBuilder
+// - Procedure Builder: ProcedureBuilder, ProcedureChain, RegisteredProcedure
 // - And more...
 ```
 
@@ -820,6 +1194,14 @@ use tauri_plugin_rpc::prelude::*;
 | `NoInput`             | Empty input type (accepts `{}` or `null`) |
 | `EventStream<T>`      | Channel receiver for subscription events  |
 | `SubscriptionContext` | Context for subscription handlers         |
+| `ValidationResult`    | Result of input validation                |
+| `BatchRequest`        | Container for batch RPC calls             |
+| `RateLimiter`         | Rate limiting state manager               |
+| `LogConfig`           | Logging configuration                     |
+| `AuthResult`          | Authentication result with roles          |
+| `Cache`               | LRU cache with TTL support                |
+| `RouterSchema`        | Schema for router documentation           |
+| `ProcedureBuilder`    | Fluent builder for procedures             |
 
 ---
 
