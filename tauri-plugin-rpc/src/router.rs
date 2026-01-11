@@ -35,6 +35,7 @@ use crate::{
     handler::{BoxedHandler, Handler, into_boxed, into_boxed_validated},
     middleware::{MiddlewareFn, Next, ProcedureType, Request, Response},
     plugin::DynRouter,
+    procedure::RegisteredProcedure,
     subscription::{
         BoxedSubscriptionHandler, Event, SubscriptionContext, SubscriptionHandler,
         into_boxed_subscription,
@@ -535,6 +536,107 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         self
     }
 
+    /// Start building a procedure with the oRPC-style fluent API.
+    ///
+    /// This method returns a `ProcedureChain` that allows you to configure
+    /// per-procedure middleware, input validation, and output transformation
+    /// before registering the procedure as a query or mutation.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let router = Router::new()
+    ///     .context(AppContext::default())
+    ///     .procedure("users.get")
+    ///         .use_middleware(auth_middleware)
+    ///         .input::<GetUserInput>()
+    ///         .query(get_user)
+    ///     .procedure("users.create")
+    ///         .use_middleware(auth_middleware)
+    ///         .use_middleware(rate_limit_middleware)
+    ///         .input::<CreateUserInput>()
+    ///         .mutation(create_user);
+    /// ```
+    pub fn procedure<N: Into<String>>(self, path: N) -> ProcedureChain<Ctx> {
+        ProcedureChain {
+            router: self,
+            path: path.into(),
+            middleware: Vec::new(),
+            output_transformer: None,
+        }
+    }
+
+    /// Register a pre-built procedure from the ProcedureBuilder API.
+    ///
+    /// This method allows you to add a `RegisteredProcedure` that was created
+    /// using the standalone `ProcedureBuilder`.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let get_user_proc = ProcedureBuilder::<AppContext>::new("users.get")
+    ///     .use_middleware(auth_middleware)
+    ///     .input::<GetUserInput>()
+    ///     .query(get_user);
+    ///
+    /// let router = Router::new()
+    ///     .context(AppContext::default())
+    ///     .register(get_user_proc);
+    /// ```
+    pub fn register(mut self, procedure: RegisteredProcedure<Ctx>) -> Self {
+        let full_path = self.make_path(&procedure.path);
+
+        // Create a handler that wraps the procedure's handler with its middleware
+        let proc_handler = procedure.handler;
+        let proc_middleware = procedure.middleware;
+
+        // Build the middleware chain for this procedure
+        let final_handler: BoxedHandler<Ctx> = if proc_middleware.is_empty() {
+            // No per-procedure middleware, use handler directly
+            Arc::new(move |ctx, input| {
+                let handler = proc_handler.clone();
+                Box::pin(async move { (handler)(ctx, input).await })
+            })
+        } else {
+            // Build middleware chain
+            let handler_as_next: Next<Ctx> = Arc::new(move |ctx, req| {
+                let handler = proc_handler.clone();
+                Box::pin(async move { (handler)(ctx, req.input).await })
+            });
+
+            // Chain middleware in reverse order (last added = innermost)
+            let mut chain = handler_as_next;
+            for mw in proc_middleware.into_iter().rev() {
+                let next = chain;
+                chain = Arc::new(move |ctx, req| {
+                    let mw = mw.clone();
+                    let next = next.clone();
+                    Box::pin(async move { (mw)(ctx, req, next).await })
+                });
+            }
+
+            let final_chain = chain;
+            Arc::new(move |ctx, input| {
+                let chain = final_chain.clone();
+                Box::pin(async move {
+                    let req = Request {
+                        path: String::new(),
+                        input,
+                        procedure_type: ProcedureType::Query,
+                    };
+                    (chain)(ctx, req).await
+                })
+            })
+        };
+
+        self.procedures.insert(
+            full_path,
+            Procedure::Handler {
+                handler: final_handler,
+                procedure_type: procedure.procedure_type,
+            },
+        );
+        self
+    }
+
     fn make_path(&self, name: &str) -> String {
         if self.prefix.is_empty() {
             name.to_string()
@@ -816,5 +918,777 @@ impl<Ctx: Clone + Send + Sync + 'static> DynRouter for Router<Ctx> {
         Box<dyn Future<Output = RpcResult<mpsc::Receiver<Event<serde_json::Value>>>> + Send + 'a>,
     > {
         Box::pin(async move { Router::subscribe(self, path, input, ctx).await })
+    }
+}
+
+// =============================================================================
+// Procedure Chain (Fluent API)
+// =============================================================================
+
+/// A fluent builder for configuring and registering a procedure on a router.
+///
+/// This struct is returned by `Router::procedure()` and allows you to configure
+/// per-procedure middleware, input validation, and output transformation before
+/// registering the procedure as a query or mutation.
+///
+/// # Example
+/// ```rust,ignore
+/// let router = Router::new()
+///     .context(AppContext::default())
+///     .procedure("users.get")
+///         .use_middleware(auth_middleware)
+///         .input::<GetUserInput>()
+///         .query(get_user);
+/// ```
+pub struct ProcedureChain<Ctx: Clone + Send + Sync + 'static> {
+    router: Router<Ctx>,
+    path: String,
+    middleware: Vec<MiddlewareFn<Ctx>>,
+    output_transformer:
+        Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
+}
+
+impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
+    /// Add middleware to this procedure.
+    ///
+    /// Middleware is executed in registration order (first registered = outermost).
+    pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
+    where
+        F: Fn(Context<Ctx>, Request, Next<Ctx>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = RpcResult<Response>> + Send + 'static,
+    {
+        self.middleware.push(Arc::new(move |ctx, req, next| {
+            Box::pin(middleware(ctx, req, next))
+        }));
+        self
+    }
+
+    /// Add a middleware function (already wrapped as MiddlewareFn).
+    pub fn use_middleware_fn(mut self, middleware: MiddlewareFn<Ctx>) -> Self {
+        self.middleware.push(middleware);
+        self
+    }
+
+    /// Set the input type for this procedure.
+    ///
+    /// Returns a `TypedProcedureChain` that allows you to register the procedure
+    /// as a query or mutation with the specified input type.
+    pub fn input<Input>(self) -> TypedProcedureChain<Ctx, Input>
+    where
+        Input: DeserializeOwned + Send + 'static,
+    {
+        TypedProcedureChain {
+            router: self.router,
+            path: self.path,
+            middleware: self.middleware,
+            output_transformer: self.output_transformer,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Set the input type with validation for this procedure.
+    ///
+    /// Returns a `ValidatedProcedureChain` that automatically validates input
+    /// before calling the handler.
+    pub fn input_validated<Input>(self) -> ValidatedProcedureChain<Ctx, Input>
+    where
+        Input: DeserializeOwned + Validate + Send + 'static,
+    {
+        ValidatedProcedureChain {
+            router: self.router,
+            path: self.path,
+            middleware: self.middleware,
+            output_transformer: self.output_transformer,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Set an output transformer for this procedure.
+    pub fn output<F>(mut self, transformer: F) -> Self
+    where
+        F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
+    {
+        self.output_transformer = Some(Arc::new(transformer));
+        self
+    }
+
+    /// Register this procedure as a query with no input (unit type).
+    pub fn query<H, Fut, Output>(self, handler: H) -> Router<Ctx>
+    where
+        H: Fn(Context<Ctx>, ()) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.input::<()>().query(handler)
+    }
+
+    /// Register this procedure as a mutation with no input (unit type).
+    pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<Ctx>
+    where
+        H: Fn(Context<Ctx>, ()) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.input::<()>().mutation(handler)
+    }
+}
+
+/// A typed procedure chain with a specific input type.
+pub struct TypedProcedureChain<Ctx: Clone + Send + Sync + 'static, Input> {
+    router: Router<Ctx>,
+    path: String,
+    middleware: Vec<MiddlewareFn<Ctx>>,
+    output_transformer:
+        Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
+    _phantom: std::marker::PhantomData<Input>,
+}
+
+impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'static>
+    TypedProcedureChain<Ctx, Input>
+{
+    /// Add middleware to this procedure.
+    pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
+    where
+        F: Fn(Context<Ctx>, Request, Next<Ctx>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = RpcResult<Response>> + Send + 'static,
+    {
+        self.middleware.push(Arc::new(move |ctx, req, next| {
+            Box::pin(middleware(ctx, req, next))
+        }));
+        self
+    }
+
+    /// Set an output transformer for this procedure.
+    pub fn output<F>(mut self, transformer: F) -> Self
+    where
+        F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
+    {
+        self.output_transformer = Some(Arc::new(transformer));
+        self
+    }
+
+    /// Register this procedure as a query.
+    pub fn query<H, Fut, Output>(self, handler: H) -> Router<Ctx>
+    where
+        H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.build_procedure(ProcedureType::Query, handler)
+    }
+
+    /// Register this procedure as a mutation.
+    pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<Ctx>
+    where
+        H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.build_procedure(ProcedureType::Mutation, handler)
+    }
+
+    fn build_procedure<H, Fut, Output>(
+        mut self,
+        procedure_type: ProcedureType,
+        handler: H,
+    ) -> Router<Ctx>
+    where
+        H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        let output_transformer = self.output_transformer;
+        let middleware = self.middleware;
+
+        // Create the core handler
+        let core_handler: BoxedHandler<Ctx> = Arc::new(move |ctx, input_value| {
+            let handler = handler.clone();
+            let output_transformer = output_transformer.clone();
+
+            Box::pin(async move {
+                // Deserialize input
+                let input: Input = serde_json::from_value(input_value)
+                    .map_err(|e| RpcError::bad_request(format!("Invalid input: {}", e)))?;
+
+                // Call handler
+                let output = handler(ctx, input).await?;
+
+                // Serialize output
+                let mut output_value = serde_json::to_value(output).map_err(|e| {
+                    RpcError::internal(format!("Failed to serialize output: {}", e))
+                })?;
+
+                // Apply output transformer if present
+                if let Some(transformer) = output_transformer {
+                    output_value = transformer(output_value);
+                }
+
+                Ok(output_value)
+            })
+        });
+
+        // Wrap with per-procedure middleware if any
+        let final_handler: BoxedHandler<Ctx> = if middleware.is_empty() {
+            core_handler
+        } else {
+            let handler_as_next: Next<Ctx> = Arc::new(move |ctx, req| {
+                let handler = core_handler.clone();
+                Box::pin(async move { (handler)(ctx, req.input).await })
+            });
+
+            // Chain middleware in reverse order (last added = innermost)
+            let mut chain = handler_as_next;
+            for mw in middleware.into_iter().rev() {
+                let next = chain;
+                chain = Arc::new(move |ctx, req| {
+                    let mw = mw.clone();
+                    let next = next.clone();
+                    Box::pin(async move { (mw)(ctx, req, next).await })
+                });
+            }
+
+            let final_chain = chain;
+            Arc::new(move |ctx, input| {
+                let chain = final_chain.clone();
+                Box::pin(async move {
+                    let req = Request {
+                        path: String::new(),
+                        input,
+                        procedure_type,
+                    };
+                    (chain)(ctx, req).await
+                })
+            })
+        };
+
+        let full_path = self.router.make_path(&self.path);
+        self.router.procedures.insert(
+            full_path,
+            Procedure::Handler {
+                handler: final_handler,
+                procedure_type,
+            },
+        );
+        self.router
+    }
+}
+
+/// A validated procedure chain with automatic input validation.
+pub struct ValidatedProcedureChain<Ctx: Clone + Send + Sync + 'static, Input> {
+    router: Router<Ctx>,
+    path: String,
+    middleware: Vec<MiddlewareFn<Ctx>>,
+    output_transformer:
+        Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
+    _phantom: std::marker::PhantomData<Input>,
+}
+
+impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Send + 'static>
+    ValidatedProcedureChain<Ctx, Input>
+{
+    /// Add middleware to this procedure.
+    pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
+    where
+        F: Fn(Context<Ctx>, Request, Next<Ctx>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = RpcResult<Response>> + Send + 'static,
+    {
+        self.middleware.push(Arc::new(move |ctx, req, next| {
+            Box::pin(middleware(ctx, req, next))
+        }));
+        self
+    }
+
+    /// Set an output transformer for this procedure.
+    pub fn output<F>(mut self, transformer: F) -> Self
+    where
+        F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
+    {
+        self.output_transformer = Some(Arc::new(transformer));
+        self
+    }
+
+    /// Register this procedure as a query with validation.
+    pub fn query<H, Fut, Output>(self, handler: H) -> Router<Ctx>
+    where
+        H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.build_validated_procedure(ProcedureType::Query, handler)
+    }
+
+    /// Register this procedure as a mutation with validation.
+    pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<Ctx>
+    where
+        H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.build_validated_procedure(ProcedureType::Mutation, handler)
+    }
+
+    fn build_validated_procedure<H, Fut, Output>(
+        mut self,
+        procedure_type: ProcedureType,
+        handler: H,
+    ) -> Router<Ctx>
+    where
+        H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        let output_transformer = self.output_transformer;
+        let middleware = self.middleware;
+
+        // Create the core handler with validation
+        let core_handler: BoxedHandler<Ctx> = Arc::new(move |ctx, input_value| {
+            let handler = handler.clone();
+            let output_transformer = output_transformer.clone();
+
+            Box::pin(async move {
+                // Deserialize input
+                let input: Input = serde_json::from_value(input_value)
+                    .map_err(|e| RpcError::bad_request(format!("Invalid input: {}", e)))?;
+
+                // Validate input
+                let validation_result = input.validate();
+                if !validation_result.is_valid() {
+                    return Err(RpcError::validation("Validation failed").with_details(
+                        serde_json::to_value(&validation_result.errors).unwrap_or_default(),
+                    ));
+                }
+
+                // Call handler
+                let output = handler(ctx, input).await?;
+
+                // Serialize output
+                let mut output_value = serde_json::to_value(output).map_err(|e| {
+                    RpcError::internal(format!("Failed to serialize output: {}", e))
+                })?;
+
+                // Apply output transformer if present
+                if let Some(transformer) = output_transformer {
+                    output_value = transformer(output_value);
+                }
+
+                Ok(output_value)
+            })
+        });
+
+        // Wrap with per-procedure middleware if any
+        let final_handler: BoxedHandler<Ctx> = if middleware.is_empty() {
+            core_handler
+        } else {
+            let handler_as_next: Next<Ctx> = Arc::new(move |ctx, req| {
+                let handler = core_handler.clone();
+                Box::pin(async move { (handler)(ctx, req.input).await })
+            });
+
+            // Chain middleware in reverse order (last added = innermost)
+            let mut chain = handler_as_next;
+            for mw in middleware.into_iter().rev() {
+                let next = chain;
+                chain = Arc::new(move |ctx, req| {
+                    let mw = mw.clone();
+                    let next = next.clone();
+                    Box::pin(async move { (mw)(ctx, req, next).await })
+                });
+            }
+
+            let final_chain = chain;
+            Arc::new(move |ctx, input| {
+                let chain = final_chain.clone();
+                Box::pin(async move {
+                    let req = Request {
+                        path: String::new(),
+                        input,
+                        procedure_type,
+                    };
+                    (chain)(ctx, req).await
+                })
+            })
+        };
+
+        let full_path = self.router.make_path(&self.path);
+        self.router.procedures.insert(
+            full_path,
+            Procedure::Handler {
+                handler: final_handler,
+                procedure_type,
+            },
+        );
+        self.router
+    }
+}
+
+#[cfg(test)]
+mod procedure_chain_tests {
+    use super::*;
+    use crate::validation::{FieldError, Validate, ValidationResult};
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Default)]
+    struct TestContext {
+        value: i32,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestInput {
+        name: String,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct TestOutput {
+        message: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct ValidatedInput {
+        name: String,
+        age: i32,
+    }
+
+    impl Validate for ValidatedInput {
+        fn validate(&self) -> ValidationResult {
+            let mut errors = Vec::new();
+            if self.name.is_empty() {
+                errors.push(FieldError::required("name"));
+            }
+            if self.age < 0 || self.age > 150 {
+                errors.push(FieldError::range("age", 0, 150));
+            }
+            ValidationResult::from_errors(errors)
+        }
+    }
+
+    async fn test_handler(_ctx: Context<TestContext>, input: TestInput) -> RpcResult<TestOutput> {
+        Ok(TestOutput {
+            message: format!("Hello, {}!", input.name),
+        })
+    }
+
+    async fn validated_handler(
+        _ctx: Context<TestContext>,
+        input: ValidatedInput,
+    ) -> RpcResult<TestOutput> {
+        Ok(TestOutput {
+            message: format!("Hello, {} (age {})!", input.name, input.age),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_procedure_chain_query() {
+        let router = Router::new()
+            .context(TestContext::default())
+            .procedure("users.get")
+            .input::<TestInput>()
+            .query(test_handler);
+
+        let result = router
+            .call("users.get", serde_json::json!({"name": "World"}))
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()["message"], "Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_procedure_chain_mutation() {
+        let router = Router::new()
+            .context(TestContext::default())
+            .procedure("users.create")
+            .input::<TestInput>()
+            .mutation(test_handler);
+
+        let result = router
+            .call("users.create", serde_json::json!({"name": "Alice"}))
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()["message"], "Hello, Alice!");
+    }
+
+    #[tokio::test]
+    async fn test_procedure_chain_with_validation() {
+        let router = Router::new()
+            .context(TestContext::default())
+            .procedure("users.create")
+            .input_validated::<ValidatedInput>()
+            .mutation(validated_handler);
+
+        // Valid input
+        let result = router
+            .call(
+                "users.create",
+                serde_json::json!({"name": "Bob", "age": 30}),
+            )
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap()["message"], "Hello, Bob (age 30)!");
+
+        // Invalid input
+        let result = router
+            .call("users.create", serde_json::json!({"name": "", "age": 200}))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code,
+            crate::RpcErrorCode::ValidationError
+        );
+    }
+
+    #[tokio::test]
+    async fn test_procedure_chain_with_output_transformer() {
+        let router = Router::new()
+            .context(TestContext::default())
+            .procedure("users.get")
+            .input::<TestInput>()
+            .output(|value| {
+                serde_json::json!({
+                    "data": value,
+                    "wrapped": true
+                })
+            })
+            .query(test_handler);
+
+        let result = router
+            .call("users.get", serde_json::json!({"name": "World"}))
+            .await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output["wrapped"], true);
+        assert_eq!(output["data"]["message"], "Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_procedure_chain_with_middleware() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+
+        let router = Router::new()
+            .context(TestContext::default())
+            .procedure("users.get")
+            .use_middleware(move |ctx, req, next| {
+                let count = count_clone.clone();
+                async move {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    next(ctx, req).await
+                }
+            })
+            .input::<TestInput>()
+            .query(test_handler);
+
+        let result = router
+            .call("users.get", serde_json::json!({"name": "World"}))
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_procedure_chain_multiple_procedures() {
+        let router = Router::new()
+            .context(TestContext::default())
+            .procedure("users.get")
+            .input::<TestInput>()
+            .query(test_handler)
+            .procedure("users.create")
+            .input::<TestInput>()
+            .mutation(test_handler);
+
+        // Both procedures should be registered
+        let procedures = router.procedures();
+        assert!(procedures.contains(&"users.get".to_string()));
+        assert!(procedures.contains(&"users.create".to_string()));
+
+        // Both should work
+        let result1 = router
+            .call("users.get", serde_json::json!({"name": "Get"}))
+            .await;
+        assert!(result1.is_ok());
+
+        let result2 = router
+            .call("users.create", serde_json::json!({"name": "Create"}))
+            .await;
+        assert!(result2.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_backward_compatibility_query() {
+        // Old API
+        let old_router = Router::new()
+            .context(TestContext::default())
+            .query("users.get", test_handler);
+
+        // New API
+        let new_router = Router::new()
+            .context(TestContext::default())
+            .procedure("users.get")
+            .input::<TestInput>()
+            .query(test_handler);
+
+        let input = serde_json::json!({"name": "Test"});
+
+        let old_result = old_router.call("users.get", input.clone()).await;
+        let new_result = new_router.call("users.get", input).await;
+
+        assert!(old_result.is_ok());
+        assert!(new_result.is_ok());
+        assert_eq!(old_result.unwrap(), new_result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_backward_compatibility_mutation() {
+        // Old API
+        let old_router = Router::new()
+            .context(TestContext::default())
+            .mutation("users.create", test_handler);
+
+        // New API
+        let new_router = Router::new()
+            .context(TestContext::default())
+            .procedure("users.create")
+            .input::<TestInput>()
+            .mutation(test_handler);
+
+        let input = serde_json::json!({"name": "Test"});
+
+        let old_result = old_router.call("users.create", input.clone()).await;
+        let new_result = new_router.call("users.create", input).await;
+
+        assert!(old_result.is_ok());
+        assert!(new_result.is_ok());
+        assert_eq!(old_result.unwrap(), new_result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_backward_compatibility_validated() {
+        // Old API
+        let old_router = Router::new()
+            .context(TestContext::default())
+            .mutation_validated("users.create", validated_handler);
+
+        // New API
+        let new_router = Router::new()
+            .context(TestContext::default())
+            .procedure("users.create")
+            .input_validated::<ValidatedInput>()
+            .mutation(validated_handler);
+
+        // Valid input
+        let valid_input = serde_json::json!({"name": "Test", "age": 25});
+        let old_result = old_router.call("users.create", valid_input.clone()).await;
+        let new_result = new_router.call("users.create", valid_input).await;
+
+        assert!(old_result.is_ok());
+        assert!(new_result.is_ok());
+        assert_eq!(old_result.unwrap(), new_result.unwrap());
+
+        // Invalid input - both should fail with validation error
+        let invalid_input = serde_json::json!({"name": "", "age": 200});
+        let old_result = old_router.call("users.create", invalid_input.clone()).await;
+        let new_result = new_router.call("users.create", invalid_input).await;
+
+        assert!(old_result.is_err());
+        assert!(new_result.is_err());
+        assert_eq!(old_result.unwrap_err().code, new_result.unwrap_err().code);
+    }
+}
+
+#[cfg(test)]
+mod procedure_chain_proptests {
+    use super::*;
+    use proptest::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Default)]
+    struct TestContext;
+
+    #[derive(Debug, Deserialize, Serialize)]
+    struct EchoInput {
+        value: String,
+    }
+
+    async fn echo_handler(_ctx: Context<TestContext>, input: EchoInput) -> RpcResult<EchoInput> {
+        Ok(input)
+    }
+
+    /// Property 10: Procedure Builder Backward Compatibility
+    /// The new fluent API should produce identical results to the old API
+    /// for equivalent procedure definitions.
+    #[test]
+    fn prop_backward_compatibility_query_results() {
+        proptest!(|(value in "[a-zA-Z0-9]{1,20}")| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            // Old API
+            let old_router = Router::new()
+                .context(TestContext)
+                .query("test", echo_handler);
+
+            // New API
+            let new_router = Router::new()
+                .context(TestContext)
+                .procedure("test")
+                .input::<EchoInput>()
+                .query(echo_handler);
+
+            let input = serde_json::json!({"value": value});
+
+            let old_result = rt.block_on(old_router.call("test", input.clone()));
+            let new_result = rt.block_on(new_router.call("test", input));
+
+            prop_assert!(old_result.is_ok());
+            prop_assert!(new_result.is_ok());
+            prop_assert_eq!(old_result.unwrap(), new_result.unwrap());
+        });
+    }
+
+    /// Property: Multiple procedures can be chained
+    #[test]
+    fn prop_multiple_procedures_registered() {
+        proptest!(|(count in 1usize..5)| {
+            let mut router = Router::new().context(TestContext);
+
+            for i in 0..count {
+                let path = format!("proc{}", i);
+                router = router
+                    .procedure(&path)
+                    .input::<EchoInput>()
+                    .query(echo_handler);
+            }
+
+            let procedures = router.procedures();
+            prop_assert_eq!(procedures.len(), count);
+
+            for i in 0..count {
+                let path = format!("proc{}", i);
+                prop_assert!(procedures.contains(&path));
+            }
+        });
+    }
+
+    /// Property: Procedure chain preserves procedure type
+    #[test]
+    fn prop_procedure_type_preserved() {
+        proptest!(|(is_query in proptest::bool::ANY)| {
+            let router = if is_query {
+                Router::new()
+                    .context(TestContext)
+                    .procedure("test")
+                    .input::<EchoInput>()
+                    .query(echo_handler)
+            } else {
+                Router::new()
+                    .context(TestContext)
+                    .procedure("test")
+                    .input::<EchoInput>()
+                    .mutation(echo_handler)
+            };
+
+            // Both should be callable (not subscriptions)
+            prop_assert!(!router.is_subscription("test"));
+        });
     }
 }

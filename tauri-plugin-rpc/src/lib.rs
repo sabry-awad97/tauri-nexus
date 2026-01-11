@@ -291,6 +291,7 @@ mod handler;
 pub mod logging;
 pub mod middleware;
 mod plugin;
+pub mod procedure;
 pub mod rate_limit;
 mod router;
 pub mod subscription;
@@ -320,11 +321,14 @@ pub use plugin::{
     DynRouter, SubscribeRequest, SubscriptionFuture, init, init_with_config, validate_input_size,
     validate_path, validate_subscription_id,
 };
+pub use procedure::{ProcedureBuilder, RegisteredProcedure, ValidatedProcedureBuilder};
 pub use rate_limit::{
     RateLimit, RateLimitConfig, RateLimitStrategy, RateLimitUsage, RateLimiter,
     rate_limit_middleware,
 };
-pub use router::{CompiledRouter, Router};
+pub use router::{
+    CompiledRouter, ProcedureChain, Router, TypedProcedureChain, ValidatedProcedureChain,
+};
 pub use subscription::{
     CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, EventSender,
     EventStream, EventSubscriber, SubscriptionContext, SubscriptionEvent, SubscriptionHandle,
@@ -385,6 +389,9 @@ pub mod prelude {
         NoOpTransformer,
         PaginatedResponse,
         PaginationInput,
+        // Procedure Builder
+        ProcedureBuilder,
+        ProcedureChain,
         ProcedureType,
         // Rate limiting
         RateLimit,
@@ -392,6 +399,7 @@ pub mod prelude {
         RateLimitStrategy,
         RateLimitUsage,
         RateLimiter,
+        RegisteredProcedure,
         Request,
         RequestId,
         RequestMeta,
@@ -409,7 +417,10 @@ pub mod prelude {
         SubscriptionManager,
         SuccessResponse,
         TracingLogger,
+        TypedProcedureChain,
         Validate,
+        ValidatedProcedureBuilder,
+        ValidatedProcedureChain,
         ValidationResult,
         ValidationRules,
         // Functions

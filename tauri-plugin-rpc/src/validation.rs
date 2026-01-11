@@ -149,6 +149,15 @@ impl ValidationResult {
         }
     }
 
+    /// Create a validation result from a list of errors.
+    /// If the list is empty, the result is valid.
+    pub fn from_errors(errors: Vec<FieldError>) -> Self {
+        Self {
+            valid: errors.is_empty(),
+            errors,
+        }
+    }
+
     /// Check if validation passed
     pub fn is_valid(&self) -> bool {
         self.valid
