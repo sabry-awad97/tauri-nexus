@@ -9,19 +9,23 @@
 
 import {
   createClientWithSubscriptions,
-  createHooks,
-  useQuery,
-  useMutation,
+  useSubscription,
   isRpcError,
   hasErrorCode,
   getProcedures,
   type ContractRouter,
   type RpcError,
-  type QueryResult,
-  type MutationResult,
-  type QueryOptions,
-  type MutationOptions,
+  type SubscriptionResult,
+  type SubscriptionHookOptions,
 } from "../lib/rpc";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+  useMutation,
+  type UseQueryOptions,
+  type UseMutationOptions,
+} from "@tanstack/react-query";
 import { createContext, useContext, type ReactNode } from "react";
 
 // =============================================================================
@@ -115,60 +119,35 @@ export interface StockPrice {
 // =============================================================================
 // Contract Definition
 // =============================================================================
-// Define your RPC contract as a TypeScript interface.
-// Each procedure specifies its type, input, and output.
-//
-// Procedure types:
-// - query: Read-only operations (GET-like)
-// - mutation: Write operations (POST/PUT/DELETE-like)
-// - subscription: Streaming operations (WebSocket-like)
 
 export interface AppContract extends ContractRouter {
-  // Root-level procedures
   health: { type: "query"; input: void; output: HealthResponse };
   greet: { type: "query"; input: { name: string }; output: string };
 
-  // User namespace - CRUD operations
   user: {
     get: { type: "query"; input: { id: number }; output: User };
     list: { type: "query"; input: void; output: User[] };
     create: { type: "mutation"; input: CreateUserInput; output: User };
     update: { type: "mutation"; input: UpdateUserInput; output: User };
-    delete: {
-      type: "mutation";
-      input: { id: number };
-      output: SuccessResponse;
-    };
+    delete: { type: "mutation"; input: { id: number }; output: SuccessResponse };
   };
 
-  // Stream namespace - real-time subscriptions
   stream: {
-    counter: {
-      type: "subscription";
-      input: CounterInput;
-      output: CounterEvent;
-    };
+    counter: { type: "subscription"; input: CounterInput; output: CounterEvent };
     stocks: { type: "subscription"; input: StockInput; output: StockPrice };
     chat: { type: "subscription"; input: ChatRoomInput; output: ChatMessage };
     time: { type: "subscription"; input: void; output: string };
   };
 
-  // Chat namespace - chat operations
   chat: {
     send: { type: "mutation"; input: SendMessageInput; output: ChatMessage };
-    history: {
-      type: "query";
-      input: { roomId: string; limit?: number };
-      output: ChatMessage[];
-    };
+    history: { type: "query"; input: { roomId: string; limit?: number }; output: ChatMessage[] };
   };
 }
 
 // =============================================================================
-// Subscription Paths
+// Client Instance
 // =============================================================================
-// List all subscription paths for runtime detection.
-// This is required because TypeScript types are erased at runtime.
 
 const SUBSCRIPTION_PATHS = [
   "stream.counter",
@@ -177,22 +156,22 @@ const SUBSCRIPTION_PATHS = [
   "stream.time",
 ] as const;
 
-// =============================================================================
-// Client Instance
-// =============================================================================
-// Create a typed client instance. This is the main export for your app.
-
 export const rpc = createClientWithSubscriptions<AppContract>({
   subscriptionPaths: [...SUBSCRIPTION_PATHS],
 });
 
 // =============================================================================
-// React Hooks
+// Query Client
 // =============================================================================
-// Create typed React hooks bound to the client.
 
-export const { useRpcQuery, useRpcMutation, useRpcSubscription } =
-  createHooks(rpc);
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60, // 1 minute
+      retry: 1,
+    },
+  },
+});
 
 // =============================================================================
 // RPC Provider
@@ -201,7 +180,11 @@ export const { useRpcQuery, useRpcMutation, useRpcSubscription } =
 const RpcContext = createContext<typeof rpc>(rpc);
 
 export function RpcProvider({ children }: { children: ReactNode }) {
-  return <RpcContext.Provider value={rpc}>{children}</RpcContext.Provider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RpcContext.Provider value={rpc}>{children}</RpcContext.Provider>
+    </QueryClientProvider>
+  );
 }
 
 export function useRpc() {
@@ -209,57 +192,172 @@ export function useRpc() {
 }
 
 // =============================================================================
-// Typed Query Hooks
+// Query Keys
 // =============================================================================
 
-/** Health check hook */
-export function useHealth(options?: QueryOptions) {
-  return useQuery(() => rpc.health(), [], options);
+export const queryKeys = {
+  health: ["health"] as const,
+  greet: (name: string) => ["greet", name] as const,
+  user: {
+    all: ["user"] as const,
+    list: () => ["user", "list"] as const,
+    detail: (id: number) => ["user", "detail", id] as const,
+  },
+  chat: {
+    history: (roomId: string) => ["chat", "history", roomId] as const,
+  },
+} as const;
+
+// =============================================================================
+// Typed Query Hooks (using TanStack Query)
+// =============================================================================
+
+/** Health check */
+export function useHealth(
+  options?: Omit<UseQueryOptions<HealthResponse, RpcError>, "queryKey" | "queryFn">
+) {
+  return useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => rpc.health(),
+    ...options,
+  });
 }
 
-/** Greet hook */
-export function useGreet(input: { name: string }, options?: QueryOptions) {
-  return useQuery(() => rpc.greet(input), [input.name], options);
+/** Greet */
+export function useGreet(
+  name: string,
+  options?: Omit<UseQueryOptions<string, RpcError>, "queryKey" | "queryFn">
+) {
+  return useQuery({
+    queryKey: queryKeys.greet(name),
+    queryFn: () => rpc.greet({ name }),
+    ...options,
+  });
 }
 
-/** Get user by ID hook */
-export function useUser(id: number, options?: QueryOptions) {
-  return useQuery(() => rpc.user.get({ id }), [id], options);
+/** Get user by ID */
+export function useUser(
+  id: number,
+  options?: Omit<UseQueryOptions<User, RpcError>, "queryKey" | "queryFn">
+) {
+  return useQuery({
+    queryKey: queryKeys.user.detail(id),
+    queryFn: () => rpc.user.get({ id }),
+    enabled: id > 0,
+    ...options,
+  });
 }
 
-/** List all users hook */
-export function useUsers(options?: QueryOptions) {
-  return useQuery(() => rpc.user.list(), [], options);
+/** List all users */
+export function useUsers(
+  options?: Omit<UseQueryOptions<User[], RpcError>, "queryKey" | "queryFn">
+) {
+  return useQuery({
+    queryKey: queryKeys.user.list(),
+    queryFn: () => rpc.user.list(),
+    ...options,
+  });
 }
 
 // =============================================================================
-// Typed Mutation Hooks
+// Typed Mutation Hooks (using TanStack Query)
 // =============================================================================
 
-/** Create user mutation hook */
-export function useCreateUser(options?: MutationOptions<CreateUserInput, User>) {
-  return useMutation((input: CreateUserInput) => rpc.user.create(input), options);
+/** Create user */
+export function useCreateUser(
+  options?: Omit<UseMutationOptions<User, RpcError, CreateUserInput>, "mutationFn">
+) {
+  return useMutation({
+    mutationFn: (input: CreateUserInput) => rpc.user.create(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.all });
+    },
+    ...options,
+  });
 }
 
-/** Update user mutation hook */
-export function useUpdateUser(options?: MutationOptions<UpdateUserInput, User>) {
-  return useMutation((input: UpdateUserInput) => rpc.user.update(input), options);
+/** Update user */
+export function useUpdateUser(
+  options?: Omit<UseMutationOptions<User, RpcError, UpdateUserInput>, "mutationFn">
+) {
+  return useMutation({
+    mutationFn: (input: UpdateUserInput) => rpc.user.update(input),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.detail(data.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.list() });
+    },
+    ...options,
+  });
 }
 
-/** Delete user mutation hook */
-export function useDeleteUser(options?: MutationOptions<{ id: number }, SuccessResponse>) {
-  return useMutation((input: { id: number }) => rpc.user.delete(input), options);
+/** Delete user */
+export function useDeleteUser(
+  options?: Omit<UseMutationOptions<SuccessResponse, RpcError, { id: number }>, "mutationFn">
+) {
+  return useMutation({
+    mutationFn: (input: { id: number }) => rpc.user.delete(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.all });
+    },
+    ...options,
+  });
+}
+
+// =============================================================================
+// Typed Subscription Hooks
+// =============================================================================
+
+/** Counter subscription */
+export function useCounter(
+  input: CounterInput = {},
+  options?: SubscriptionHookOptions<CounterEvent>
+): SubscriptionResult<CounterEvent> {
+  return useSubscription(
+    () => rpc.stream.counter(input),
+    [input.start, input.maxCount, input.intervalMs],
+    options
+  );
+}
+
+/** Time subscription */
+export function useTime(
+  options?: SubscriptionHookOptions<string>
+): SubscriptionResult<string> {
+  return useSubscription(() => rpc.stream.time(), [], options);
+}
+
+/** Stock subscription */
+export function useStocks(
+  symbols: string[],
+  options?: SubscriptionHookOptions<StockPrice>
+): SubscriptionResult<StockPrice> {
+  return useSubscription(
+    () => rpc.stream.stocks({ symbols }),
+    [symbols.join(",")],
+    options
+  );
+}
+
+/** Chat subscription */
+export function useChat(
+  roomId: string,
+  options?: SubscriptionHookOptions<ChatMessage>
+): SubscriptionResult<ChatMessage> {
+  return useSubscription(
+    () => rpc.stream.chat({ roomId }),
+    [roomId],
+    options
+  );
 }
 
 // =============================================================================
 // Namespace Exports
 // =============================================================================
-// Export namespaces for convenient access.
 
 export const user = rpc.user;
 export const stream = rpc.stream;
 export const chat = rpc.chat;
 
 // Re-export utilities
-export { isRpcError, hasErrorCode, getProcedures };
-export type { RpcError, QueryResult, MutationResult, QueryOptions, MutationOptions };
+export { isRpcError, hasErrorCode, getProcedures, useSubscription };
+export type { RpcError, SubscriptionResult, SubscriptionHookOptions };

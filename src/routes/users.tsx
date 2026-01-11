@@ -120,11 +120,11 @@ function CreateUserForm({ onSuccess }: { onSuccess: () => void }) {
       <button
         type="submit"
         disabled={
-          createUser.isLoading || !name.trim() || !email.trim() || !isValidEmail
+          createUser.isPending || !name.trim() || !email.trim() || !isValidEmail
         }
         className="submit-btn"
       >
-        {createUser.isLoading ? (
+        {createUser.isPending ? (
           <>
             <span className="spinner small" />
             Creating...

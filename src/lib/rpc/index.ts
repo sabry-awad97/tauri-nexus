@@ -128,26 +128,15 @@ export {
 } from "./event-iterator";
 
 // =============================================================================
-// React Hooks
+// React Hooks (Subscription only - use TanStack Query for queries/mutations)
 // =============================================================================
 
 export {
-  // Generic hooks
-  useQuery,
-  useMutation,
+  // Subscription hook (TanStack Query doesn't support streaming)
   useSubscription,
-  // Hook factory
-  createHooks,
   // Utility hooks
   useIsMounted,
-  useDebounce,
   // Types
-  type QueryState,
-  type QueryResult,
-  type QueryOptions,
-  type MutationState,
-  type MutationResult,
-  type MutationOptions,
   type SubscriptionState,
   type SubscriptionResult,
   type SubscriptionHookOptions,

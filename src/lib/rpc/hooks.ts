@@ -1,78 +1,16 @@
 // =============================================================================
 // Tauri RPC Client - React Hooks
 // =============================================================================
-// Type-safe React hooks for queries, mutations, and subscriptions.
+// Subscription hook for streaming data. For queries and mutations,
+// use TanStack Query directly with the RPC client.
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type {
   RpcError,
-  RouterClient,
   EventIterator,
-  CallOptions,
   SubscriptionOptions as BaseSubscriptionOptions,
 } from "./types";
 import { isRpcError } from "./client";
-
-// =============================================================================
-// Query Hook Types
-// =============================================================================
-
-export interface QueryState<T> {
-  data: T | undefined;
-  error: RpcError | null;
-  isLoading: boolean;
-  isError: boolean;
-  isSuccess: boolean;
-  isFetching: boolean;
-}
-
-export interface QueryResult<T> extends QueryState<T> {
-  refetch: () => Promise<void>;
-}
-
-export interface QueryOptions extends CallOptions {
-  /** Whether the query should execute */
-  enabled?: boolean;
-  /** Refetch interval in milliseconds */
-  refetchInterval?: number;
-  /** Keep previous data while refetching */
-  keepPreviousData?: boolean;
-  /** Initial data */
-  initialData?: unknown;
-}
-
-// =============================================================================
-// Mutation Hook Types
-// =============================================================================
-
-export interface MutationState<T> {
-  data: T | undefined;
-  error: RpcError | null;
-  isLoading: boolean;
-  isError: boolean;
-  isSuccess: boolean;
-  isIdle: boolean;
-}
-
-export interface MutationResult<
-  TInput,
-  TOutput,
-> extends MutationState<TOutput> {
-  mutate: (input: TInput) => void;
-  mutateAsync: (input: TInput) => Promise<TOutput>;
-  reset: () => void;
-}
-
-export interface MutationOptions<TInput, TOutput> {
-  onSuccess?: (data: TOutput, input: TInput) => void;
-  onError?: (error: RpcError, input: TInput) => void;
-  onSettled?: (
-    data: TOutput | undefined,
-    error: RpcError | null,
-    input: TInput,
-  ) => void;
-  onMutate?: (input: TInput) => void | Promise<void>;
-}
 
 // =============================================================================
 // Subscription Hook Types
@@ -112,237 +50,27 @@ export interface SubscriptionHookOptions<T> extends BaseSubscriptionOptions {
 }
 
 // =============================================================================
-// useQuery Hook
-// =============================================================================
-
-/**
- * React hook for RPC queries with automatic fetching and caching.
- *
- * @example
- * ```typescript
- * const { data, isLoading, error, refetch } = useQuery(
- *   () => rpc.user.get({ id: 1 }),
- *   [userId],
- *   { enabled: !!userId }
- * );
- * ```
- */
-export function useQuery<T>(
-  queryFn: () => Promise<T>,
-  deps: unknown[] = [],
-  options: QueryOptions = {},
-): QueryResult<T> {
-  const {
-    enabled = true,
-    refetchInterval,
-    keepPreviousData = false,
-    initialData,
-  } = options;
-
-  const [state, setState] = useState<QueryState<T>>({
-    data: initialData as T | undefined,
-    error: null,
-    isLoading: enabled && initialData === undefined,
-    isError: false,
-    isSuccess: initialData !== undefined,
-    isFetching: false,
-  });
-
-  const mountedRef = useRef(true);
-  const previousDataRef = useRef<T | undefined>(undefined);
-  const requestIdRef = useRef(0);
-
-  const fetchData = useCallback(async () => {
-    if (!enabled || !mountedRef.current) return;
-
-    // Increment request ID to track this specific request
-    const currentRequestId = ++requestIdRef.current;
-
-    setState((s) => ({
-      ...s,
-      isFetching: true,
-      isLoading: s.data === undefined && !keepPreviousData,
-      error: null,
-    }));
-
-    try {
-      const result = await queryFn();
-
-      // Only update state if this is still the latest request and component is mounted
-      if (mountedRef.current && currentRequestId === requestIdRef.current) {
-        previousDataRef.current = result;
-        setState({
-          data: result,
-          error: null,
-          isLoading: false,
-          isError: false,
-          isSuccess: true,
-          isFetching: false,
-        });
-      }
-    } catch (err) {
-      // Only update state if this is still the latest request and component is mounted
-      if (mountedRef.current && currentRequestId === requestIdRef.current) {
-        const error = isRpcError(err)
-          ? err
-          : { code: "UNKNOWN", message: String(err) };
-        setState((s) => ({
-          ...s,
-          data: keepPreviousData ? previousDataRef.current : undefined,
-          error,
-          isLoading: false,
-          isError: true,
-          isSuccess: false,
-          isFetching: false,
-        }));
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, keepPreviousData, ...deps]);
-
-  // Initial fetch
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // Refetch interval
-  useEffect(() => {
-    if (!refetchInterval || !enabled) return;
-    const interval = setInterval(fetchData, refetchInterval);
-    return () => clearInterval(interval);
-  }, [refetchInterval, enabled, fetchData]);
-
-  // Cleanup
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  return { ...state, refetch: fetchData };
-}
-
-// =============================================================================
-// useMutation Hook
-// =============================================================================
-
-/**
- * React hook for RPC mutations with loading and error states.
- *
- * @example
- * ```typescript
- * const { mutate, mutateAsync, isLoading } = useMutation(
- *   (input) => rpc.user.create(input),
- *   {
- *     onSuccess: (user) => console.log('Created:', user),
- *     onError: (error) => console.error('Failed:', error),
- *   }
- * );
- *
- * // Fire and forget
- * mutate({ name: 'John', email: 'john@example.com' });
- *
- * // Or await the result
- * const user = await mutateAsync({ name: 'John', email: 'john@example.com' });
- * ```
- */
-export function useMutation<TInput, TOutput>(
-  mutationFn: (input: TInput) => Promise<TOutput>,
-  options: MutationOptions<TInput, TOutput> = {},
-): MutationResult<TInput, TOutput> {
-  const { onSuccess, onError, onSettled, onMutate } = options;
-
-  const [state, setState] = useState<MutationState<TOutput>>({
-    data: undefined,
-    error: null,
-    isLoading: false,
-    isError: false,
-    isSuccess: false,
-    isIdle: true,
-  });
-
-  const mountedRef = useRef(true);
-
-  const mutateAsync = useCallback(
-    async (input: TInput): Promise<TOutput> => {
-      setState((s) => ({ ...s, isLoading: true, isIdle: false, error: null }));
-
-      try {
-        await onMutate?.(input);
-        const result = await mutationFn(input);
-
-        if (mountedRef.current) {
-          setState({
-            data: result,
-            error: null,
-            isLoading: false,
-            isError: false,
-            isSuccess: true,
-            isIdle: false,
-          });
-          onSuccess?.(result, input);
-          onSettled?.(result, null, input);
-        }
-
-        return result;
-      } catch (err) {
-        const error = isRpcError(err)
-          ? err
-          : { code: "UNKNOWN", message: String(err) };
-
-        if (mountedRef.current) {
-          setState((s) => ({
-            ...s,
-            error,
-            isLoading: false,
-            isError: true,
-            isSuccess: false,
-          }));
-          onError?.(error, input);
-          onSettled?.(undefined, error, input);
-        }
-
-        throw error;
-      }
-    },
-    [mutationFn, onSuccess, onError, onSettled, onMutate],
-  );
-
-  const mutate = useCallback(
-    (input: TInput) => {
-      mutateAsync(input).catch(() => {});
-    },
-    [mutateAsync],
-  );
-
-  const reset = useCallback(() => {
-    setState({
-      data: undefined,
-      error: null,
-      isLoading: false,
-      isError: false,
-      isSuccess: false,
-      isIdle: true,
-    });
-  }, []);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  return { ...state, mutate, mutateAsync, reset };
-}
-
-// =============================================================================
 // useSubscription Hook
 // =============================================================================
 
 /**
  * React hook for RPC subscriptions with automatic connection management.
+ * 
+ * For queries and mutations, use TanStack Query directly:
+ * ```typescript
+ * import { useQuery, useMutation } from '@tanstack/react-query';
+ * 
+ * // Query
+ * const { data } = useQuery({
+ *   queryKey: ['user', id],
+ *   queryFn: () => rpc.user.get({ id }),
+ * });
+ * 
+ * // Mutation
+ * const { mutate } = useMutation({
+ *   mutationFn: (input) => rpc.user.create(input),
+ * });
+ * ```
  *
  * @example
  * ```typescript
@@ -393,7 +121,6 @@ export function useSubscription<T>(
   const connect = useCallback(async () => {
     if (!enabled || !mountedRef.current || manualDisconnectRef.current) return;
 
-    // Increment connection ID to track this specific connection
     const currentConnectionId = ++connectionIdRef.current;
 
     setState((s) => ({
@@ -406,12 +133,10 @@ export function useSubscription<T>(
     try {
       const iterator = await subscribeFn();
 
-      // Check if this connection is still the current one
       if (
         currentConnectionId !== connectionIdRef.current ||
         !mountedRef.current
       ) {
-        // Stale connection - clean up and return
         await iterator.return();
         return;
       }
@@ -430,7 +155,6 @@ export function useSubscription<T>(
       }
 
       for await (const event of iterator) {
-        // Check if this is still the current connection
         if (
           !mountedRef.current ||
           currentConnectionId !== connectionIdRef.current
@@ -439,7 +163,6 @@ export function useSubscription<T>(
 
         setState((s) => {
           const newData = [...s.data, event];
-          // Trim to maxEvents
           if (newData.length > maxEvents) {
             newData.splice(0, newData.length - maxEvents);
           }
@@ -452,7 +175,6 @@ export function useSubscription<T>(
         onEvent?.(event);
       }
 
-      // Stream completed normally
       if (
         mountedRef.current &&
         !manualDisconnectRef.current &&
@@ -463,7 +185,6 @@ export function useSubscription<T>(
         onDisconnect?.();
       }
     } catch (err) {
-      // Only handle error if this is still the current connection
       if (currentConnectionId !== connectionIdRef.current) return;
 
       const error = isRpcError(err)
@@ -481,7 +202,6 @@ export function useSubscription<T>(
         onError?.(error);
         onDisconnect?.();
 
-        // Auto-reconnect logic
         if (
           autoReconnect &&
           !manualDisconnectRef.current &&
@@ -504,17 +224,14 @@ export function useSubscription<T>(
     ...deps,
   ]);
 
-  // Connect on mount / deps change
   useEffect(() => {
     manualDisconnectRef.current = false;
     connect();
-
     return () => {
       iteratorRef.current?.return();
     };
   }, [connect]);
 
-  // Cleanup
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -544,68 +261,6 @@ export function useSubscription<T>(
 }
 
 // =============================================================================
-// Hook Factory - Create Typed Hooks from Contract
-// =============================================================================
-
-/**
- * Create a set of typed hooks bound to a specific RPC client.
- *
- * @example
- * ```typescript
- * const rpc = createClient<AppContract>({ subscriptionPaths: ['stream.counter'] });
- * const { useRpcQuery, useRpcMutation, useRpcSubscription } = createHooks(rpc);
- *
- * // In components:
- * const { data } = useRpcQuery((c) => c.user.get({ id: 1 }), [userId]);
- * const { mutate } = useRpcMutation((c) => c.user.create);
- * const { latestEvent } = useRpcSubscription((c) => c.stream.counter({ start: 0 }), []);
- * ```
- */
-export function createHooks<T>(client: RouterClient<T>) {
-  return {
-    /**
-     * Query hook with automatic type inference
-     */
-    useRpcQuery: <TOutput>(
-      queryFn: (client: RouterClient<T>) => Promise<TOutput>,
-      deps: unknown[] = [],
-      options?: QueryOptions,
-    ): QueryResult<TOutput> => {
-      const fn = useMemo(() => () => queryFn(client), [queryFn]);
-      return useQuery(fn, deps, options);
-    },
-
-    /**
-     * Mutation hook with automatic type inference
-     */
-    useRpcMutation: <TInput, TOutput>(
-      getMutationFn: (
-        client: RouterClient<T>,
-      ) => (input: TInput) => Promise<TOutput>,
-      options?: MutationOptions<TInput, TOutput>,
-    ): MutationResult<TInput, TOutput> => {
-      const fn = useMemo(() => getMutationFn(client), [getMutationFn]);
-      return useMutation(fn, options);
-    },
-
-    /**
-     * Subscription hook with automatic type inference
-     */
-    useRpcSubscription: <TOutput>(
-      subscribeFn: (client: RouterClient<T>) => Promise<EventIterator<TOutput>>,
-      deps: unknown[] = [],
-      options?: SubscriptionHookOptions<TOutput>,
-    ): SubscriptionResult<TOutput> => {
-      const fn = useMemo(() => () => subscribeFn(client), [subscribeFn]);
-      return useSubscription(fn, deps, options);
-    },
-
-    /** The underlying client */
-    client,
-  };
-}
-
-// =============================================================================
 // Utility Hooks
 // =============================================================================
 
@@ -623,18 +278,4 @@ export function useIsMounted(): () => boolean {
   }, []);
 
   return useCallback(() => mountedRef.current, []);
-}
-
-/**
- * Hook for debounced values (useful for search inputs)
- */
-export function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-
-  return debouncedValue;
 }

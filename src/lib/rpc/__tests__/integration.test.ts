@@ -8,7 +8,6 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   createClient,
   createClientWithSubscriptions,
-  createHooks,
   configureRpc,
   type Middleware,
 } from "../index";
@@ -261,18 +260,6 @@ describe("Integration: Complete RPC Workflow", () => {
 
       expect(client).toBeDefined();
       expect(typeof (client as any).notifications.subscribe).toBe("function");
-    });
-  });
-
-  describe("Hook Factory", () => {
-    it("should create typed hooks from client", () => {
-      const client = createClient<ApiContract>();
-      const hooks = createHooks(client);
-
-      expect(hooks.useRpcQuery).toBeDefined();
-      expect(hooks.useRpcMutation).toBeDefined();
-      expect(hooks.useRpcSubscription).toBeDefined();
-      expect(hooks.client).toBe(client);
     });
   });
 });

@@ -80,10 +80,9 @@ function DirectCallDemo() {
 
 function HookDemo() {
   const [name, setName] = useState("World");
-  const { data, isLoading, error, refetch } = useGreet(
-    { name },
-    { enabled: name.length > 0 },
-  );
+  const { data, isLoading, error, refetch } = useGreet(name, {
+    enabled: name.length > 0,
+  });
 
   return (
     <div className="demo-card">
@@ -147,10 +146,9 @@ function HookDemo() {
 
 function ValidationDemo() {
   const [name, setName] = useState("");
-  const { data, isLoading, error } = useGreet(
-    { name },
-    { enabled: name.length > 0 },
-  );
+  const { data, isLoading, error } = useGreet(name, {
+    enabled: name.length > 0,
+  });
 
   const validationHints = [
     { test: name.length === 0, message: "Name is required", type: "info" },
