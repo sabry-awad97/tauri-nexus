@@ -144,7 +144,7 @@ impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
 
         let request = Request {
             path: path.to_string(),
-            procedure_type: compiled.procedure_type.clone(),
+            procedure_type: compiled.procedure_type,
             input,
         };
 
@@ -655,7 +655,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
 
                 let request = Request {
                     path: path.to_string(),
-                    procedure_type: procedure_type.clone(),
+                    procedure_type: *procedure_type,
                     input: input.clone(),
                 };
 

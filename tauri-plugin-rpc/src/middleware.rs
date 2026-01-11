@@ -1,12 +1,14 @@
 //! Middleware support for request/response processing
 
 use crate::{Context, RpcResult};
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
 /// Type of procedure being called
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ProcedureType {
     /// Read-only operation
     Query,

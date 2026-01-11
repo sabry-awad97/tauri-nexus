@@ -288,8 +288,10 @@ mod config;
 mod context;
 mod error;
 mod handler;
+pub mod logging;
 pub mod middleware;
 mod plugin;
+pub mod rate_limit;
 mod router;
 pub mod subscription;
 pub mod types;
@@ -304,12 +306,23 @@ pub use batch::{
 };
 pub use config::{BackpressureStrategy, ConfigValidationError, RpcConfig};
 pub use context::{Context, EmptyContext};
-pub use error::{RpcError, RpcErrorCode, RpcResult};
+pub use error::{
+    ComposedTransformer, ErrorCodeMapper, ErrorConfig, ErrorTransformer, LoggingTransformer,
+    NoOpTransformer, RpcError, RpcErrorCode, RpcResult,
+};
 pub use handler::Handler;
-pub use middleware::{Middleware, Next, ProcedureType, Request};
+pub use logging::{
+    LogConfig, LogEntry, LogLevel, Logger, RequestId, RequestMeta, TracingLogger,
+    logging_middleware, logging_middleware_with_logger, redact_value,
+};
+pub use middleware::{Middleware, MiddlewareFn, Next, ProcedureType, Request, from_fn};
 pub use plugin::{
     DynRouter, SubscribeRequest, SubscriptionFuture, init, init_with_config, validate_input_size,
     validate_path, validate_subscription_id,
+};
+pub use rate_limit::{
+    RateLimit, RateLimitConfig, RateLimitStrategy, RateLimitUsage, RateLimiter,
+    rate_limit_middleware,
 };
 pub use router::{CompiledRouter, Router};
 pub use subscription::{
@@ -341,10 +354,14 @@ pub mod prelude {
         ChannelPublisher,
         // Router
         CompiledRouter,
+        ComposedTransformer,
         ConfigValidationError,
         // Context
         Context,
         EmptyContext,
+        ErrorCodeMapper,
+        ErrorConfig,
+        ErrorTransformer,
         Event,
         EventMeta,
         EventPublisher,
@@ -354,15 +371,30 @@ pub mod prelude {
         FieldError,
         // Handler
         Handler,
+        // Logging
+        LogConfig,
+        LogEntry,
+        LogLevel,
+        Logger,
+        LoggingTransformer,
         // Middleware
         Middleware,
         Next,
         // Common types
         NoInput,
+        NoOpTransformer,
         PaginatedResponse,
         PaginationInput,
         ProcedureType,
+        // Rate limiting
+        RateLimit,
+        RateLimitConfig,
+        RateLimitStrategy,
+        RateLimitUsage,
+        RateLimiter,
         Request,
+        RequestId,
+        RequestMeta,
         Router,
         RpcConfig,
         // Error handling
@@ -376,6 +408,7 @@ pub mod prelude {
         SubscriptionId,
         SubscriptionManager,
         SuccessResponse,
+        TracingLogger,
         Validate,
         ValidationResult,
         ValidationRules,
@@ -384,6 +417,10 @@ pub mod prelude {
         generate_subscription_id,
         init,
         init_with_config,
+        logging_middleware,
+        logging_middleware_with_logger,
+        rate_limit_middleware,
+        redact_value,
         with_event_meta,
     };
 }
