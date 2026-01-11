@@ -283,6 +283,7 @@
 //! use tauri_plugin_rpc::prelude::*;
 //! ```
 
+pub mod auth;
 pub mod batch;
 mod config;
 mod context;
@@ -302,6 +303,10 @@ pub mod validation;
 mod tests;
 
 // Public API
+pub use auth::{
+    AlwaysAuthProvider, AuthConfig, AuthProvider, AuthResult, AuthRule, AuthorizationResult,
+    NoAuthProvider, auth_middleware, auth_with_config, requires_roles,
+};
 pub use batch::{
     BatchConfig, BatchRequest, BatchResponse, BatchResult, BatchResultData, SingleRequest,
 };
@@ -352,6 +357,13 @@ pub use validation::{FieldError, Validate, ValidationResult, ValidationRules};
 /// ```
 pub mod prelude {
     pub use crate::{
+        // Auth
+        AlwaysAuthProvider,
+        AuthConfig,
+        AuthProvider,
+        AuthResult,
+        AuthRule,
+        AuthorizationResult,
         // Configuration
         BackpressureStrategy,
         // Batch processing
@@ -397,6 +409,7 @@ pub mod prelude {
         // Middleware
         Middleware,
         Next,
+        NoAuthProvider,
         // Common types
         NoInput,
         NoOpTransformer,
@@ -437,6 +450,8 @@ pub mod prelude {
         ValidationResult,
         ValidationRules,
         // Functions
+        auth_middleware,
+        auth_with_config,
         event_channel,
         generate_subscription_id,
         init,
@@ -445,6 +460,7 @@ pub mod prelude {
         logging_middleware_with_logger,
         rate_limit_middleware,
         redact_value,
+        requires_roles,
         with_event_meta,
     };
 }

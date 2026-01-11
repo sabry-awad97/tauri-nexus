@@ -347,6 +347,25 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         self
     }
 
+    /// Add a pre-wrapped middleware function to the router.
+    ///
+    /// Use this method when you have a `MiddlewareFn<Ctx>` (e.g., from
+    /// `auth_middleware` or `rate_limit_middleware`).
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use tauri_plugin_rpc::auth::auth_middleware;
+    ///
+    /// let router = Router::new()
+    ///     .context(AppContext::default())
+    ///     .middleware_fn(auth_middleware(provider))
+    ///     .query("protected", handler);
+    /// ```
+    pub fn middleware_fn(mut self, middleware: MiddlewareFn<Ctx>) -> Self {
+        self.middleware.push(middleware);
+        self
+    }
+
     /// Add a query procedure (read-only operation)
     pub fn query<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
     where
