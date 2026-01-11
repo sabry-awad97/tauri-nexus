@@ -7,6 +7,7 @@ import type { ProcedureSchema } from "./types";
 import { TypeRenderer } from "./TypeRenderer";
 import { ProcedureTester } from "./ProcedureTester";
 import { getTypeLabel, getTypeBadgeClass } from "./utils";
+import { JSX } from "react";
 
 export interface ProcedureCardProps {
   /** Procedure path (e.g., "user.get") */
@@ -117,7 +118,7 @@ export function ProcedureCard({
             </div>
           )}
 
-          {schema.metadata && (
+          {schema.metadata != null && (
             <div className="procedure-metadata" data-testid="metadata">
               <span className="procedure-section-label">Metadata:</span>
               <pre className="procedure-metadata-content">

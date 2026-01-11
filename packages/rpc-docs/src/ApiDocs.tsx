@@ -4,7 +4,7 @@
 // Main API documentation component that displays router schema.
 
 import "./styles.css";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, JSX } from "react";
 import { useRouterSchema } from "./useRouterSchema";
 import { FilterBar } from "./FilterBar";
 import { ProcedureCard } from "./ProcedureCard";

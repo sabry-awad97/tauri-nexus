@@ -173,13 +173,22 @@ export {
   router,
   mergeRouters,
   ProcedureBuilder,
+  // Client factory
+  createClientFromSchema,
   // Validation
   createValidationInterceptor,
   createValidatedClient,
   buildSchemaMap,
+  // Path extraction utilities
+  extractPaths,
+  extractSubscriptionPaths,
+  extractQueryPaths,
+  extractMutationPaths,
+  extractPathsByType,
   // Types
   type SchemaProcedure,
   type SchemaContract,
+  type SchemaClientConfig,
   type ValidationConfig,
   type ValidationErrorDetails,
   type SchemaContractToContract,

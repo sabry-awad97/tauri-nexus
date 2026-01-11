@@ -12,6 +12,11 @@ import type {
   LinkRouterClient,
 } from "./link";
 import { TauriLink, createClientFromLink } from "./link";
+import {
+  createClientWithSubscriptions,
+  type RpcClient,
+  type RpcClientConfig,
+} from "./client";
 
 // =============================================================================
 // Core Schema Types
@@ -347,6 +352,163 @@ export function buildSchemaMap(
 }
 
 // =============================================================================
+// Path Extraction Utilities
+// =============================================================================
+
+/**
+ * Extract all procedure paths from a schema contract.
+ * Recursively traverses the contract and collects all procedure paths.
+ *
+ * @example
+ * ```typescript
+ * const paths = extractPaths(contract);
+ * // ['health', 'greet', 'user.get', 'user.list', 'stream.counter', ...]
+ * ```
+ */
+export function extractPaths(
+  contract: SchemaContract,
+  prefix: string = "",
+): string[] {
+  const paths: string[] = [];
+
+  for (const [key, value] of Object.entries(contract)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (isSchemaProcedure(value)) {
+      paths.push(path);
+    } else if (typeof value === "object" && value !== null) {
+      paths.push(...extractPaths(value as SchemaContract, path));
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * Extract subscription paths from a schema contract.
+ * Recursively traverses the contract and collects all subscription procedure paths.
+ *
+ * @example
+ * ```typescript
+ * const subscriptionPaths = extractSubscriptionPaths(contract);
+ * // ['stream.counter', 'stream.stocks', 'stream.chat', 'stream.time']
+ * ```
+ */
+export function extractSubscriptionPaths(
+  contract: SchemaContract,
+  prefix: string = "",
+): string[] {
+  const paths: string[] = [];
+
+  for (const [key, value] of Object.entries(contract)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (isSchemaProcedure(value)) {
+      if (value.type === "subscription") {
+        paths.push(path);
+      }
+    } else if (typeof value === "object" && value !== null) {
+      paths.push(...extractSubscriptionPaths(value as SchemaContract, path));
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * Extract query paths from a schema contract.
+ * Recursively traverses the contract and collects all query procedure paths.
+ *
+ * @example
+ * ```typescript
+ * const queryPaths = extractQueryPaths(contract);
+ * // ['health', 'greet', 'user.get', 'user.list', 'chat.history']
+ * ```
+ */
+export function extractQueryPaths(
+  contract: SchemaContract,
+  prefix: string = "",
+): string[] {
+  const paths: string[] = [];
+
+  for (const [key, value] of Object.entries(contract)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (isSchemaProcedure(value)) {
+      if (value.type === "query") {
+        paths.push(path);
+      }
+    } else if (typeof value === "object" && value !== null) {
+      paths.push(...extractQueryPaths(value as SchemaContract, path));
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * Extract mutation paths from a schema contract.
+ * Recursively traverses the contract and collects all mutation procedure paths.
+ *
+ * @example
+ * ```typescript
+ * const mutationPaths = extractMutationPaths(contract);
+ * // ['user.create', 'user.update', 'user.delete', 'chat.send']
+ * ```
+ */
+export function extractMutationPaths(
+  contract: SchemaContract,
+  prefix: string = "",
+): string[] {
+  const paths: string[] = [];
+
+  for (const [key, value] of Object.entries(contract)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (isSchemaProcedure(value)) {
+      if (value.type === "mutation") {
+        paths.push(path);
+      }
+    } else if (typeof value === "object" && value !== null) {
+      paths.push(...extractMutationPaths(value as SchemaContract, path));
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * Extract paths by procedure type from a schema contract.
+ *
+ * @example
+ * ```typescript
+ * const paths = extractPathsByType(contract, 'subscription');
+ * // ['stream.counter', 'stream.stocks', 'stream.chat', 'stream.time']
+ * ```
+ */
+export function extractPathsByType(
+  contract: SchemaContract,
+  type: ProcedureType,
+  prefix: string = "",
+): string[] {
+  const paths: string[] = [];
+
+  for (const [key, value] of Object.entries(contract)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (isSchemaProcedure(value)) {
+      if (value.type === type) {
+        paths.push(path);
+      }
+    } else if (typeof value === "object" && value !== null) {
+      paths.push(...extractPathsByType(value as SchemaContract, type, path));
+    }
+  }
+
+  return paths;
+}
+
+// =============================================================================
 // Validation Configuration
 // =============================================================================
 
@@ -536,4 +698,69 @@ export function createValidatedClient<
   return createClientFromLink<SchemaContractToContract<T>, TContext>(
     validatedLink,
   );
+}
+
+// =============================================================================
+// Schema-Based Client Factory
+// =============================================================================
+
+/** Configuration for createClientFromSchema */
+export interface SchemaClientConfig extends Omit<
+  RpcClientConfig,
+  "subscriptionPaths"
+> {
+  /** Additional client configuration */
+  clientConfig?: Omit<RpcClientConfig, "subscriptionPaths">;
+}
+
+/**
+ * Create a type-safe RPC client directly from a Zod schema contract.
+ * Automatically extracts subscription paths from the schema.
+ *
+ * This is the recommended way to create a client when using Zod schemas,
+ * as it provides both type safety and automatic subscription path detection.
+ *
+ * @example
+ * ```typescript
+ * import { z } from 'zod';
+ * import { procedure, router, createClientFromSchema } from '@tauri-nexus/rpc-core';
+ *
+ * const appContract = router({
+ *   health: procedure()
+ *     .output(z.object({ status: z.string() }))
+ *     .query(),
+ *   user: router({
+ *     get: procedure()
+ *       .input(z.object({ id: z.number() }))
+ *       .output(z.object({ id: z.number(), name: z.string() }))
+ *       .query(),
+ *   }),
+ *   stream: router({
+ *     counter: procedure()
+ *       .input(z.object({ start: z.number().optional() }))
+ *       .output(z.object({ count: z.number() }))
+ *       .subscription(),
+ *   }),
+ * });
+ *
+ * // Client is fully typed with subscription paths auto-detected
+ * const rpc = createClientFromSchema(appContract);
+ *
+ * // Type-safe calls
+ * const health = await rpc.health();
+ * const user = await rpc.user.get({ id: 1 });
+ * const stream = await rpc.stream.counter({ start: 0 });
+ * ```
+ */
+export function createClientFromSchema<T extends SchemaContract>(
+  contract: T,
+  config?: SchemaClientConfig,
+): RpcClient<SchemaContractToContract<T>> {
+  // Extract subscription paths from the schema
+  const subscriptionPaths = extractSubscriptionPaths(contract);
+
+  return createClientWithSubscriptions<SchemaContractToContract<T>>({
+    subscriptionPaths,
+    ...config?.clientConfig,
+  });
 }

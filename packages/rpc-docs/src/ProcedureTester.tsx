@@ -3,7 +3,7 @@
 // =============================================================================
 // Interactive component for testing RPC procedures with JSON input.
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, JSX } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { InputEditor } from "./InputEditor";
 import { ResponseViewer } from "./ResponseViewer";

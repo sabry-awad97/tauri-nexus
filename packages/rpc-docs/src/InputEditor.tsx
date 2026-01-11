@@ -3,7 +3,7 @@
 // =============================================================================
 // A controlled textarea for JSON input with validation feedback.
 
-import { useCallback, useId } from "react";
+import { JSX, useCallback, useId } from "react";
 
 export interface InputEditorProps {
   /** Current input value */

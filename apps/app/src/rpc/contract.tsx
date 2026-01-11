@@ -5,7 +5,7 @@
 // Types and contract are imported from the auto-generated Tauri bindings.
 
 import {
-  createClientWithSubscriptions,
+  createClientFromSchema,
   createTanstackQueryUtils,
   useSubscription,
   isRpcError,
@@ -22,9 +22,9 @@ import {
 } from "@tanstack/react-query";
 import { createContext, useContext, type ReactNode } from "react";
 
-// Import types and contract from auto-generated Tauri bindings
+// Import schema and types from auto-generated Tauri bindings
 import {
-  SUBSCRIPTION_PATHS,
+  appContractSchema,
   type AppContract,
   type CounterInput,
   type CounterEvent,
@@ -36,9 +36,7 @@ import {
 // Client Instance
 // =============================================================================
 
-export const rpc = createClientWithSubscriptions<AppContract>({
-  subscriptionPaths: [...SUBSCRIPTION_PATHS],
-});
+export const rpc = createClientFromSchema(appContractSchema);
 
 // =============================================================================
 // TanStack Query Utils (oRPC-style API)
@@ -156,3 +154,13 @@ export {
   useQueryClient,
 };
 export type { RpcError, SubscriptionResult, SubscriptionHookOptions };
+
+// Re-export types from bindings
+export type {
+  User,
+  AppContract,
+  CounterInput,
+  CounterEvent,
+  ChatMessage,
+  StockPrice,
+} from "../generated/bindings";

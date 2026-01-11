@@ -7,7 +7,7 @@ license = "MIT"
 links = "tauri-plugin-rpc"
 
 [dependencies]
-tauri = { workspace = true, default-features = false }
+tauri = { workspace = true, features = []}
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

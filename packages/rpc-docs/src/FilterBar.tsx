@@ -3,7 +3,7 @@
 // =============================================================================
 // Provides search and filter controls for the API documentation.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, JSX } from "react";
 import type { ProcedureType } from "./types";
 
 export interface FilterBarProps {

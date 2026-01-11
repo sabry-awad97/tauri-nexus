@@ -1,7 +1,14 @@
+// must be imported before React and React DOM
+import { scan } from "react-scan";
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
+
+scan({
+  enabled: true,
+});
 
 // Create the router instance
 const router = createRouter({ routeTree });

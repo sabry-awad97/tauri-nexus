@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import * as fc from "fast-check";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, fireEvent, cleanup } from "@testing-library/react";
 import { ProcedureCard } from "../ProcedureCard";
 import type { ProcedureSchema, ProcedureType, TypeSchema } from "../types";
 
