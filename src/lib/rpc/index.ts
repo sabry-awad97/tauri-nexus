@@ -259,3 +259,31 @@ export {
   type InferProcedureInput,
   type InferProcedureOutput,
 } from "./schema";
+
+// =============================================================================
+// API Documentation
+// =============================================================================
+
+export {
+  // Components
+  ApiDocs,
+  ProcedureCard,
+  TypeRenderer,
+  FilterBar,
+  // Hooks
+  useRouterSchema,
+  // Utilities
+  groupProcedures,
+  filterProcedures,
+  // Types
+  type ApiDocsProps,
+  type ProcedureCardProps,
+  type TypeRendererProps,
+  type FilterBarProps,
+  type RouterSchema,
+  type ProcedureSchema,
+  type TypeSchema,
+  type ProcedureGroup,
+  type FilterState,
+  type FilterResult,
+} from "./docs";

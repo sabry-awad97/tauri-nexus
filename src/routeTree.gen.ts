@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsersRouteImport } from './routes/users'
 import { Route as GreetRouteImport } from './routes/greet'
+import { Route as DocsRouteImport } from './routes/docs'
 import { Route as BatchRouteImport } from './routes/batch'
 import { Route as AdvancedRouteImport } from './routes/advanced'
 import { Route as IndexRouteImport } from './routes/index'
@@ -27,6 +28,11 @@ const UsersRoute = UsersRouteImport.update({
 const GreetRoute = GreetRouteImport.update({
   id: '/greet',
   path: '/greet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsRoute = DocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BatchRoute = BatchRouteImport.update({
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/advanced': typeof AdvancedRoute
   '/batch': typeof BatchRoute
+  '/docs': typeof DocsRoute
   '/greet': typeof GreetRoute
   '/users': typeof UsersRoute
   '/streams/chat': typeof StreamsChatRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/advanced': typeof AdvancedRoute
   '/batch': typeof BatchRoute
+  '/docs': typeof DocsRoute
   '/greet': typeof GreetRoute
   '/users': typeof UsersRoute
   '/streams/chat': typeof StreamsChatRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/advanced': typeof AdvancedRoute
   '/batch': typeof BatchRoute
+  '/docs': typeof DocsRoute
   '/greet': typeof GreetRoute
   '/users': typeof UsersRoute
   '/streams/chat': typeof StreamsChatRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/advanced'
     | '/batch'
+    | '/docs'
     | '/greet'
     | '/users'
     | '/streams/chat'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/advanced'
     | '/batch'
+    | '/docs'
     | '/greet'
     | '/users'
     | '/streams/chat'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/advanced'
     | '/batch'
+    | '/docs'
     | '/greet'
     | '/users'
     | '/streams/chat'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdvancedRoute: typeof AdvancedRoute
   BatchRoute: typeof BatchRoute
+  DocsRoute: typeof DocsRoute
   GreetRoute: typeof GreetRoute
   UsersRoute: typeof UsersRoute
   StreamsChatRoute: typeof StreamsChatRoute
@@ -161,6 +174,13 @@ declare module '@tanstack/react-router' {
       path: '/greet'
       fullPath: '/greet'
       preLoaderRoute: typeof GreetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs': {
+      id: '/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/batch': {
@@ -219,6 +239,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdvancedRoute: AdvancedRoute,
   BatchRoute: BatchRoute,
+  DocsRoute: DocsRoute,
   GreetRoute: GreetRoute,
   UsersRoute: UsersRoute,
   StreamsChatRoute: StreamsChatRoute,
