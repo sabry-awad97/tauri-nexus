@@ -11,7 +11,9 @@
     },
     "./styles.css": "./src/styles.css"
   },
-  "files": ["src"],
+  "files": [
+    "src"
+  ],
   "scripts": {
     "test": "echo 'No tests yet'"
   },

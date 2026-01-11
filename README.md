@@ -97,7 +97,7 @@ import { api, rpc } from "./contract";
 function App() {
   // Queries
   const { data: user } = useQuery(
-    api.user.get.queryOptions({ input: { id: 1 } })
+    api.user.get.queryOptions({ input: { id: 1 } }),
   );
 
   // Mutations
@@ -106,7 +106,7 @@ function App() {
   // Subscriptions
   const { data: notification, isConnected } = useSubscription(
     () => rpc.notifications.stream(),
-    []
+    [],
   );
 
   return <div>{user?.name}</div>;
@@ -247,7 +247,7 @@ const contract = router({
         z.object({
           name: z.string().min(1),
           email: z.string().email(),
-        })
+        }),
       )
       .output(z.object({ id: z.number(), name: z.string() }))
       .mutation(),

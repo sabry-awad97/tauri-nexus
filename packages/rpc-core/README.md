@@ -191,7 +191,7 @@ await rpc.user.get(
   { id: 1 },
   {
     context: { requestId: "req-123", userId: "user-456" },
-  }
+  },
 );
 ```
 
@@ -205,7 +205,7 @@ import { subscribe, createEventIterator } from "@tauri-nexus/rpc-core";
 // Using the subscribe helper
 const stream = await subscribe<NotificationEvent>(
   "notifications.subscribe",
-  {}
+  {},
 );
 
 for await (const event of stream) {
@@ -238,7 +238,7 @@ const contract = router({
           id: z.number(),
           name: z.string(),
           email: z.string().email(),
-        })
+        }),
       )
       .query(),
 
@@ -247,7 +247,7 @@ const contract = router({
         z.object({
           name: z.string().min(1).max(100),
           email: z.string().email(),
-        })
+        }),
       )
       .output(z.object({ id: z.number(), name: z.string(), email: z.string() }))
       .mutation(),

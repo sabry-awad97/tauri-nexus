@@ -12,7 +12,5 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "references": [
-    { "path": "./apps/app" }
-  ]
+  "references": [{ "path": "./apps/app" }]
 }

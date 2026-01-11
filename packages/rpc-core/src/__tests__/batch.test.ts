@@ -846,5 +846,3 @@ describe("Edge Cases", () => {
     expect(response.results).toHaveLength(2);
   });
 });
-
-

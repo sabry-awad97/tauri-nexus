@@ -84,7 +84,7 @@ import { api, rpc } from "./rpc";
 function UserProfile({ userId }: { userId: number }) {
   // Queries with full type inference
   const { data: user, isLoading } = useQuery(
-    api.user.get.queryOptions({ input: { id: userId } })
+    api.user.get.queryOptions({ input: { id: userId } }),
   );
 
   // Mutations
@@ -135,7 +135,7 @@ function NotificationFeed() {
       maxReconnects: 5, // Max reconnection attempts
       reconnectDelay: 1000, // Delay between reconnects (ms)
       maxEvents: undefined, // Limit number of events
-    }
+    },
   );
 
   return (
@@ -186,7 +186,7 @@ function Dashboard() {
       onError: (error) => {
         console.error("Batch failed:", error);
       },
-    }
+    },
   );
 
   if (batch.isLoading) return <div>Loading...</div>;
@@ -318,7 +318,7 @@ const { data, fetchNextPage, hasNextPage } = useInfiniteQuery(
   api.user.list.infiniteOptions({
     input: { limit: 10 },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-  })
+  }),
 );
 ```
 
@@ -363,7 +363,7 @@ export function useCounter(config: { start?: number; maxCount?: number } = {}) {
   return useSubscription<CounterEvent>(
     () => rpc.stream.counter(config),
     [config.start, config.maxCount],
-    { autoReconnect: true }
+    { autoReconnect: true },
   );
 }
 
@@ -378,7 +378,7 @@ export function useChat(roomId: string) {
       onEvent: (message) => {
         // Play notification sound, etc.
       },
-    }
+    },
   );
 }
 

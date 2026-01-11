@@ -2,7 +2,10 @@
   "name": "tauri-nexus",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "bun run --filter @tauri-nexus/app dev",
     "build": "bun run --filter @tauri-nexus/app build",
