@@ -347,8 +347,8 @@ pub use router::{
 };
 pub use schema::{
     OpenApiComponents, OpenApiInfo, OpenApiMediaType, OpenApiOperation, OpenApiPathItem,
-    OpenApiRequestBody, OpenApiResponse, OpenApiSchema, ProcedureSchema, ProcedureTypeSchema,
-    RouterSchema, SchemaBuilder, TypeSchema,
+    OpenApiRequestBody, OpenApiResponse, OpenApiSchema, ProcedureMeta, ProcedureSchema,
+    ProcedureTypeSchema, RouterSchema, SchemaBuilder, TypeSchema,
 };
 pub use subscription::{
     CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, EventSender,
@@ -436,6 +436,7 @@ pub mod prelude {
         // Procedure Builder
         ProcedureBuilder,
         ProcedureChain,
+        ProcedureMeta,
         ProcedureSchema,
         ProcedureType,
         ProcedureTypeSchema,

@@ -41,6 +41,7 @@
 //! ```
 
 use crate::middleware::{MiddlewareFn, Next, ProcedureType, Request, Response};
+use crate::schema::ProcedureMeta;
 use crate::validation::Validate;
 use crate::{Context, RpcError, RpcResult};
 use serde::Serialize;
@@ -80,6 +81,8 @@ where
     pub handler: BoxedHandler<Ctx>,
     /// Per-procedure middleware stack.
     pub middleware: Vec<MiddlewareFn<Ctx>>,
+    /// OpenAPI metadata for this procedure.
+    pub meta: Option<ProcedureMeta>,
 }
 
 /// Builder for configuring individual procedures with middleware, validation, and transformation.
@@ -112,6 +115,8 @@ where
     /// Optional output transformer.
     output_transformer:
         Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
+    /// OpenAPI metadata for this procedure.
+    meta: Option<ProcedureMeta>,
     /// Phantom data for type tracking.
     _phantom: PhantomData<Input>,
 }
@@ -126,8 +131,37 @@ where
             path: path.into(),
             middleware: Vec::new(),
             output_transformer: None,
+            meta: None,
             _phantom: PhantomData,
         }
+    }
+
+    /// Sets OpenAPI metadata for this procedure.
+    ///
+    /// This provides an oRPC-style way to attach documentation directly
+    /// to procedure definitions.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use tauri_plugin_rpc::prelude::*;
+    ///
+    /// let procedure = ProcedureBuilder::<AppContext>::new("users.get")
+    ///     .meta(ProcedureMeta::new()
+    ///         .description("Get a user by ID")
+    ///         .tag("users")
+    ///         .input(TypeSchema::object()
+    ///             .with_property("id", TypeSchema::integer())
+    ///             .with_required("id"))
+    ///         .output(TypeSchema::object()
+    ///             .with_property("id", TypeSchema::integer())
+    ///             .with_property("name", TypeSchema::string())))
+    ///     .input::<GetUserInput>()
+    ///     .query(get_user);
+    /// ```
+    pub fn meta(mut self, meta: ProcedureMeta) -> Self {
+        self.meta = Some(meta);
+        self
     }
 
     /// Sets the input type for this procedure.
@@ -149,6 +183,7 @@ where
             path: self.path,
             middleware: self.middleware,
             output_transformer: self.output_transformer,
+            meta: self.meta,
             _phantom: PhantomData,
         }
     }
@@ -173,6 +208,7 @@ where
             path: self.path,
             middleware: self.middleware,
             output_transformer: self.output_transformer,
+            meta: self.meta,
             _phantom: PhantomData,
         }
     }
@@ -216,6 +252,7 @@ where
             middleware: self.middleware,
             output_transformer: self.output_transformer,
             context_transformer: Arc::new(move |ctx| Box::pin(transformer(ctx))),
+            meta: self.meta,
             _phantom: PhantomData,
         }
     }
@@ -372,6 +409,7 @@ where
             procedure_type,
             handler: boxed_handler,
             middleware: self.middleware,
+            meta: self.meta,
         }
     }
 }
@@ -388,6 +426,7 @@ where
     middleware: Vec<MiddlewareFn<Ctx>>,
     output_transformer:
         Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
+    meta: Option<ProcedureMeta>,
     _phantom: PhantomData<Input>,
 }
 
@@ -500,6 +539,7 @@ where
             procedure_type,
             handler: boxed_handler,
             middleware: self.middleware,
+            meta: self.meta,
         }
     }
 }
@@ -523,6 +563,7 @@ where
     output_transformer:
         Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
     context_transformer: ContextTransformer<OrigCtx, NewCtx>,
+    meta: Option<ProcedureMeta>,
     _phantom: PhantomData<(OrigCtx, NewCtx)>,
 }
 
@@ -575,6 +616,7 @@ where
             middleware: self.middleware,
             output_transformer: self.output_transformer,
             context_transformer: self.context_transformer,
+            meta: self.meta,
             _phantom: PhantomData,
         }
     }
@@ -591,6 +633,7 @@ where
             middleware: self.middleware,
             output_transformer: self.output_transformer,
             context_transformer: self.context_transformer,
+            meta: self.meta,
             _phantom: PhantomData,
         }
     }
@@ -607,6 +650,7 @@ where
     output_transformer:
         Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
     context_transformer: ContextTransformer<OrigCtx, NewCtx>,
+    meta: Option<ProcedureMeta>,
     _phantom: PhantomData<(OrigCtx, NewCtx, Input)>,
 }
 
@@ -715,6 +759,7 @@ where
             procedure_type,
             handler: boxed_handler,
             middleware: self.middleware,
+            meta: self.meta,
         }
     }
 }
@@ -730,6 +775,7 @@ where
     output_transformer:
         Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
     context_transformer: ContextTransformer<OrigCtx, NewCtx>,
+    meta: Option<ProcedureMeta>,
     _phantom: PhantomData<(OrigCtx, NewCtx, Input)>,
 }
 
@@ -842,6 +888,7 @@ where
             procedure_type,
             handler: boxed_handler,
             middleware: self.middleware,
+            meta: self.meta,
         }
     }
 }
@@ -982,6 +1029,186 @@ mod tests {
 
         assert_eq!(procedure.path, "users.create");
         assert_eq!(procedure.procedure_type, ProcedureType::Mutation);
+    }
+
+    // Meta tests
+
+    #[test]
+    fn test_procedure_builder_with_meta() {
+        use crate::schema::ProcedureMeta;
+
+        let procedure = ProcedureBuilder::<TestContext>::new("users.get")
+            .meta(
+                ProcedureMeta::new()
+                    .description("Get a user by ID")
+                    .summary("Get user")
+                    .tag("users")
+                    .deprecated(),
+            )
+            .input::<TestInput>()
+            .query(test_handler);
+
+        assert_eq!(procedure.path, "users.get");
+        assert!(procedure.meta.is_some());
+
+        let meta = procedure.meta.unwrap();
+        assert_eq!(meta.description, Some("Get a user by ID".to_string()));
+        assert_eq!(meta.summary, Some("Get user".to_string()));
+        assert_eq!(meta.tags, vec!["users".to_string()]);
+        assert!(meta.deprecated);
+    }
+
+    #[test]
+    fn test_procedure_builder_meta_with_schemas() {
+        use crate::schema::{ProcedureMeta, TypeSchema};
+
+        let procedure = ProcedureBuilder::<TestContext>::new("users.create")
+            .meta(
+                ProcedureMeta::new()
+                    .description("Create a new user")
+                    .input(
+                        TypeSchema::object()
+                            .with_property("name", TypeSchema::string())
+                            .with_required("name"),
+                    )
+                    .output(
+                        TypeSchema::object()
+                            .with_property("id", TypeSchema::integer())
+                            .with_property("name", TypeSchema::string()),
+                    ),
+            )
+            .input::<TestInput>()
+            .mutation(test_handler);
+
+        assert!(procedure.meta.is_some());
+        let meta = procedure.meta.unwrap();
+        assert!(meta.input.is_some());
+        assert!(meta.output.is_some());
+    }
+
+    #[test]
+    fn test_procedure_builder_meta_with_examples() {
+        use crate::schema::ProcedureMeta;
+
+        let procedure = ProcedureBuilder::<TestContext>::new("users.get")
+            .meta(
+                ProcedureMeta::new()
+                    .example_input(serde_json::json!({"name": "Alice"}))
+                    .example_output(serde_json::json!({"message": "Hello, Alice!"})),
+            )
+            .input::<TestInput>()
+            .query(test_handler);
+
+        let meta = procedure.meta.unwrap();
+        assert_eq!(
+            meta.example_input,
+            Some(serde_json::json!({"name": "Alice"}))
+        );
+        assert_eq!(
+            meta.example_output,
+            Some(serde_json::json!({"message": "Hello, Alice!"}))
+        );
+    }
+
+    #[test]
+    fn test_validated_procedure_builder_with_meta() {
+        use crate::schema::ProcedureMeta;
+
+        let procedure = ProcedureBuilder::<TestContext>::new("users.create")
+            .meta(
+                ProcedureMeta::new()
+                    .description("Create a validated user")
+                    .tags(vec!["users", "validated"]),
+            )
+            .input_validated::<ValidatedInput>()
+            .mutation(validated_handler);
+
+        assert!(procedure.meta.is_some());
+        let meta = procedure.meta.unwrap();
+        assert_eq!(
+            meta.description,
+            Some("Create a validated user".to_string())
+        );
+        assert_eq!(
+            meta.tags,
+            vec!["users".to_string(), "validated".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_context_transformed_procedure_with_meta() {
+        use crate::schema::ProcedureMeta;
+
+        let procedure = ProcedureBuilder::<TestContext>::new("users.profile")
+            .meta(
+                ProcedureMeta::new()
+                    .description("Get authenticated user profile")
+                    .tag("auth"),
+            )
+            .context(|ctx: Context<TestContext>| async move {
+                Ok(AuthContext {
+                    user_id: "user123".to_string(),
+                    original_value: ctx.inner().value,
+                })
+            })
+            .input::<TestInput>()
+            .query(auth_handler);
+
+        assert!(procedure.meta.is_some());
+        let meta = procedure.meta.unwrap();
+        assert_eq!(
+            meta.description,
+            Some("Get authenticated user profile".to_string())
+        );
+    }
+
+    #[test]
+    fn test_context_transformed_validated_procedure_with_meta() {
+        use crate::schema::ProcedureMeta;
+
+        async fn validated_auth_handler(
+            ctx: Context<AuthContext>,
+            input: ValidatedInput,
+        ) -> RpcResult<TestOutput> {
+            Ok(TestOutput {
+                message: format!(
+                    "Hello, {} (age {})! User: {}",
+                    input.name,
+                    input.age,
+                    ctx.inner().user_id
+                ),
+            })
+        }
+
+        let procedure = ProcedureBuilder::<TestContext>::new("users.update")
+            .meta(
+                ProcedureMeta::new()
+                    .description("Update user with validation")
+                    .tags(vec!["users", "auth", "validated"]),
+            )
+            .context(|ctx: Context<TestContext>| async move {
+                Ok(AuthContext {
+                    user_id: "user456".to_string(),
+                    original_value: ctx.inner().value,
+                })
+            })
+            .input_validated::<ValidatedInput>()
+            .mutation(validated_auth_handler);
+
+        assert!(procedure.meta.is_some());
+        let meta = procedure.meta.unwrap();
+        assert_eq!(
+            meta.description,
+            Some("Update user with validation".to_string())
+        );
+        assert_eq!(
+            meta.tags,
+            vec![
+                "users".to_string(),
+                "auth".to_string(),
+                "validated".to_string()
+            ]
+        );
     }
 
     #[tokio::test]

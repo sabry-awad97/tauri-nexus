@@ -27,6 +27,146 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // =============================================================================
+// Procedure Meta (for builder pattern)
+// =============================================================================
+
+/// Metadata for a procedure, used with the `.meta()` builder method.
+///
+/// This provides an oRPC-style way to attach OpenAPI metadata directly
+/// to procedure definitions.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tauri_plugin_rpc::prelude::*;
+///
+/// let router = Router::new()
+///     .context(AppContext::new())
+///     .procedure("users.get")
+///         .meta(ProcedureMeta::new()
+///             .description("Get a user by ID")
+///             .tag("users")
+///             .input(TypeSchema::object()
+///                 .with_property("id", TypeSchema::integer())
+///                 .with_required("id"))
+///             .output(TypeSchema::object()
+///                 .with_property("id", TypeSchema::integer())
+///                 .with_property("name", TypeSchema::string())))
+///         .input::<GetUserInput>()
+///         .query(get_user);
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProcedureMeta {
+    /// Human-readable description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Input type schema
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<TypeSchema>,
+    /// Output type schema
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<TypeSchema>,
+    /// Whether the procedure is deprecated
+    #[serde(default)]
+    pub deprecated: bool,
+    /// Tags for categorization
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// Additional metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+    /// Summary (short description for OpenAPI)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Example input value
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub example_input: Option<serde_json::Value>,
+    /// Example output value
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub example_output: Option<serde_json::Value>,
+}
+
+impl ProcedureMeta {
+    /// Create a new empty procedure metadata.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the description.
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Set the summary (short description).
+    pub fn summary(mut self, summary: impl Into<String>) -> Self {
+        self.summary = Some(summary.into());
+        self
+    }
+
+    /// Set the input type schema.
+    pub fn input(mut self, input: TypeSchema) -> Self {
+        self.input = Some(input);
+        self
+    }
+
+    /// Set the output type schema.
+    pub fn output(mut self, output: TypeSchema) -> Self {
+        self.output = Some(output);
+        self
+    }
+
+    /// Mark as deprecated.
+    pub fn deprecated(mut self) -> Self {
+        self.deprecated = true;
+        self
+    }
+
+    /// Add a tag.
+    pub fn tag(mut self, tag: impl Into<String>) -> Self {
+        self.tags.push(tag.into());
+        self
+    }
+
+    /// Add multiple tags.
+    pub fn tags(mut self, tags: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.tags.extend(tags.into_iter().map(|t| t.into()));
+        self
+    }
+
+    /// Set additional metadata.
+    pub fn metadata(mut self, metadata: impl Serialize) -> Self {
+        self.metadata = serde_json::to_value(metadata).ok();
+        self
+    }
+
+    /// Set an example input value.
+    pub fn example_input(mut self, example: impl Serialize) -> Self {
+        self.example_input = serde_json::to_value(example).ok();
+        self
+    }
+
+    /// Set an example output value.
+    pub fn example_output(mut self, example: impl Serialize) -> Self {
+        self.example_output = serde_json::to_value(example).ok();
+        self
+    }
+
+    /// Convert to a ProcedureSchema with the given procedure type.
+    pub fn to_schema(self, procedure_type: ProcedureType) -> ProcedureSchema {
+        ProcedureSchema {
+            procedure_type: procedure_type.into(),
+            description: self.description,
+            input: self.input,
+            output: self.output,
+            deprecated: self.deprecated,
+            tags: self.tags,
+            metadata: self.metadata,
+        }
+    }
+}
+
+// =============================================================================
 // Schema Types
 // =============================================================================
 

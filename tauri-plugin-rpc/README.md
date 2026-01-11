@@ -818,14 +818,30 @@ use tauri_plugin_rpc::prelude::*;
 
 Router::new()
     .context(AppContext::new())
-    // Using procedure builder
+    // Using procedure builder with OpenAPI metadata
     .procedure("user.create")
+        .meta(ProcedureMeta::new()
+            .description("Create a new user")
+            .summary("Create user")
+            .tag("users")
+            .input(TypeSchema::object()
+                .with_property("name", TypeSchema::string())
+                .with_property("email", TypeSchema::string().with_format("email"))
+                .with_required("name")
+                .with_required("email"))
+            .output(TypeSchema::object()
+                .with_property("id", TypeSchema::integer())
+                .with_property("name", TypeSchema::string())))
         .input_validated::<CreateUserInput>()  // Auto-validation
         .use_middleware(logging)               // Per-procedure middleware
         .use_middleware(rate_limit)
         .mutation(create_user)
     // Context transformation
     .procedure("admin.action")
+        .meta(ProcedureMeta::new()
+            .description("Admin-only action")
+            .tags(vec!["admin", "protected"])
+            .deprecated())  // Mark as deprecated
         .context(|ctx: Context<AppContext>| async move {
             // Transform context for this procedure
             Ok(AdminContext::from(ctx.inner().clone()))
@@ -833,10 +849,52 @@ Router::new()
         .mutation(admin_action)
 ```
 
+### OpenAPI Metadata with `.meta()`
+
+The `.meta()` method provides an oRPC-style way to attach OpenAPI metadata directly to procedure definitions:
+
+```rust
+use tauri_plugin_rpc::prelude::*;
+
+// Full metadata example
+let procedure = ProcedureBuilder::<AppContext>::new("users.get")
+    .meta(ProcedureMeta::new()
+        .description("Get a user by their unique ID")
+        .summary("Get user")
+        .tag("users")
+        .input(TypeSchema::object()
+            .with_property("id", TypeSchema::integer().with_description("User ID"))
+            .with_required("id"))
+        .output(TypeSchema::object()
+            .with_property("id", TypeSchema::integer())
+            .with_property("name", TypeSchema::string())
+            .with_property("email", TypeSchema::string().with_format("email")))
+        .example_input(json!({"id": 123}))
+        .example_output(json!({"id": 123, "name": "Alice", "email": "alice@example.com"})))
+    .input::<GetUserInput>()
+    .query(get_user);
+```
+
+### ProcedureMeta Methods
+
+| Method             | Description                     | Example                                     |
+| ------------------ | ------------------------------- | ------------------------------------------- |
+| `description()`    | Set detailed description        | `.description("Get user by ID")`            |
+| `summary()`        | Set short summary (for OpenAPI) | `.summary("Get user")`                      |
+| `tag()`            | Add a single tag                | `.tag("users")`                             |
+| `tags()`           | Add multiple tags               | `.tags(vec!["users", "public"])`            |
+| `input()`          | Set input TypeSchema            | `.input(TypeSchema::object()...)`           |
+| `output()`         | Set output TypeSchema           | `.output(TypeSchema::object()...)`          |
+| `deprecated()`     | Mark procedure as deprecated    | `.deprecated()`                             |
+| `metadata()`       | Add custom metadata             | `.metadata(json!({"version": "2.0"}))`      |
+| `example_input()`  | Set example input value         | `.example_input(json!({"id": 1}))`          |
+| `example_output()` | Set example output value        | `.example_output(json!({"name": "Alice"}))` |
+
 ### Procedure Builder Methods
 
 | Method              | Description                          |
 | ------------------- | ------------------------------------ |
+| `meta()`            | Set OpenAPI metadata                 |
 | `input<T>()`        | Set input type                       |
 | `input_validated()` | Set input type with auto-validation  |
 | `use_middleware()`  | Add per-procedure middleware         |
@@ -1202,6 +1260,7 @@ use tauri_plugin_rpc::prelude::*;
 | `Cache`               | LRU cache with TTL support                |
 | `RouterSchema`        | Schema for router documentation           |
 | `ProcedureBuilder`    | Fluent builder for procedures             |
+| `ProcedureMeta`       | OpenAPI metadata for procedures           |
 
 ---
 
