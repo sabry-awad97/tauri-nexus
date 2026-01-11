@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useHealth, useUsers } from "../rpc/contract";
+import { useQuery } from "@tanstack/react-query";
+import { orpc } from "../rpc/contract";
 
 function StatCard({
   icon,
@@ -54,8 +55,8 @@ function FeatureCard({
 }
 
 function Dashboard() {
-  const { data: health } = useHealth();
-  const { data: users } = useUsers();
+  const { data: health } = useQuery(orpc.health.queryOptions());
+  const { data: users } = useQuery(orpc.user.list.queryOptions());
 
   return (
     <div className="page dashboard">

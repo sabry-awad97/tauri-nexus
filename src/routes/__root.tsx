@@ -1,10 +1,14 @@
 import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { RpcProvider, useHealth } from "../rpc/contract";
+import { useQuery } from "@tanstack/react-query";
+import { RpcProvider, orpc } from "../rpc/contract";
 import "../styles/global.css";
 
 function HealthStatus() {
-  const { data, isLoading, error } = useHealth({ refetchInterval: 30000 });
+  const { data, isLoading, error } = useQuery({
+    ...orpc.health.queryOptions(),
+    refetchInterval: 30000,
+  });
 
   if (isLoading)
     return <span className="health-dot loading" title="Checking..." />;

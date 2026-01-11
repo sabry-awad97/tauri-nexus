@@ -381,14 +381,14 @@ describe("Middleware", () => {
   it("should execute middleware in order", async () => {
     const order: number[] = [];
 
-    const middleware1: Middleware = async (ctx, next) => {
+    const middleware1: Middleware = async (_ctx, next) => {
       order.push(1);
       const result = await next();
       order.push(4);
       return result;
     };
 
-    const middleware2: Middleware = async (ctx, next) => {
+    const middleware2: Middleware = async (_ctx, next) => {
       order.push(2);
       const result = await next();
       order.push(3);
@@ -427,9 +427,10 @@ describe("Middleware", () => {
     // Reset mock and config first
     mockInvoke.mockReset();
 
-    const middleware: Middleware = async (ctx, next) => {
+    // Use type assertion to allow returning modified object
+    const middleware: Middleware = async (_ctx, next) => {
       const result = await next();
-      return { ...(result as object), modified: true };
+      return { ...(result as object), modified: true } as any;
     };
 
     configureRpc({ middleware: [middleware] });
@@ -444,11 +445,12 @@ describe("Middleware", () => {
     // Reset mock and config first
     mockInvoke.mockReset();
 
-    const middleware: Middleware = async (ctx, next) => {
+    // Use type assertion to allow returning fallback object
+    const middleware: Middleware = async (_ctx, next) => {
       try {
         return await next();
-      } catch (error) {
-        return { fallback: true };
+      } catch {
+        return { fallback: true } as any;
       }
     };
 

@@ -143,6 +143,19 @@ export {
 } from "./hooks";
 
 // =============================================================================
+// TanStack Query Integration
+// =============================================================================
+
+export {
+  createTanstackQueryUtils,
+  type TanstackQueryUtils,
+  type CreateTanstackQueryUtilsOptions,
+  type QueryOptionsResult,
+  type MutationOptionsResult,
+  type KeyOptions,
+} from "./tanstack";
+
+// =============================================================================
 // Utilities
 // =============================================================================
 

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useGreet, rpc } from "../rpc/contract";
+import { useQuery } from "@tanstack/react-query";
+import { orpc, rpc } from "../rpc/contract";
 
 function DirectCallDemo() {
   const [name, setName] = useState("");
@@ -80,7 +81,8 @@ function DirectCallDemo() {
 
 function HookDemo() {
   const [name, setName] = useState("World");
-  const { data, isLoading, error, refetch } = useGreet(name, {
+  const { data, isLoading, error, refetch } = useQuery({
+    ...orpc.greet.queryOptions({ input: { name } }),
     enabled: name.length > 0,
   });
 
@@ -146,7 +148,8 @@ function HookDemo() {
 
 function ValidationDemo() {
   const [name, setName] = useState("");
-  const { data, isLoading, error } = useGreet(name, {
+  const { data, isLoading, error } = useQuery({
+    ...orpc.greet.queryOptions({ input: { name } }),
     enabled: name.length > 0,
   });
 

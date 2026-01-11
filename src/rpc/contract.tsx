@@ -9,6 +9,7 @@
 
 import {
   createClientWithSubscriptions,
+  createTanstackQueryUtils,
   useSubscription,
   isRpcError,
   hasErrorCode,
@@ -21,10 +22,7 @@ import {
 import {
   QueryClient,
   QueryClientProvider,
-  useQuery,
-  useMutation,
-  type UseQueryOptions,
-  type UseMutationOptions,
+  useQueryClient,
 } from "@tanstack/react-query";
 import { createContext, useContext, type ReactNode } from "react";
 
@@ -161,6 +159,31 @@ export const rpc = createClientWithSubscriptions<AppContract>({
 });
 
 // =============================================================================
+// TanStack Query Utils (oRPC-style API)
+// =============================================================================
+
+/**
+ * TanStack Query utilities for the RPC client.
+ * 
+ * @example
+ * ```typescript
+ * // Query
+ * const { data } = useQuery(orpc.user.get.queryOptions({ input: { id: 1 } }));
+ * const { data } = useQuery(orpc.health.queryOptions());
+ * 
+ * // Mutation
+ * const { mutate } = useMutation(orpc.user.create.mutationOptions());
+ * 
+ * // Cache invalidation
+ * queryClient.invalidateQueries({ queryKey: orpc.user.key() });
+ * 
+ * // Direct call
+ * const user = await orpc.user.get.call({ id: 1 });
+ * ```
+ */
+export const orpc = createTanstackQueryUtils<AppContract>(rpc);
+
+// =============================================================================
 // Query Client
 // =============================================================================
 
@@ -189,118 +212,6 @@ export function RpcProvider({ children }: { children: ReactNode }) {
 
 export function useRpc() {
   return useContext(RpcContext);
-}
-
-// =============================================================================
-// Query Keys
-// =============================================================================
-
-export const queryKeys = {
-  health: ["health"] as const,
-  greet: (name: string) => ["greet", name] as const,
-  user: {
-    all: ["user"] as const,
-    list: () => ["user", "list"] as const,
-    detail: (id: number) => ["user", "detail", id] as const,
-  },
-  chat: {
-    history: (roomId: string) => ["chat", "history", roomId] as const,
-  },
-} as const;
-
-// =============================================================================
-// Typed Query Hooks (using TanStack Query)
-// =============================================================================
-
-/** Health check */
-export function useHealth(
-  options?: Omit<UseQueryOptions<HealthResponse, RpcError>, "queryKey" | "queryFn">
-) {
-  return useQuery({
-    queryKey: queryKeys.health,
-    queryFn: () => rpc.health(),
-    ...options,
-  });
-}
-
-/** Greet */
-export function useGreet(
-  name: string,
-  options?: Omit<UseQueryOptions<string, RpcError>, "queryKey" | "queryFn">
-) {
-  return useQuery({
-    queryKey: queryKeys.greet(name),
-    queryFn: () => rpc.greet({ name }),
-    ...options,
-  });
-}
-
-/** Get user by ID */
-export function useUser(
-  id: number,
-  options?: Omit<UseQueryOptions<User, RpcError>, "queryKey" | "queryFn">
-) {
-  return useQuery({
-    queryKey: queryKeys.user.detail(id),
-    queryFn: () => rpc.user.get({ id }),
-    enabled: id > 0,
-    ...options,
-  });
-}
-
-/** List all users */
-export function useUsers(
-  options?: Omit<UseQueryOptions<User[], RpcError>, "queryKey" | "queryFn">
-) {
-  return useQuery({
-    queryKey: queryKeys.user.list(),
-    queryFn: () => rpc.user.list(),
-    ...options,
-  });
-}
-
-// =============================================================================
-// Typed Mutation Hooks (using TanStack Query)
-// =============================================================================
-
-/** Create user */
-export function useCreateUser(
-  options?: Omit<UseMutationOptions<User, RpcError, CreateUserInput>, "mutationFn">
-) {
-  return useMutation({
-    mutationFn: (input: CreateUserInput) => rpc.user.create(input),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.user.all });
-    },
-    ...options,
-  });
-}
-
-/** Update user */
-export function useUpdateUser(
-  options?: Omit<UseMutationOptions<User, RpcError, UpdateUserInput>, "mutationFn">
-) {
-  return useMutation({
-    mutationFn: (input: UpdateUserInput) => rpc.user.update(input),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.user.detail(data.id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.user.list() });
-    },
-    ...options,
-  });
-}
-
-/** Delete user */
-export function useDeleteUser(
-  options?: Omit<UseMutationOptions<SuccessResponse, RpcError, { id: number }>, "mutationFn">
-) {
-  return useMutation({
-    mutationFn: (input: { id: number }) => rpc.user.delete(input),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.user.all });
-    },
-    ...options,
-  });
 }
 
 // =============================================================================
@@ -359,5 +270,5 @@ export const stream = rpc.stream;
 export const chat = rpc.chat;
 
 // Re-export utilities
-export { isRpcError, hasErrorCode, getProcedures, useSubscription };
+export { isRpcError, hasErrorCode, getProcedures, useSubscription, useQueryClient };
 export type { RpcError, SubscriptionResult, SubscriptionHookOptions };

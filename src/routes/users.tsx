@@ -1,11 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  useUsers,
-  useCreateUser,
-  useDeleteUser,
-  type User,
-} from "../rpc/contract";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { orpc, useQueryClient, type User } from "../rpc/contract";
 
 function UserCard({
   user,
@@ -64,10 +60,13 @@ function UserCard({
 function CreateUserForm({ onSuccess }: { onSuccess: () => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const createUser = useCreateUser({
+  const queryClient = useQueryClient();
+  const createUser = useMutation({
+    ...orpc.user.create.mutationOptions(),
     onSuccess: () => {
       setName("");
       setEmail("");
+      queryClient.invalidateQueries({ queryKey: orpc.user.key() });
       onSuccess();
     },
   });
@@ -141,8 +140,15 @@ function CreateUserForm({ onSuccess }: { onSuccess: () => void }) {
 }
 
 function UsersPage() {
-  const { data: users, isLoading, error, refetch } = useUsers();
-  const deleteUser = useDeleteUser({ onSuccess: () => refetch() });
+  const { data: users, isLoading, error, refetch } = useQuery(orpc.user.list.queryOptions());
+  const queryClient = useQueryClient();
+  const deleteUser = useMutation({
+    ...orpc.user.delete.mutationOptions(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orpc.user.key() });
+      refetch();
+    },
+  });
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const handleDelete = async (id: number) => {
