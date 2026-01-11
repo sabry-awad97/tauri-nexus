@@ -8,8 +8,7 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./styles.css": "./src/styles.css"
+    }
   },
   "files": [
     "src"

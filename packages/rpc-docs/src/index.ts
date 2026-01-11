@@ -1,21 +1,80 @@
 // =============================================================================
 // API Documentation Module
 // =============================================================================
-// Exports for the OpenAPI-like documentation component.
+// Headless primitives for building API documentation UIs.
 
-// Components
-export { ApiDocs, type ApiDocsProps } from "./ApiDocs";
-export { ProcedureCard, type ProcedureCardProps } from "./ProcedureCard";
-export { TypeRenderer, type TypeRendererProps } from "./TypeRenderer";
-export { FilterBar, type FilterBarProps } from "./FilterBar";
-export { ProcedureTester, type ProcedureTesterProps } from "./ProcedureTester";
-export { InputEditor, type InputEditorProps } from "./InputEditor";
-export { ResponseViewer, type ResponseViewerProps } from "./ResponseViewer";
+// =============================================================================
+// Headless Primitives
+// =============================================================================
+export {
+  // Provider & Context
+  ApiDocsProvider,
+  useApiDocsContext,
+  type ApiDocsContextValue,
+  type ApiDocsProviderProps,
 
+  // Root Layout Components
+  ApiDocsRoot,
+  ApiDocsHeader,
+  ApiDocsTitle,
+  ApiDocsDescription,
+  ApiDocsVersion,
+  ApiDocsActions,
+  ApiDocsContent,
+  ApiDocsEmpty,
+  ApiDocsLoading,
+  ApiDocsError,
+  type ApiDocsRootProps,
+
+  // Filter Components
+  ApiDocsSearch,
+  ApiDocsTypeFilter,
+  ApiDocsTypeFilterButton,
+  ApiDocsCount,
+  type ApiDocsSearchProps,
+  type ApiDocsTypeFilterProps,
+  type ApiDocsCountProps,
+
+  // Procedure Components
+  ApiDocsProcedureList,
+  ApiDocsProcedureGroup,
+  ApiDocsProcedureCard,
+  ApiDocsProcedureHeader,
+  ApiDocsProcedureBadge,
+  ApiDocsProcedurePath,
+  ApiDocsProcedureDeprecated,
+  ApiDocsProcedureDescription,
+  ApiDocsProcedureDetails,
+  ApiDocsProcedureTags,
+  ApiDocsProcedureSchema,
+  useCurrentProcedure,
+  type ApiDocsProcedureListProps,
+  type ApiDocsProcedureGroupProps,
+  type ApiDocsProcedureCardProps,
+
+  // Tester Components
+  ApiDocsTester,
+  ApiDocsTesterInput,
+  ApiDocsTesterExecute,
+  ApiDocsTesterResponse,
+  useApiDocsTester,
+  useCurrentTester,
+  type ApiDocsTesterProps,
+  type ApiDocsTesterState,
+
+  // Type Renderer
+  ApiDocsTypeRenderer,
+  type ApiDocsTypeRendererProps,
+} from "./primitives";
+
+// =============================================================================
 // Hooks
+// =============================================================================
 export { useRouterSchema } from "./useRouterSchema";
 
+// =============================================================================
 // Utilities
+// =============================================================================
 export {
   groupProcedures,
   filterProcedures,
@@ -23,13 +82,16 @@ export {
   generatePlaceholderJson,
 } from "./utils";
 
+// =============================================================================
 // Types
+// =============================================================================
 export type {
   RouterSchema,
   ProcedureSchema,
   TypeSchema,
   ProcedureType,
   ProcedureGroup,
+  ProcedureEntry,
   FilterState,
   FilterResult,
 } from "./types";
