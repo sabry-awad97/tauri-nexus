@@ -557,3 +557,15 @@ export type InferClientOutputUnion<T> = T extends { type: ProcedureType; input: 
   : T extends object
     ? { [K in keyof T]: InferClientOutputUnion<T[K]> }[keyof T]
     : never;
+
+/**
+ * Infer the client context type from a client (placeholder for link-based clients).
+ * For actual context inference from TauriLink, use InferLinkContext from ./link.
+ * 
+ * @example
+ * ```typescript
+ * // For link-based clients, import from ./link:
+ * import { InferLinkContext, InferClientContext } from './link';
+ * ```
+ */
+export type InferClientContext<T> = T extends { __context?: infer C } ? C : unknown;

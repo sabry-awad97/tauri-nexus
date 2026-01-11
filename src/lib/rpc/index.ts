@@ -95,6 +95,7 @@ export type {
   InferClientProcedureTypes,
   InferClientInputUnion,
   InferClientOutputUnion,
+  InferClientContext as InferContractClientContext,
 } from "./types";
 
 // Contract builder helpers
@@ -165,6 +166,32 @@ export {
   type InfiniteOptionsResult,
   type KeyOptions,
 } from "./tanstack";
+
+// =============================================================================
+// TauriLink (oRPC-style Link Abstraction)
+// =============================================================================
+
+export {
+  TauriLink,
+  createClientFromLink,
+  // Interceptor helpers
+  onError,
+  logging,
+  retry,
+  // Types
+  type TauriLinkConfig,
+  type LinkRequestContext,
+  type LinkResponse,
+  type LinkInterceptor,
+  type LinkCallOptions,
+  type LinkSubscribeOptions,
+  type LinkRouterClient,
+  type ErrorHandler,
+  type RequestHandler,
+  type ResponseHandler,
+  type InferLinkContext,
+  type InferClientContext,
+} from "./link";
 
 // =============================================================================
 // Utilities
