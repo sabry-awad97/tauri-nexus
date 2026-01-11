@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { rpc } from "../rpc/contract";
-import { useBatch } from "../lib/rpc";
+import { useBatch } from "@tauri-nexus/rpc-react";
 
 interface BatchResultDisplay {
   id: string;

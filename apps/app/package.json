@@ -20,6 +20,9 @@
     "@tanstack/router-plugin": "^1.147.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-nexus/rpc-core": "workspace:*",
+    "@tauri-nexus/rpc-react": "workspace:*",
+    "@tauri-nexus/rpc-docs": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zod": "^4.3.5"

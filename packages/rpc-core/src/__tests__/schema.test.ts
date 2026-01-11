@@ -9,8 +9,8 @@ import {
   createValidationInterceptor,
   buildSchemaMap,
   type SchemaContract,
-} from "../schema";
-import type { LinkRequestContext } from "../link";
+  type LinkRequestContext,
+} from "@tauri-nexus/rpc-core";
 
 // =============================================================================
 // Test Helpers

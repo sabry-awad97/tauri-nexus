@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ApiDocs } from "../lib/rpc/docs";
+import { ApiDocs } from "@tauri-nexus/rpc-docs";
 
 export const Route = createFileRoute("/docs")({
   component: DocsPage,

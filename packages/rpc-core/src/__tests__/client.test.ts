@@ -17,8 +17,9 @@ import {
   createError,
   validatePath,
   type RpcClientConfig,
-} from "../client";
-import type { RpcError, Middleware } from "../types";
+  type RpcError,
+  type Middleware,
+} from "@tauri-nexus/rpc-core";
 
 // Mock the invoke function
 vi.mock("@tauri-apps/api/core", () => ({

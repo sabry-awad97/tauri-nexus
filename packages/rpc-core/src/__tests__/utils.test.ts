@@ -15,8 +15,8 @@ import {
   deduplicationKey,
   stableStringify,
   defaultRetryConfig,
-} from "../utils";
-import type { RpcError } from "../types";
+} from "@tauri-nexus/rpc-core";
+import type { RpcError } from "@tauri-nexus/rpc-core";
 
 // Mock invoke
 vi.mock("@tauri-apps/api/core", () => ({

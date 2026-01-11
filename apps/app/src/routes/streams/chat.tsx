@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
-import { subscribe } from "../../lib/rpc";
-import { useSubscription } from "../../lib/rpc/hooks";
+import { subscribe, useSubscription } from "@tauri-nexus/rpc-react";
 import type { ChatMessage } from "../../rpc/contract";
 
 const ROOMS = [

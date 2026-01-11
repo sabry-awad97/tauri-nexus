@@ -10,7 +10,7 @@ import {
   configureRpc,
   type RpcError,
   type LinkCallOptions,
-} from "../lib/rpc";
+} from "@tauri-nexus/rpc-react";
 import type { AppContract } from "../rpc/contract";
 
 // =============================================================================

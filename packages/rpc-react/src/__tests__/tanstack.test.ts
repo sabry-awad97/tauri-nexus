@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { describe, it, expect, vi } from "vitest";
-import { createTanstackQueryUtils } from "../tanstack";
+import { createTanstackQueryUtils } from "@tauri-nexus/rpc-react";
 
 // =============================================================================
 // Mock Client (Plain Object)

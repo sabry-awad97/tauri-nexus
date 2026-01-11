@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef } from "react";
-import { subscribe } from "../../lib/rpc";
+import { subscribe } from "@tauri-nexus/rpc-react";
 import type { CounterEvent } from "../../rpc/contract";
 
 function CounterPage() {

@@ -1,42 +1,8 @@
 // =============================================================================
-// Tauri RPC Client Library
+// @tauri-nexus/rpc-core - Vanilla TypeScript RPC Client
 // =============================================================================
-// A fully type-safe RPC client library for Tauri v2 applications.
-//
-// Features:
-// - Contract-first design: define types once, get full type safety everywhere
-// - Proxy-based client: automatic path generation from contract structure
-// - Subscriptions: async iterators with auto-reconnect support
-// - React hooks: useQuery, useMutation, useSubscription with full type inference
-// - Middleware: extensible request/response pipeline
-// - Error handling: typed errors with error codes
-//
-// Quick Start:
-// ```typescript
-// // 1. Define your contract
-// interface MyContract {
-//   health: { type: 'query'; input: void; output: { status: string } };
-//   user: {
-//     get: { type: 'query'; input: { id: number }; output: User };
-//     create: { type: 'mutation'; input: CreateUserInput; output: User };
-//   };
-//   stream: {
-//     events: { type: 'subscription'; input: void; output: Event };
-//   };
-// }
-//
-// // 2. Create a typed client
-// const rpc = createClient<MyContract>({
-//   subscriptionPaths: ['stream.events'],
-// });
-//
-// // 3. Use with full type safety!
-// const health = await rpc.health();
-// const user = await rpc.user.get({ id: 1 });
-// for await (const event of await rpc.stream.events()) {
-//   console.log(event);
-// }
-// ```
+// Core RPC client library for Tauri v2 applications.
+// No React dependencies - works with any framework.
 
 // =============================================================================
 // Core Types
@@ -156,39 +122,6 @@ export {
 } from "./event-iterator";
 
 // =============================================================================
-// React Hooks (Subscription only - use TanStack Query for queries/mutations)
-// =============================================================================
-
-export {
-  // Subscription hook (TanStack Query doesn't support streaming)
-  useSubscription,
-  // Batch hook
-  useBatch,
-  // Utility hooks
-  useIsMounted,
-  // Types
-  type SubscriptionState,
-  type SubscriptionResult,
-  type SubscriptionHookOptions,
-  type BatchState,
-  type UseBatchOptions,
-} from "./hooks";
-
-// =============================================================================
-// TanStack Query Integration
-// =============================================================================
-
-export {
-  createTanstackQueryUtils,
-  type TanstackQueryUtils,
-  type CreateTanstackQueryUtilsOptions,
-  type QueryOptionsResult,
-  type MutationOptionsResult,
-  type InfiniteOptionsResult,
-  type KeyOptions,
-} from "./tanstack";
-
-// =============================================================================
 // TauriLink (oRPC-style Link Abstraction)
 // =============================================================================
 
@@ -259,31 +192,3 @@ export {
   type InferProcedureInput,
   type InferProcedureOutput,
 } from "./schema";
-
-// =============================================================================
-// API Documentation
-// =============================================================================
-
-export {
-  // Components
-  ApiDocs,
-  ProcedureCard,
-  TypeRenderer,
-  FilterBar,
-  // Hooks
-  useRouterSchema,
-  // Utilities
-  groupProcedures,
-  filterProcedures,
-  // Types
-  type ApiDocsProps,
-  type ProcedureCardProps,
-  type TypeRendererProps,
-  type FilterBarProps,
-  type RouterSchema,
-  type ProcedureSchema,
-  type TypeSchema,
-  type ProcedureGroup,
-  type FilterState,
-  type FilterResult,
-} from "./docs";

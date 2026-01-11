@@ -3,28 +3,28 @@
 // =============================================================================
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  TauriLink,
-  createClientFromLink,
-  onError,
-  logging,
-  retry,
-  type LinkRequestContext,
-  type LinkInterceptor,
-} from "../link";
 
 // Mock Tauri invoke
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-// Mock event iterator
+// Mock event iterator at the source module level
 vi.mock("../event-iterator", () => ({
   createEventIterator: vi.fn(),
 }));
 
+import {
+  TauriLink,
+  createClientFromLink,
+  createEventIterator,
+  onError,
+  logging,
+  retry,
+  type LinkRequestContext,
+  type LinkInterceptor,
+} from "@tauri-nexus/rpc-core";
 import { invoke } from "@tauri-apps/api/core";
-import { createEventIterator } from "../event-iterator";
 
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 const mockCreateEventIterator = createEventIterator as ReturnType<typeof vi.fn>;

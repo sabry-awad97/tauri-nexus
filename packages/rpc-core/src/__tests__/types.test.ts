@@ -4,7 +4,7 @@
 // Tests for type inference utilities and contract builder helpers.
 
 import { describe, it, expect } from "vitest";
-import { query, mutation, subscription } from "../types";
+import { query, mutation, subscription } from "@tauri-nexus/rpc-core";
 
 // =============================================================================
 // Contract Builder Helper Tests

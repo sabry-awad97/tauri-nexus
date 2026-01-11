@@ -9,8 +9,14 @@ import type {
   RpcError,
   EventIterator,
   SubscriptionOptions as BaseSubscriptionOptions,
-} from "./types";
-import { isRpcError } from "./client";
+  BatchCallOptions,
+  TypedBatchResult,
+} from "@tauri-nexus/rpc-core";
+import {
+  isRpcError,
+  TypedBatchBuilder,
+  TypedBatchResponseWrapper,
+} from "@tauri-nexus/rpc-core";
 
 // =============================================================================
 // Subscription Hook Types
@@ -283,9 +289,6 @@ export function useIsMounted(): () => boolean {
 // =============================================================================
 // Batch Hook Types
 // =============================================================================
-
-import type { BatchCallOptions, TypedBatchResult } from "./types";
-import { TypedBatchBuilder, TypedBatchResponseWrapper } from "./client";
 
 export interface BatchState<TOutputMap extends Record<string, unknown>> {
   /** The batch response wrapper (null before execution) */

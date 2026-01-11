@@ -17,7 +17,7 @@ import {
   type RpcError,
   type SubscriptionResult,
   type SubscriptionHookOptions,
-} from "../lib/rpc";
+} from "@tauri-nexus/rpc-react";
 import {
   QueryClient,
   QueryClientProvider,

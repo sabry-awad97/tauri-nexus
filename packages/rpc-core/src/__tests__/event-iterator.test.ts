@@ -7,8 +7,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fc from "fast-check";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { createEventIterator, consumeEventIterator } from "../event-iterator";
-import type { RpcError } from "../types";
+import { createEventIterator, consumeEventIterator } from "@tauri-nexus/rpc-core";
+import type { RpcError } from "@tauri-nexus/rpc-core";
 
 // =============================================================================
 // Mocks

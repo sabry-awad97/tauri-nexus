@@ -10,7 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { call } from "../lib/rpc/client";
+import { call } from "@tauri-nexus/rpc-core";
 import { rpc } from "../rpc/contract";
 
 // Mock is set up in setup.ts

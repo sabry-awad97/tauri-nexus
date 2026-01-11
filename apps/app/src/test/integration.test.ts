@@ -10,7 +10,7 @@ import {
   createClientWithSubscriptions,
   configureRpc,
   type Middleware,
-} from "../index";
+} from "@tauri-nexus/rpc-react";
 
 // =============================================================================
 // Mocks

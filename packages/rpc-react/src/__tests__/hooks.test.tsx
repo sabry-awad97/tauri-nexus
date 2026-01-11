@@ -6,8 +6,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import * as fc from "fast-check";
-import { useSubscription, useIsMounted } from "../hooks";
-import type { RpcError, EventIterator } from "../types";
+import { useSubscription, useIsMounted } from "@tauri-nexus/rpc-react";
+import type { RpcError, EventIterator } from "@tauri-nexus/rpc-core";
 
 // =============================================================================
 // Test Utilities

@@ -9,10 +9,9 @@ import type { ProcedureType, RpcError } from "./types";
 import type {
   LinkInterceptor,
   LinkRequestContext,
-  TauriLink,
   LinkRouterClient,
 } from "./link";
-import { createClientFromLink } from "./link";
+import { TauriLink, createClientFromLink } from "./link";
 
 // =============================================================================
 // Core Schema Types
