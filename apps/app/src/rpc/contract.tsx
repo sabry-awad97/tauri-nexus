@@ -1,0 +1,293 @@
+// =============================================================================
+// RPC Contract Definition
+// =============================================================================
+// Define your RPC contract here. The contract specifies all available
+// procedures (queries, mutations, subscriptions) and their input/output types.
+//
+// This is the single source of truth for your RPC API types.
+// The client will automatically infer all types from this contract.
+
+import {
+  createClientWithSubscriptions,
+  createTanstackQueryUtils,
+  useSubscription,
+  isRpcError,
+  hasErrorCode,
+  getProcedures,
+  type RpcError,
+  type SubscriptionResult,
+  type SubscriptionHookOptions,
+} from "@tauri-nexus/rpc-react";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { createContext, useContext, type ReactNode } from "react";
+
+// =============================================================================
+// Domain Types
+// =============================================================================
+
+/** User entity */
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: string;
+}
+
+/** Input for creating a user */
+export interface CreateUserInput {
+  name: string;
+  email: string;
+}
+
+/** Input for updating a user */
+export interface UpdateUserInput {
+  id: number;
+  name?: string;
+  email?: string;
+}
+
+/** Health check response */
+export interface HealthResponse {
+  status: string;
+  version: string;
+}
+
+/** Generic success response */
+export interface SuccessResponse {
+  success: boolean;
+  message?: string;
+}
+
+// =============================================================================
+// Subscription Types
+// =============================================================================
+
+/** Counter subscription input */
+export interface CounterInput {
+  start?: number;
+  maxCount?: number;
+  intervalMs?: number;
+}
+
+/** Counter event */
+export interface CounterEvent {
+  count: number;
+  timestamp: string;
+}
+
+/** Chat room subscription input */
+export interface ChatRoomInput {
+  roomId: string;
+}
+
+/** Chat message event */
+export interface ChatMessage {
+  id: string;
+  roomId: string;
+  userId: string;
+  text: string;
+  timestamp: string;
+}
+
+/** Send message input */
+export interface SendMessageInput {
+  roomId: string;
+  text: string;
+}
+
+/** Stock subscription input */
+export interface StockInput {
+  symbols: string[];
+}
+
+/** Stock price event */
+export interface StockPrice {
+  symbol: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  timestamp: string;
+}
+
+// =============================================================================
+// Contract Definition
+// =============================================================================
+
+/**
+ * Application RPC Contract.
+ *
+ * Note: We don't extend ContractRouter here to preserve literal key types
+ * for type-safe batch operations. The contract still follows the same structure.
+ */
+export interface AppContract {
+  health: { type: "query"; input: void; output: HealthResponse };
+  greet: { type: "query"; input: { name: string }; output: string };
+
+  user: {
+    get: { type: "query"; input: { id: number }; output: User };
+    list: { type: "query"; input: void; output: User[] };
+    create: { type: "mutation"; input: CreateUserInput; output: User };
+    update: { type: "mutation"; input: UpdateUserInput; output: User };
+    delete: {
+      type: "mutation";
+      input: { id: number };
+      output: SuccessResponse;
+    };
+  };
+
+  stream: {
+    counter: {
+      type: "subscription";
+      input: CounterInput;
+      output: CounterEvent;
+    };
+    stocks: { type: "subscription"; input: StockInput; output: StockPrice };
+    chat: { type: "subscription"; input: ChatRoomInput; output: ChatMessage };
+    time: { type: "subscription"; input: void; output: string };
+  };
+
+  chat: {
+    send: { type: "mutation"; input: SendMessageInput; output: ChatMessage };
+    history: {
+      type: "query";
+      input: { roomId: string; limit?: number };
+      output: ChatMessage[];
+    };
+  };
+}
+
+// =============================================================================
+// Client Instance
+// =============================================================================
+
+const SUBSCRIPTION_PATHS = [
+  "stream.counter",
+  "stream.stocks",
+  "stream.chat",
+  "stream.time",
+] as const;
+
+export const rpc = createClientWithSubscriptions<AppContract>({
+  subscriptionPaths: [...SUBSCRIPTION_PATHS],
+});
+
+// =============================================================================
+// TanStack Query Utils (oRPC-style API)
+// =============================================================================
+
+/**
+ * TanStack Query utilities for the RPC client.
+ *
+ * @example
+ * ```typescript
+ * // Query
+ * const { data } = useQuery(orpc.user.get.queryOptions({ input: { id: 1 } }));
+ * const { data } = useQuery(orpc.health.queryOptions());
+ *
+ * // Mutation
+ * const { mutate } = useMutation(orpc.user.create.mutationOptions());
+ *
+ * // Cache invalidation
+ * queryClient.invalidateQueries({ queryKey: orpc.user.key() });
+ *
+ * // Direct call
+ * const user = await orpc.user.get.call({ id: 1 });
+ * ```
+ */
+export const orpc = createTanstackQueryUtils<AppContract>(rpc);
+
+// =============================================================================
+// Query Client
+// =============================================================================
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60, // 1 minute
+      retry: 1,
+    },
+  },
+});
+
+// =============================================================================
+// RPC Provider
+// =============================================================================
+
+const RpcContext = createContext<typeof rpc>(rpc);
+
+export function RpcProvider({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RpcContext.Provider value={rpc}>{children}</RpcContext.Provider>
+    </QueryClientProvider>
+  );
+}
+
+export function useRpc() {
+  return useContext(RpcContext);
+}
+
+// =============================================================================
+// Typed Subscription Hooks
+// =============================================================================
+
+/** Counter subscription */
+export function useCounter(
+  input: CounterInput = {},
+  options?: SubscriptionHookOptions<CounterEvent>,
+): SubscriptionResult<CounterEvent> {
+  return useSubscription(
+    () => rpc.stream.counter(input),
+    [input.start, input.maxCount, input.intervalMs],
+    options,
+  );
+}
+
+/** Time subscription */
+export function useTime(
+  options?: SubscriptionHookOptions<string>,
+): SubscriptionResult<string> {
+  return useSubscription(() => rpc.stream.time(), [], options);
+}
+
+/** Stock subscription */
+export function useStocks(
+  symbols: string[],
+  options?: SubscriptionHookOptions<StockPrice>,
+): SubscriptionResult<StockPrice> {
+  return useSubscription(
+    () => rpc.stream.stocks({ symbols }),
+    [symbols.join(",")],
+    options,
+  );
+}
+
+/** Chat subscription */
+export function useChat(
+  roomId: string,
+  options?: SubscriptionHookOptions<ChatMessage>,
+): SubscriptionResult<ChatMessage> {
+  return useSubscription(() => rpc.stream.chat({ roomId }), [roomId], options);
+}
+
+// =============================================================================
+// Namespace Exports
+// =============================================================================
+
+export const user = rpc.user;
+export const stream = rpc.stream;
+export const chat = rpc.chat;
+
+// Re-export utilities
+export {
+  isRpcError,
+  hasErrorCode,
+  getProcedures,
+  useSubscription,
+  useQueryClient,
+};
+export type { RpcError, SubscriptionResult, SubscriptionHookOptions };

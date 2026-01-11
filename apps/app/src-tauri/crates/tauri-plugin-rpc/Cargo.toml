@@ -1,0 +1,25 @@
+[package]
+name = "tauri-plugin-rpc"
+version.workspace = true
+edition.workspace = true
+description = "ORPC-style type-safe RPC plugin for Tauri"
+license = "MIT"
+links = "tauri-plugin-rpc"
+
+[dependencies]
+tauri = { workspace = true, default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+regex.workspace = true
+futures.workspace = true
+lru.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[build-dependencies]
+tauri-plugin.workspace = true

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-rpc-call"
+description = "Enables the rpc_call command without any pre-configured scope."
+commands.allow = ["rpc_call"]
+
+[[permission]]
+identifier = "deny-rpc-call"
+description = "Denies the rpc_call command without any pre-configured scope."
+commands.deny = ["rpc_call"]

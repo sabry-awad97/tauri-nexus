@@ -1,0 +1,27 @@
+{
+  "name": "@tauri-nexus/rpc-core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "files": ["src"],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "fast-check": "^3.23.0",
+    "typescript": "~5.9.3",
+    "vitest": "^4.0.16"
+  }
+}
