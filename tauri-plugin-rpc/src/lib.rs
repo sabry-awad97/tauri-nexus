@@ -321,13 +321,18 @@ pub use plugin::{
     DynRouter, SubscribeRequest, SubscriptionFuture, init, init_with_config, validate_input_size,
     validate_path, validate_subscription_id,
 };
-pub use procedure::{ProcedureBuilder, RegisteredProcedure, ValidatedProcedureBuilder};
+pub use procedure::{
+    ContextTransformedBuilder, ContextTransformedTypedBuilder, ContextTransformedValidatedBuilder,
+    ContextTransformer, ProcedureBuilder, RegisteredProcedure, ValidatedProcedureBuilder,
+};
 pub use rate_limit::{
     RateLimit, RateLimitConfig, RateLimitStrategy, RateLimitUsage, RateLimiter,
     rate_limit_middleware,
 };
 pub use router::{
-    CompiledRouter, ProcedureChain, Router, TypedProcedureChain, ValidatedProcedureChain,
+    CompiledRouter, ContextTransformedChain, ContextTransformedTypedChain,
+    ContextTransformedValidatedChain, ProcedureChain, Router, TypedProcedureChain,
+    ValidatedProcedureChain,
 };
 pub use subscription::{
     CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, EventSender,
@@ -362,6 +367,14 @@ pub mod prelude {
         ConfigValidationError,
         // Context
         Context,
+        // Context transformation (ProcedureBuilder)
+        ContextTransformedBuilder,
+        // Context transformation (Router)
+        ContextTransformedChain,
+        ContextTransformedTypedBuilder,
+        ContextTransformedTypedChain,
+        ContextTransformedValidatedBuilder,
+        ContextTransformedValidatedChain,
         EmptyContext,
         ErrorCodeMapper,
         ErrorConfig,

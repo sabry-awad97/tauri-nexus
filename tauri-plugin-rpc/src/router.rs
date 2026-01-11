@@ -1012,6 +1012,40 @@ impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
         self
     }
 
+    /// Transform the context type before the handler executes.
+    ///
+    /// This method allows you to enrich or transform the context with additional
+    /// data before the handler is called. The transformer function receives the
+    /// original context and returns a new context type.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let router = Router::new()
+    ///     .context(AppContext::default())
+    ///     .procedure("users.profile")
+    ///         .context(|ctx: Context<AppContext>| async move {
+    ///             let user = authenticate(&ctx).await?;
+    ///             Ok(AuthContext { app: ctx.inner().clone(), user })
+    ///         })
+    ///         .input::<GetProfileInput>()
+    ///         .query(get_profile); // Handler receives Context<AuthContext>
+    /// ```
+    pub fn context<NewCtx, F, Fut>(self, transformer: F) -> ContextTransformedChain<Ctx, NewCtx>
+    where
+        NewCtx: Clone + Send + Sync + 'static,
+        F: Fn(Context<Ctx>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = RpcResult<NewCtx>> + Send + 'static,
+    {
+        ContextTransformedChain {
+            router: self.router,
+            path: self.path,
+            middleware: self.middleware,
+            output_transformer: self.output_transformer,
+            context_transformer: Arc::new(move |ctx| Box::pin(transformer(ctx))),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
     /// Register this procedure as a query with no input (unit type).
     pub fn query<H, Fut, Output>(self, handler: H) -> Router<Ctx>
     where
@@ -1280,6 +1314,427 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
             core_handler
         } else {
             let handler_as_next: Next<Ctx> = Arc::new(move |ctx, req| {
+                let handler = core_handler.clone();
+                Box::pin(async move { (handler)(ctx, req.input).await })
+            });
+
+            // Chain middleware in reverse order (last added = innermost)
+            let mut chain = handler_as_next;
+            for mw in middleware.into_iter().rev() {
+                let next = chain;
+                chain = Arc::new(move |ctx, req| {
+                    let mw = mw.clone();
+                    let next = next.clone();
+                    Box::pin(async move { (mw)(ctx, req, next).await })
+                });
+            }
+
+            let final_chain = chain;
+            Arc::new(move |ctx, input| {
+                let chain = final_chain.clone();
+                Box::pin(async move {
+                    let req = Request {
+                        path: String::new(),
+                        input,
+                        procedure_type,
+                    };
+                    (chain)(ctx, req).await
+                })
+            })
+        };
+
+        let full_path = self.router.make_path(&self.path);
+        self.router.procedures.insert(
+            full_path,
+            Procedure::Handler {
+                handler: final_handler,
+                procedure_type,
+            },
+        );
+        self.router
+    }
+}
+
+// =============================================================================
+// Context Transformed Chain (Fluent API with context transformation)
+// =============================================================================
+
+/// Type alias for a context transformer function in the router.
+type RouterContextTransformer<FromCtx, ToCtx> = Arc<
+    dyn Fn(Context<FromCtx>) -> Pin<Box<dyn Future<Output = RpcResult<ToCtx>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// A procedure chain with context transformation.
+///
+/// This struct is returned by `ProcedureChain::context()` and allows you to
+/// transform the context type before the handler executes.
+pub struct ContextTransformedChain<
+    OrigCtx: Clone + Send + Sync + 'static,
+    NewCtx: Clone + Send + Sync + 'static,
+> {
+    router: Router<OrigCtx>,
+    path: String,
+    middleware: Vec<MiddlewareFn<OrigCtx>>,
+    output_transformer:
+        Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
+    context_transformer: RouterContextTransformer<OrigCtx, NewCtx>,
+    _phantom: std::marker::PhantomData<NewCtx>,
+}
+
+impl<OrigCtx: Clone + Send + Sync + 'static, NewCtx: Clone + Send + Sync + 'static>
+    ContextTransformedChain<OrigCtx, NewCtx>
+{
+    /// Add middleware to this procedure.
+    ///
+    /// Note: Middleware operates on the original context type, before transformation.
+    pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
+    where
+        F: Fn(Context<OrigCtx>, Request, Next<OrigCtx>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = RpcResult<Response>> + Send + 'static,
+    {
+        self.middleware.push(Arc::new(move |ctx, req, next| {
+            Box::pin(middleware(ctx, req, next))
+        }));
+        self
+    }
+
+    /// Set an output transformer for this procedure.
+    pub fn output<F>(mut self, transformer: F) -> Self
+    where
+        F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
+    {
+        self.output_transformer = Some(Arc::new(transformer));
+        self
+    }
+
+    /// Set the input type for this procedure.
+    pub fn input<Input>(self) -> ContextTransformedTypedChain<OrigCtx, NewCtx, Input>
+    where
+        Input: DeserializeOwned + Send + 'static,
+    {
+        ContextTransformedTypedChain {
+            router: self.router,
+            path: self.path,
+            middleware: self.middleware,
+            output_transformer: self.output_transformer,
+            context_transformer: self.context_transformer,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Set the input type with validation for this procedure.
+    pub fn input_validated<Input>(self) -> ContextTransformedValidatedChain<OrigCtx, NewCtx, Input>
+    where
+        Input: DeserializeOwned + Validate + Send + 'static,
+    {
+        ContextTransformedValidatedChain {
+            router: self.router,
+            path: self.path,
+            middleware: self.middleware,
+            output_transformer: self.output_transformer,
+            context_transformer: self.context_transformer,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Register this procedure as a query with no input (unit type).
+    pub fn query<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
+    where
+        H: Fn(Context<NewCtx>, ()) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.input::<()>().query(handler)
+    }
+
+    /// Register this procedure as a mutation with no input (unit type).
+    pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
+    where
+        H: Fn(Context<NewCtx>, ()) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.input::<()>().mutation(handler)
+    }
+}
+
+/// A context-transformed typed procedure chain.
+pub struct ContextTransformedTypedChain<
+    OrigCtx: Clone + Send + Sync + 'static,
+    NewCtx: Clone + Send + Sync + 'static,
+    Input,
+> {
+    router: Router<OrigCtx>,
+    path: String,
+    middleware: Vec<MiddlewareFn<OrigCtx>>,
+    output_transformer:
+        Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
+    context_transformer: RouterContextTransformer<OrigCtx, NewCtx>,
+    _phantom: std::marker::PhantomData<(NewCtx, Input)>,
+}
+
+impl<
+    OrigCtx: Clone + Send + Sync + 'static,
+    NewCtx: Clone + Send + Sync + 'static,
+    Input: DeserializeOwned + Send + 'static,
+> ContextTransformedTypedChain<OrigCtx, NewCtx, Input>
+{
+    /// Add middleware to this procedure.
+    pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
+    where
+        F: Fn(Context<OrigCtx>, Request, Next<OrigCtx>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = RpcResult<Response>> + Send + 'static,
+    {
+        self.middleware.push(Arc::new(move |ctx, req, next| {
+            Box::pin(middleware(ctx, req, next))
+        }));
+        self
+    }
+
+    /// Set an output transformer for this procedure.
+    pub fn output<F>(mut self, transformer: F) -> Self
+    where
+        F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
+    {
+        self.output_transformer = Some(Arc::new(transformer));
+        self
+    }
+
+    /// Register this procedure as a query.
+    pub fn query<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
+    where
+        H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.build_procedure(ProcedureType::Query, handler)
+    }
+
+    /// Register this procedure as a mutation.
+    pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
+    where
+        H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.build_procedure(ProcedureType::Mutation, handler)
+    }
+
+    fn build_procedure<H, Fut, Output>(
+        mut self,
+        procedure_type: ProcedureType,
+        handler: H,
+    ) -> Router<OrigCtx>
+    where
+        H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        let output_transformer = self.output_transformer;
+        let context_transformer = self.context_transformer;
+        let middleware = self.middleware;
+
+        // Create the core handler with context transformation
+        let core_handler: BoxedHandler<OrigCtx> = Arc::new(move |ctx, input_value| {
+            let handler = handler.clone();
+            let output_transformer = output_transformer.clone();
+            let context_transformer = context_transformer.clone();
+
+            Box::pin(async move {
+                // Transform context
+                let new_ctx_state = (context_transformer)(ctx).await?;
+                let new_ctx = Context::new(new_ctx_state);
+
+                // Deserialize input
+                let input: Input = serde_json::from_value(input_value)
+                    .map_err(|e| RpcError::bad_request(format!("Invalid input: {}", e)))?;
+
+                // Call handler with transformed context
+                let output = handler(new_ctx, input).await?;
+
+                // Serialize output
+                let mut output_value = serde_json::to_value(output).map_err(|e| {
+                    RpcError::internal(format!("Failed to serialize output: {}", e))
+                })?;
+
+                // Apply output transformer if present
+                if let Some(transformer) = output_transformer {
+                    output_value = transformer(output_value);
+                }
+
+                Ok(output_value)
+            })
+        });
+
+        // Wrap with per-procedure middleware if any
+        let final_handler: BoxedHandler<OrigCtx> = if middleware.is_empty() {
+            core_handler
+        } else {
+            let handler_as_next: Next<OrigCtx> = Arc::new(move |ctx, req| {
+                let handler = core_handler.clone();
+                Box::pin(async move { (handler)(ctx, req.input).await })
+            });
+
+            // Chain middleware in reverse order (last added = innermost)
+            let mut chain = handler_as_next;
+            for mw in middleware.into_iter().rev() {
+                let next = chain;
+                chain = Arc::new(move |ctx, req| {
+                    let mw = mw.clone();
+                    let next = next.clone();
+                    Box::pin(async move { (mw)(ctx, req, next).await })
+                });
+            }
+
+            let final_chain = chain;
+            Arc::new(move |ctx, input| {
+                let chain = final_chain.clone();
+                Box::pin(async move {
+                    let req = Request {
+                        path: String::new(),
+                        input,
+                        procedure_type,
+                    };
+                    (chain)(ctx, req).await
+                })
+            })
+        };
+
+        let full_path = self.router.make_path(&self.path);
+        self.router.procedures.insert(
+            full_path,
+            Procedure::Handler {
+                handler: final_handler,
+                procedure_type,
+            },
+        );
+        self.router
+    }
+}
+
+/// A context-transformed validated procedure chain.
+pub struct ContextTransformedValidatedChain<
+    OrigCtx: Clone + Send + Sync + 'static,
+    NewCtx: Clone + Send + Sync + 'static,
+    Input,
+> {
+    router: Router<OrigCtx>,
+    path: String,
+    middleware: Vec<MiddlewareFn<OrigCtx>>,
+    output_transformer:
+        Option<Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static>>,
+    context_transformer: RouterContextTransformer<OrigCtx, NewCtx>,
+    _phantom: std::marker::PhantomData<(NewCtx, Input)>,
+}
+
+impl<
+    OrigCtx: Clone + Send + Sync + 'static,
+    NewCtx: Clone + Send + Sync + 'static,
+    Input: DeserializeOwned + Validate + Send + 'static,
+> ContextTransformedValidatedChain<OrigCtx, NewCtx, Input>
+{
+    /// Add middleware to this procedure.
+    pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
+    where
+        F: Fn(Context<OrigCtx>, Request, Next<OrigCtx>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = RpcResult<Response>> + Send + 'static,
+    {
+        self.middleware.push(Arc::new(move |ctx, req, next| {
+            Box::pin(middleware(ctx, req, next))
+        }));
+        self
+    }
+
+    /// Set an output transformer for this procedure.
+    pub fn output<F>(mut self, transformer: F) -> Self
+    where
+        F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
+    {
+        self.output_transformer = Some(Arc::new(transformer));
+        self
+    }
+
+    /// Register this procedure as a query with validation.
+    pub fn query<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
+    where
+        H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.build_validated_procedure(ProcedureType::Query, handler)
+    }
+
+    /// Register this procedure as a mutation with validation.
+    pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
+    where
+        H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        self.build_validated_procedure(ProcedureType::Mutation, handler)
+    }
+
+    fn build_validated_procedure<H, Fut, Output>(
+        mut self,
+        procedure_type: ProcedureType,
+        handler: H,
+    ) -> Router<OrigCtx>
+    where
+        H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,
+        Fut: Future<Output = RpcResult<Output>> + Send + 'static,
+        Output: Serialize + Send + 'static,
+    {
+        let output_transformer = self.output_transformer;
+        let context_transformer = self.context_transformer;
+        let middleware = self.middleware;
+
+        // Create the core handler with context transformation and validation
+        let core_handler: BoxedHandler<OrigCtx> = Arc::new(move |ctx, input_value| {
+            let handler = handler.clone();
+            let output_transformer = output_transformer.clone();
+            let context_transformer = context_transformer.clone();
+
+            Box::pin(async move {
+                // Transform context
+                let new_ctx_state = (context_transformer)(ctx).await?;
+                let new_ctx = Context::new(new_ctx_state);
+
+                // Deserialize input
+                let input: Input = serde_json::from_value(input_value)
+                    .map_err(|e| RpcError::bad_request(format!("Invalid input: {}", e)))?;
+
+                // Validate input
+                let validation_result = input.validate();
+                if !validation_result.is_valid() {
+                    return Err(RpcError::validation("Validation failed").with_details(
+                        serde_json::to_value(&validation_result.errors).unwrap_or_default(),
+                    ));
+                }
+
+                // Call handler with transformed context
+                let output = handler(new_ctx, input).await?;
+
+                // Serialize output
+                let mut output_value = serde_json::to_value(output).map_err(|e| {
+                    RpcError::internal(format!("Failed to serialize output: {}", e))
+                })?;
+
+                // Apply output transformer if present
+                if let Some(transformer) = output_transformer {
+                    output_value = transformer(output_value);
+                }
+
+                Ok(output_value)
+            })
+        });
+
+        // Wrap with per-procedure middleware if any
+        let final_handler: BoxedHandler<OrigCtx> = if middleware.is_empty() {
+            core_handler
+        } else {
+            let handler_as_next: Next<OrigCtx> = Arc::new(move |ctx, req| {
                 let handler = core_handler.clone();
                 Box::pin(async move { (handler)(ctx, req.input).await })
             });
@@ -1593,6 +2048,214 @@ mod procedure_chain_tests {
         assert!(old_result.is_err());
         assert!(new_result.is_err());
         assert_eq!(old_result.unwrap_err().code, new_result.unwrap_err().code);
+    }
+
+    // Context transformation tests
+
+    #[derive(Clone)]
+    struct AuthContext {
+        user_id: String,
+        original_value: i32,
+    }
+
+    async fn auth_handler(ctx: Context<AuthContext>, input: TestInput) -> RpcResult<TestOutput> {
+        Ok(TestOutput {
+            message: format!(
+                "Hello, {}! User: {}, Value: {}",
+                input.name,
+                ctx.inner().user_id,
+                ctx.inner().original_value
+            ),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_context_transformation_basic() {
+        let router = Router::new()
+            .context(TestContext { value: 42 })
+            .procedure("users.profile")
+            .context(|ctx: Context<TestContext>| async move {
+                Ok(AuthContext {
+                    user_id: "user123".to_string(),
+                    original_value: ctx.inner().value,
+                })
+            })
+            .input::<TestInput>()
+            .query(auth_handler);
+
+        let result = router
+            .call("users.profile", serde_json::json!({"name": "World"}))
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap()["message"],
+            "Hello, World! User: user123, Value: 42"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_context_transformation_with_error() {
+        let router = Router::new()
+            .context(TestContext { value: 42 })
+            .procedure("users.profile")
+            .context(|_ctx: Context<TestContext>| async move {
+                Err::<AuthContext, _>(RpcError::unauthorized("Not authenticated"))
+            })
+            .input::<TestInput>()
+            .query(auth_handler);
+
+        let result = router
+            .call("users.profile", serde_json::json!({"name": "World"}))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, crate::RpcErrorCode::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn test_context_transformation_with_validation() {
+        async fn validated_auth_handler(
+            ctx: Context<AuthContext>,
+            input: ValidatedInput,
+        ) -> RpcResult<TestOutput> {
+            Ok(TestOutput {
+                message: format!(
+                    "Hello, {} (age {})! User: {}",
+                    input.name,
+                    input.age,
+                    ctx.inner().user_id
+                ),
+            })
+        }
+
+        let router = Router::new()
+            .context(TestContext { value: 42 })
+            .procedure("users.profile")
+            .context(|ctx: Context<TestContext>| async move {
+                Ok(AuthContext {
+                    user_id: "user456".to_string(),
+                    original_value: ctx.inner().value,
+                })
+            })
+            .input_validated::<ValidatedInput>()
+            .query(validated_auth_handler);
+
+        // Valid input
+        let result = router
+            .call(
+                "users.profile",
+                serde_json::json!({"name": "Alice", "age": 30}),
+            )
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap()["message"],
+            "Hello, Alice (age 30)! User: user456"
+        );
+
+        // Invalid input - validation should still work
+        let result = router
+            .call("users.profile", serde_json::json!({"name": "", "age": 200}))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().code,
+            crate::RpcErrorCode::ValidationError
+        );
+    }
+
+    #[tokio::test]
+    async fn test_context_transformation_mutation() {
+        let router = Router::new()
+            .context(TestContext { value: 100 })
+            .procedure("users.update")
+            .context(|ctx: Context<TestContext>| async move {
+                Ok(AuthContext {
+                    user_id: "mutator".to_string(),
+                    original_value: ctx.inner().value,
+                })
+            })
+            .input::<TestInput>()
+            .mutation(auth_handler);
+
+        let result = router
+            .call("users.update", serde_json::json!({"name": "Test"}))
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap()["message"],
+            "Hello, Test! User: mutator, Value: 100"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_context_transformation_with_output_transformer() {
+        let router = Router::new()
+            .context(TestContext { value: 42 })
+            .procedure("users.profile")
+            .context(|ctx: Context<TestContext>| async move {
+                Ok(AuthContext {
+                    user_id: "user789".to_string(),
+                    original_value: ctx.inner().value,
+                })
+            })
+            .input::<TestInput>()
+            .output(|value| {
+                serde_json::json!({
+                    "data": value,
+                    "transformed": true
+                })
+            })
+            .query(auth_handler);
+
+        let result = router
+            .call("users.profile", serde_json::json!({"name": "World"}))
+            .await;
+        assert!(result.is_ok());
+
+        let output = result.unwrap();
+        assert_eq!(output["transformed"], true);
+        assert_eq!(
+            output["data"]["message"],
+            "Hello, World! User: user789, Value: 42"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_context_transformation_with_middleware() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let middleware_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = middleware_count.clone();
+
+        let router = Router::new()
+            .context(TestContext { value: 42 })
+            .procedure("users.profile")
+            .use_middleware(move |ctx, req, next| {
+                let count = count_clone.clone();
+                async move {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    next(ctx, req).await
+                }
+            })
+            .context(|ctx: Context<TestContext>| async move {
+                Ok(AuthContext {
+                    user_id: "user_with_mw".to_string(),
+                    original_value: ctx.inner().value,
+                })
+            })
+            .input::<TestInput>()
+            .query(auth_handler);
+
+        let result = router
+            .call("users.profile", serde_json::json!({"name": "World"}))
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(middleware_count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            result.unwrap()["message"],
+            "Hello, World! User: user_with_mw, Value: 42"
+        );
     }
 }
 
