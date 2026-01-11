@@ -285,6 +285,7 @@
 
 pub mod auth;
 pub mod batch;
+pub mod cache;
 mod config;
 mod context;
 mod error;
@@ -309,6 +310,10 @@ pub use auth::{
 };
 pub use batch::{
     BatchConfig, BatchRequest, BatchResponse, BatchResult, BatchResultData, SingleRequest,
+};
+pub use cache::{
+    Cache, CacheConfig, CacheEntry, CacheStats, cache_middleware, generate_cache_key,
+    invalidation_middleware,
 };
 pub use config::{BackpressureStrategy, ConfigValidationError, RpcConfig};
 pub use context::{Context, EmptyContext};
@@ -371,6 +376,11 @@ pub mod prelude {
         BatchRequest,
         BatchResponse,
         BatchResult,
+        // Cache
+        Cache,
+        CacheConfig,
+        CacheEntry,
+        CacheStats,
         // Subscription types
         ChannelPublisher,
         // Router
@@ -452,10 +462,13 @@ pub mod prelude {
         // Functions
         auth_middleware,
         auth_with_config,
+        cache_middleware,
         event_channel,
+        generate_cache_key,
         generate_subscription_id,
         init,
         init_with_config,
+        invalidation_middleware,
         logging_middleware,
         logging_middleware_with_logger,
         rate_limit_middleware,
