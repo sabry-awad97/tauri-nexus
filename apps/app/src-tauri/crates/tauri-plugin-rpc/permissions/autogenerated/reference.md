@@ -19,6 +19,7 @@ Default permissions for the RPC plugin
 <th>Description</th>
 </tr>
 
+
 <tr>
 <td>
 

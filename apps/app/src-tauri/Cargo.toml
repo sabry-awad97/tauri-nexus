@@ -1,0 +1,73 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["you"]
+
+[workspace.dependencies]
+# Tauri
+tauri = { version = "2.9.5", features = [] }
+tauri-build = { version = "2.5.3", features = [] }
+tauri-plugin = { version = "2.5.2", features = ["build"] }
+tauri-plugin-opener = "2.5.3"
+
+# Serialization
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+# Async
+tokio = { version = "1.49.0", features = [
+    "time",
+    "sync",
+    "rt-multi-thread",
+    "macros",
+] }
+tokio-stream = "0.1.18"
+async-stream = "0.3.6"
+futures = "0.3.31"
+
+# Date/Time
+chrono = { version = "0.4.42", features = ["serde"] }
+
+# Error handling
+thiserror = "2.0.17"
+
+# Utilities
+uuid = { version = "1.19.0", features = ["v7", "serde"] }
+tracing = "0.1.44"
+regex = "1.12.2"
+lru = "0.16.3"
+
+# Testing
+proptest = "1.9.0"
+
+[package]
+name = "tauri-app"
+version.workspace = true
+description = "A Tauri App"
+authors.workspace = true
+edition.workspace = true
+
+[lib]
+name = "tauri_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+tauri.workspace = true
+tauri-plugin-opener.workspace = true
+tauri-plugin-rpc = { path = "crates/tauri-plugin-rpc" }
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+async-stream.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
