@@ -208,3 +208,33 @@ export {
   defaultRetryConfig,
   type RetryConfig,
 } from "./utils";
+
+// =============================================================================
+// Zod Schema Validation
+// =============================================================================
+
+export {
+  // Contract builder
+  procedure,
+  router,
+  mergeRouters,
+  ProcedureBuilder,
+  // Validation
+  createValidationInterceptor,
+  createValidatedClient,
+  buildSchemaMap,
+  // Types
+  type SchemaProcedure,
+  type SchemaContract,
+  type ValidationConfig,
+  type ValidationErrorDetails,
+  type SchemaContractToContract,
+  // Type inference utilities
+  type InferSchemaInput,
+  type InferSchemaOutput,
+  type InferSchemaProcedureType,
+  type InferContractInputs,
+  type InferContractOutputs,
+  type InferProcedureInput,
+  type InferProcedureOutput,
+} from "./schema";

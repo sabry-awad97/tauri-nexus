@@ -11,9 +11,10 @@
 <p align="center">
   <a href="#-features">Features</a> •
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-client-api">Client API</a> •
+  <a href="#-taurilink">TauriLink</a> •
+  <a href="#-zod-validation">Zod Validation</a> •
+  <a href="#-tanstack-query">TanStack Query</a> •
   <a href="#-subscriptions">Subscriptions</a> •
-  <a href="#-react-hooks">React Hooks</a> •
   <a href="#-error-handling">Error Handling</a>
 </p>
 
@@ -21,34 +22,32 @@
 
 ## ✨ Features
 
-| Feature               | Description                                        |
-| --------------------- | -------------------------------------------------- |
-| 🔒 **Type-Safe**      | Full TypeScript inference from contract definition |
-| 🎯 **Contract-First** | Define types once, get safety everywhere           |
-| 📡 **Subscriptions**  | Async iterators with auto-reconnect support        |
-| ⚛️ **React Hooks**    | `useQuery`, `useMutation`, `useSubscription`       |
-| 🔗 **Middleware**     | Extensible request/response pipeline               |
-| 🛡️ **Error Handling** | Typed errors with error codes                      |
-| 🔄 **Auto-Reconnect** | Resilient subscription connections                 |
+| Feature               | Description                                         |
+| --------------------- | --------------------------------------------------- |
+| 🔒 **Type-Safe**      | Full TypeScript inference from contract definition  |
+| 🎯 **Contract-First** | Define types once, get safety everywhere            |
+| 🛡️ **Zod Validation** | Runtime validation with automatic type inference    |
+| 🔗 **TauriLink**      | oRPC-style interceptors and middleware              |
+| ⚛️ **TanStack Query** | First-class integration with query/mutation options |
+| 📡 **Subscriptions**  | Async iterators with auto-reconnect support         |
+| 🔄 **Auto-Reconnect** | Resilient subscription connections                  |
 
 ---
 
 ## 🏗️ Architecture
 
-### Client Flow
-
 ```mermaid
 flowchart TB
     subgraph Application
         UI[React Components]
-        HK[Hooks Layer]
+        TQ[TanStack Query]
         CL[RPC Client]
     end
 
     subgraph Client Library
-        PX[Proxy Client]
-        MW[Middleware Chain]
-        CF[call / subscribe]
+        ZV[Zod Validation]
+        LK[TauriLink]
+        IC[Interceptors]
     end
 
     subgraph Transport
@@ -62,13 +61,13 @@ flowchart TB
         HDL[Handlers]
     end
 
-    UI --> HK
-    HK --> CL
-    CL --> PX
-    PX --> MW
-    MW --> CF
-    CF --> INV
-    CF --> EVT
+    UI --> TQ
+    TQ --> CL
+    CL --> ZV
+    ZV --> LK
+    LK --> IC
+    IC --> INV
+    IC --> EVT
     INV --> PLG
     EVT --> PLG
     PLG --> RTR
@@ -80,490 +79,495 @@ flowchart TB
     style Backend fill:#e8f5e9
 ```
 
-### Subscription Lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> Connecting: subscribe()
-    Connecting --> Connected: Success
-    Connecting --> Error: Failed
-
-    Connected --> Streaming: Receive Events
-    Streaming --> Streaming: More Events
-    Streaming --> Completed: Stream Ends
-    Streaming --> Disconnected: Connection Lost
-
-    Disconnected --> Reconnecting: Auto-Reconnect
-    Reconnecting --> Connected: Success
-    Reconnecting --> Error: Max Retries
-
-    Connected --> Cancelled: return()
-    Streaming --> Cancelled: return()
-
-    Completed --> [*]
-    Cancelled --> [*]
-    Error --> [*]
-```
-
 ---
 
 ## 🚀 Quick Start
 
-### 1. Define Your Contract
-
-Create a TypeScript interface that mirrors your Rust types:
+### Option 1: Simple Contract (TypeScript Types Only)
 
 ```typescript
-// src/rpc/contract.ts
-import type { ContractRouter } from "../lib/rpc";
+import { createClient, type ContractRouter } from "./lib/rpc";
 
-// Types (mirror your Rust types)
-export interface User {
-  id: number;
-  name: string;
-  email: string;
-  createdAt: string;
-}
-
-export interface CreateUserInput {
-  name: string;
-  email: string;
-}
-
-export interface CounterInput {
-  start: number;
-  maxCount: number;
-  intervalMs: number;
-}
-
-export interface CounterEvent {
-  count: number;
-  timestamp: string;
-}
-
-// Contract definition
-export interface RpcContract extends ContractRouter {
-  health: {
-    type: "query";
-    input: void;
-    output: { status: string; version: string };
-  };
-
+// Define contract with TypeScript types
+interface AppContract extends ContractRouter {
+  health: { type: "query"; input: void; output: { status: string } };
   user: {
     get: { type: "query"; input: { id: number }; output: User };
-    list: { type: "query"; input: void; output: User[] };
     create: { type: "mutation"; input: CreateUserInput; output: User };
-    delete: {
-      type: "mutation";
-      input: { id: number };
-      output: { success: boolean };
-    };
-  };
-
-  stream: {
-    counter: {
-      type: "subscription";
-      input: CounterInput;
-      output: CounterEvent;
-    };
-    time: { type: "subscription"; input: void; output: string };
   };
 }
-```
 
-### 2. Create the Client
-
-```typescript
-// src/rpc/client.ts
-import { createClient } from "../lib/rpc";
-import type { RpcContract } from "./contract";
-
-export const rpc = createClient<RpcContract>({
-  subscriptionPaths: ["stream.counter", "stream.time"],
+// Create client
+const rpc = createClient<AppContract>({
+  subscriptionPaths: ["stream.events"],
 });
-```
 
-### 3. Use It!
-
-```typescript
-// Queries
+// Use with full type safety
 const health = await rpc.health();
 const user = await rpc.user.get({ id: 1 });
-const users = await rpc.user.list();
+```
 
-// Mutations
-const newUser = await rpc.user.create({
-  name: "Alice",
-  email: "alice@example.com",
+### Option 2: Zod Contract (Runtime Validation)
+
+```typescript
+import { z } from "zod";
+import { procedure, router, createValidatedClient, TauriLink } from "./lib/rpc";
+
+// Define contract with Zod schemas
+const contract = router({
+  health: procedure()
+    .output(z.object({ status: z.string() }))
+    .query(),
+
+  user: router({
+    get: procedure()
+      .input(z.object({ id: z.number() }))
+      .output(z.object({ id: z.number(), name: z.string(), email: z.string() }))
+      .query(),
+
+    create: procedure()
+      .input(z.object({ name: z.string().min(1), email: z.string().email() }))
+      .output(z.object({ id: z.number(), name: z.string(), email: z.string() }))
+      .mutation(),
+  }),
 });
 
-// Subscriptions
-const stream = await rpc.stream.counter({
-  start: 0,
-  maxCount: 100,
-  intervalMs: 500,
-});
+// Create validated client
+const link = new TauriLink();
+const rpc = createValidatedClient(contract, link);
 
-for await (const event of stream) {
-  console.log(`Count: ${event.count}`);
-}
+// Inputs/outputs are validated at runtime!
+const user = await rpc.user.get({ id: 1 });
 ```
 
 ---
 
-## 📡 Client API
+## 🔗 TauriLink
 
-### createClient
+TauriLink provides an oRPC-style link abstraction with interceptors, context, and lifecycle hooks.
 
-Create a type-safe RPC client from your contract:
+### Basic Usage
 
 ```typescript
-import { createClient, type RpcClientConfig } from "../lib/rpc";
+import { TauriLink, createClientFromLink } from "./lib/rpc";
 
-const config: RpcClientConfig = {
-  // Paths that are subscriptions (required for runtime detection)
-  subscriptionPaths: ["stream.counter", "stream.time"],
-
-  // Global request timeout (optional)
+const link = new TauriLink({
   timeout: 30000,
+  onRequest: (ctx) => console.log(`→ ${ctx.path}`),
+  onResponse: (data, ctx) => console.log(`← ${ctx.path}`),
+  onError: (error, ctx) => console.error(`✗ ${ctx.path}:`, error),
+});
 
-  // Middleware stack (optional)
-  middleware: [loggingMiddleware, authMiddleware],
-
-  // Lifecycle callbacks (optional)
-  onRequest: (ctx) => console.log("Request:", ctx.path),
-  onResponse: (ctx, data) => console.log("Response:", data),
-  onError: (ctx, error) => console.error("Error:", error),
-};
-
-const rpc = createClient<RpcContract>(config);
+const client = createClientFromLink<AppContract>(link);
 ```
 
-### call
+### Interceptors
 
-Make a direct RPC call (query or mutation):
+Interceptors wrap requests and can modify context, add headers, retry, log, etc.
 
 ```typescript
-import { call } from "../lib/rpc";
+import { TauriLink, logging, retry, onError } from "./lib/rpc";
 
-// Basic call
-const user = await call<User>("user.get", { id: 1 });
+const link = new TauriLink({
+  interceptors: [
+    // Logging interceptor (built-in)
+    logging({ prefix: "[RPC]" }),
 
-// With options
-const user = await call<User>(
-  "user.get",
-  { id: 1 },
-  {
-    timeout: 5000,
-    signal: abortController.signal,
-  }
-);
+    // Retry interceptor (built-in)
+    retry({ maxRetries: 3, delay: 1000 }),
+
+    // Error handler interceptor (built-in)
+    onError((error, ctx) => {
+      analytics.track("rpc_error", { path: ctx.path, code: error.code });
+    }),
+
+    // Custom auth interceptor
+    async (ctx, next) => {
+      ctx.meta.authorization = `Bearer ${getToken()}`;
+      return next();
+    },
+  ],
+});
 ```
 
-### subscribe
+### Client Context
 
-Create a subscription stream:
+Pass context per-request for auth tokens, user info, etc.
 
 ```typescript
-import { subscribe } from "../lib/rpc";
-
-const stream = await subscribe<CounterEvent>(
-  "stream.counter",
-  {
-    start: 0,
-    maxCount: 100,
-    intervalMs: 500,
-  },
-  {
-    // Auto-reconnect on disconnect
-    autoReconnect: true,
-    maxReconnects: 5,
-    reconnectDelay: 1000,
-
-    // Resume from last event
-    lastEventId: "counter-42",
-  }
-);
-
-// Consume the stream
-for await (const event of stream) {
-  console.log(event);
+interface ClientContext {
+  token?: string;
+  userId?: string;
 }
 
-// Or manually cleanup
-await stream.return();
+const link = new TauriLink<ClientContext>({
+  interceptors: [
+    async (ctx, next) => {
+      if (ctx.context.token) {
+        ctx.meta.authorization = `Bearer ${ctx.context.token}`;
+      }
+      return next();
+    },
+  ],
+});
+
+const client = createClientFromLink<AppContract, ClientContext>(link);
+
+// Call with context
+const user = await client.user.get(
+  { id: 1 },
+  {
+    context: { token: "abc123" },
+  }
+);
+```
+
+---
+
+## 🛡️ Zod Validation
+
+Runtime validation with automatic TypeScript type inference from Zod schemas.
+
+### Defining Contracts
+
+```typescript
+import { z } from "zod";
+import { procedure, router } from "./lib/rpc";
+
+// Define reusable schemas
+const UserSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  email: z.string().email(),
+  createdAt: z.string().datetime(),
+});
+
+const CreateUserSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("Invalid email"),
+});
+
+// Build contract
+const contract = router({
+  health: procedure()
+    .output(z.object({ status: z.string(), version: z.string() }))
+    .query(),
+
+  user: router({
+    get: procedure()
+      .input(z.object({ id: z.number() }))
+      .output(UserSchema)
+      .query(),
+
+    list: procedure().output(z.array(UserSchema)).query(),
+
+    create: procedure().input(CreateUserSchema).output(UserSchema).mutation(),
+
+    delete: procedure()
+      .input(z.object({ id: z.number() }))
+      .output(z.object({ success: z.boolean() }))
+      .mutation(),
+  }),
+});
+```
+
+### Creating Validated Client
+
+```typescript
+import { createValidatedClient, TauriLink } from "./lib/rpc";
+
+const link = new TauriLink();
+const client = createValidatedClient(contract, link, {
+  validateInput: true, // Validate inputs before sending
+  validateOutput: true, // Validate outputs after receiving
+  strict: false, // Allow unknown keys (set true to reject)
+  onValidationError: (error, ctx) => {
+    console.error(`Validation failed for ${ctx.path}:`, error.issues);
+  },
+});
+```
+
+### Validation Errors
+
+Invalid data produces structured errors:
+
+```typescript
+try {
+  await client.user.create({ name: "", email: "invalid" });
+} catch (error) {
+  // error = {
+  //   code: "VALIDATION_ERROR",
+  //   message: "Input validation failed for user.create",
+  //   details: {
+  //     type: "input",
+  //     path: "user.create",
+  //     issues: [
+  //       { path: "name", message: "Name is required", code: "too_small" },
+  //       { path: "email", message: "Invalid email", code: "invalid_string" }
+  //     ]
+  //   }
+  // }
+}
+```
+
+### Zod Transforms
+
+Transforms are applied automatically:
+
+```typescript
+const contract = router({
+  events: procedure()
+    .input(
+      z.object({
+        // String input → Date object
+        after: z.string().transform((s) => new Date(s)),
+      })
+    )
+    .output(
+      z.array(
+        z.object({
+          id: z.string(),
+          // String response → Date object
+          date: z.string().transform((s) => new Date(s)),
+        })
+      )
+    )
+    .query(),
+});
+
+// Input: { after: "2024-01-01" }
+// Transformed to: { after: Date }
+// Output dates are also transformed to Date objects
+```
+
+### Type Inference
+
+Extract types from your contract:
+
+```typescript
+import type { InferContractInputs, InferContractOutputs } from "./lib/rpc";
+
+type Inputs = InferContractInputs<typeof contract>;
+type Outputs = InferContractOutputs<typeof contract>;
+
+// Inputs['user']['create'] = { name: string; email: string }
+// Outputs['user']['get'] = { id: number; name: string; email: string; createdAt: string }
+```
+
+### Merging Routers
+
+Combine multiple routers:
+
+```typescript
+const authRouter = router({
+  login: procedure()
+    .input(z.object({ email: z.string(), password: z.string() }))
+    .output(z.object({ token: z.string() }))
+    .mutation(),
+});
+
+const userRouter = router({
+  user: router({
+    get: procedure()
+      .input(z.object({ id: z.number() }))
+      .output(UserSchema)
+      .query(),
+  }),
+});
+
+const contract = mergeRouters(authRouter, userRouter);
+// { login: ..., user: { get: ... } }
+```
+
+---
+
+## ⚛️ TanStack Query Integration
+
+First-class TanStack Query integration with automatic query/mutation options.
+
+### Setup
+
+```typescript
+import { createTanstackQueryUtils } from "./lib/rpc";
+
+// Create utils from your client
+const api = createTanstackQueryUtils<AppContract>(rpc);
+```
+
+### Query Options
+
+```typescript
+import { useQuery } from "@tanstack/react-query";
+
+function UserProfile({ id }: { id: number }) {
+  // Generate query options automatically
+  const { data, isLoading } = useQuery(
+    api.user.get.queryOptions({ input: { id } })
+  );
+
+  // Void input procedures
+  const { data: health } = useQuery(api.health.queryOptions());
+
+  return <div>{data?.name}</div>;
+}
+```
+
+### Mutation Options
+
+```typescript
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+function CreateUserForm() {
+  const queryClient = useQueryClient();
+
+  const { mutate, isPending } = useMutation({
+    ...api.user.create.mutationOptions(),
+    onSuccess: () => {
+      // Invalidate user queries
+      queryClient.invalidateQueries({ queryKey: api.user.key() });
+    },
+  });
+
+  return (
+    <button onClick={() => mutate({ name: "Alice", email: "alice@example.com" })}>
+      {isPending ? "Creating..." : "Create User"}
+    </button>
+  );
+}
+```
+
+### Infinite Queries
+
+```typescript
+import { useInfiniteQuery } from "@tanstack/react-query";
+
+function UserList() {
+  const { data, fetchNextPage, hasNextPage } = useInfiniteQuery(
+    api.user.list.infiniteOptions({
+      input: (pageParam) => ({ limit: 10, offset: pageParam }),
+      initialPageParam: 0,
+      getNextPageParam: (lastPage) => lastPage.nextOffset,
+    })
+  );
+
+  return (
+    <div>
+      {data?.pages.flatMap(page => page.users).map(user => (
+        <div key={user.id}>{user.name}</div>
+      ))}
+      {hasNextPage && <button onClick={() => fetchNextPage()}>Load More</button>}
+    </div>
+  );
+}
+```
+
+### Cache Invalidation
+
+```typescript
+// Invalidate all user queries
+queryClient.invalidateQueries({ queryKey: api.user.key() });
+
+// Invalidate specific user
+queryClient.invalidateQueries({
+  queryKey: api.user.get.queryKey({ input: { id: 1 } }),
+});
+
+// Invalidate entire API
+queryClient.invalidateQueries({ queryKey: api.key() });
+```
+
+### Direct Calls
+
+```typescript
+// Call procedures directly (bypasses React Query)
+const user = await api.user.get.call({ id: 1 });
+const newUser = await api.user.create.call({
+  name: "Bob",
+  email: "bob@example.com",
+});
 ```
 
 ---
 
 ## 📡 Subscriptions
 
-### Event Iterator Pattern
-
-```mermaid
-flowchart LR
-    subgraph Frontend
-        IT[Async Iterator]
-        BF[Event Buffer]
-        CB[Callbacks]
-    end
-
-    subgraph Backend
-        HD[Handler]
-        CH[Channel]
-        EM[Event Emitter]
-    end
-
-    HD --> CH
-    CH --> EM
-    EM -->|Tauri Events| BF
-    BF --> IT
-    IT --> CB
-```
+Async iterators with auto-reconnect support for real-time streaming.
 
 ### Basic Usage
 
 ```typescript
-const stream = await subscribe<CounterEvent>("stream.counter", input);
+const stream = await rpc.stream.counter({ start: 0, maxCount: 100 });
 
-try {
-  for await (const event of stream) {
-    console.log(`Count: ${event.count}`);
+for await (const event of stream) {
+  console.log(`Count: ${event.count}`);
 
-    // Break to stop early
-    if (event.count >= 50) break;
-  }
-} finally {
-  // Always cleanup
-  await stream.return();
+  // Break to stop early
+  if (event.count >= 50) break;
 }
 ```
 
 ### With Auto-Reconnect
 
 ```typescript
+import { subscribe } from "./lib/rpc";
+
 const stream = await subscribe<CounterEvent>("stream.counter", input, {
   autoReconnect: true,
   maxReconnects: 5,
   reconnectDelay: 1000, // Exponential backoff applied
+  lastEventId: "event-42", // Resume from last event
 });
 ```
 
-### consumeEventIterator Helper
-
-For callback-style consumption:
+### React Hook
 
 ```typescript
-import { consumeEventIterator } from "../lib/rpc";
+import { useSubscription } from "./lib/rpc";
+
+function CounterDisplay() {
+  const { data, latestEvent, isConnected, error, unsubscribe, reconnect } =
+    useSubscription(
+      () => rpc.stream.counter({ start: 0 }),
+      [],  // Dependencies
+      {
+        maxEvents: 100,  // Buffer size
+        onEvent: (event) => console.log("Event:", event),
+        onError: (error) => console.error("Error:", error),
+        onComplete: () => console.log("Stream completed"),
+        autoReconnect: true,
+      }
+    );
+
+  return (
+    <div>
+      <div className={isConnected ? "connected" : "disconnected"}>
+        {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
+      </div>
+      <div className="counter">{latestEvent?.count ?? "—"}</div>
+      <button onClick={unsubscribe}>Stop</button>
+      <button onClick={reconnect}>Reconnect</button>
+    </div>
+  );
+}
+```
+
+### Callback-Style Consumption
+
+```typescript
+import { consumeEventIterator, subscribe } from "./lib/rpc";
 
 const cancel = consumeEventIterator(
   subscribe<CounterEvent>("stream.counter", input),
   {
-    onEvent: (event) => {
-      console.log(`Count: ${event.count}`);
-    },
-    onError: (error) => {
-      console.error("Stream error:", error);
-    },
-    onComplete: () => {
-      console.log("Stream completed");
-    },
-    onFinish: (state) => {
-      // state: 'success' | 'error' | 'cancelled'
-      console.log(`Finished with state: ${state}`);
-    },
+    onEvent: (event) => console.log("Count:", event.count),
+    onError: (error) => console.error("Error:", error),
+    onComplete: () => console.log("Completed"),
+    onFinish: (state) => console.log("Finished:", state), // 'success' | 'error' | 'cancelled'
   }
 );
 
 // Later: cancel the subscription
 await cancel();
-```
-
----
-
-## ⚛️ React Hooks
-
-### useQuery
-
-Fetch data with automatic caching and refetching:
-
-```typescript
-import { useQuery } from '../lib/rpc';
-
-function UserProfile({ id }: { id: number }) {
-  const {
-    data,        // User | undefined
-    isLoading,   // boolean
-    error,       // RpcError | null
-    refetch,     // () => Promise<void>
-  } = useQuery(
-    () => rpc.user.get({ id }),
-    [id],  // Dependencies - refetch when id changes
-    {
-      // Options
-      enabled: id > 0,           // Conditional fetching
-      refetchInterval: 30000,    // Auto-refetch every 30s
-      onSuccess: (user) => console.log('Loaded:', user),
-      onError: (error) => console.error('Failed:', error),
-    }
-  );
-
-  if (isLoading) return <Spinner />;
-  if (error) return <Error message={error.message} />;
-  if (!data) return null;
-
-  return (
-    <div>
-      <h1>{data.name}</h1>
-      <p>{data.email}</p>
-      <button onClick={refetch}>Refresh</button>
-    </div>
-  );
-}
-```
-
-### useMutation
-
-Perform write operations with loading and error states:
-
-```typescript
-import { useMutation } from '../lib/rpc';
-
-function CreateUserForm() {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-
-  const {
-    mutate,      // (input: CreateUserInput) => Promise<User>
-    isLoading,   // boolean
-    error,       // RpcError | null
-    data,        // User | undefined (last successful result)
-    reset,       // () => void (clear state)
-  } = useMutation(
-    (input: CreateUserInput) => rpc.user.create(input),
-    {
-      onSuccess: (user) => {
-        toast.success(`Created ${user.name}`);
-        reset();
-      },
-      onError: (error) => {
-        toast.error(error.message);
-      },
-    }
-  );
-
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    mutate({ name, email });
-  };
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Name"
-      />
-      <input
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="Email"
-      />
-      {error && <p className="error">{error.message}</p>}
-      <button type="submit" disabled={isLoading}>
-        {isLoading ? 'Creating...' : 'Create User'}
-      </button>
-    </form>
-  );
-}
-```
-
-### useSubscription
-
-Subscribe to real-time streams:
-
-```typescript
-import { useSubscription, subscribe } from '../lib/rpc';
-
-function CounterDisplay() {
-  const [events, setEvents] = useState<CounterEvent[]>([]);
-
-  const {
-    data,          // CounterEvent | undefined (latest event)
-    isConnected,   // boolean
-    error,         // RpcError | null
-  } = useSubscription<CounterEvent>(
-    async () => subscribe('stream.counter', {
-      start: 0,
-      maxCount: 100,
-      intervalMs: 500
-    }),
-    [],  // Dependencies
-    {
-      onEvent: (event) => {
-        setEvents((prev) => [...prev.slice(-9), event]);
-      },
-      onError: (error) => {
-        console.error('Stream error:', error);
-      },
-      onComplete: () => {
-        console.log('Stream completed');
-      },
-    }
-  );
-
-  return (
-    <div>
-      <div className={`status ${isConnected ? 'connected' : 'disconnected'}`}>
-        {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-      </div>
-
-      {error && <div className="error">{error.message}</div>}
-
-      <div className="counter">
-        {data?.count ?? '—'}
-      </div>
-
-      <div className="events">
-        {events.map((e, i) => (
-          <div key={i}>{e.count} - {e.timestamp}</div>
-        ))}
-      </div>
-    </div>
-  );
-}
-```
-
-### Hook State Diagram
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle: Initial
-
-    state useQuery {
-        Idle --> Loading: fetch()
-        Loading --> Success: Data received
-        Loading --> Error: Request failed
-        Success --> Loading: refetch()
-        Error --> Loading: refetch()
-    }
-
-    state useMutation {
-        Idle --> Mutating: mutate()
-        Mutating --> Success: Mutation succeeded
-        Mutating --> Error: Mutation failed
-        Success --> Idle: reset()
-        Error --> Idle: reset()
-    }
-
-    state useSubscription {
-        Idle --> Connecting: mount
-        Connecting --> Connected: subscribed
-        Connected --> Streaming: events
-        Streaming --> Disconnected: error
-        Disconnected --> Connecting: reconnect
-        Streaming --> Idle: unmount
-    }
 ```
 
 ---
@@ -607,23 +611,21 @@ type RpcErrorCode =
 ### Error Utilities
 
 ```typescript
-import { isRpcError, hasErrorCode, createError } from "../lib/rpc";
+import { isRpcError, hasErrorCode, createError } from "./lib/rpc";
 
 try {
   await rpc.user.create(input);
 } catch (error) {
   if (isRpcError(error)) {
-    // Type-safe error handling
     switch (error.code) {
       case "VALIDATION_ERROR":
-        // error.details might contain field info
-        showFieldError(error.details?.field);
-        break;
-      case "CONFLICT":
-        showToast("User already exists");
+        showFieldErrors(error.details?.issues);
         break;
       case "UNAUTHORIZED":
         redirectToLogin();
+        break;
+      case "CONFLICT":
+        showToast("User already exists");
         break;
       default:
         showToast(error.message);
@@ -637,146 +639,64 @@ if (hasErrorCode(error, "NOT_FOUND")) {
 }
 
 // Create custom errors
-throw createError("CUSTOM_ERROR", "Something went wrong", {
-  field: "email",
-});
-```
-
-### Error Handling Patterns
-
-```mermaid
-flowchart TD
-    E[Error Caught] --> IS{isRpcError?}
-    IS -->|Yes| CODE{Check Code}
-    IS -->|No| UNK[Unknown Error]
-
-    CODE -->|VALIDATION_ERROR| VAL[Show Field Errors]
-    CODE -->|UNAUTHORIZED| AUTH[Redirect to Login]
-    CODE -->|NOT_FOUND| NF[Show 404]
-    CODE -->|TIMEOUT| TO[Retry or Show Timeout]
-    CODE -->|Other| GEN[Show Generic Error]
-
-    UNK --> LOG[Log & Show Generic]
-```
-
----
-
-## 🔗 Middleware
-
-### Creating Middleware
-
-```typescript
-import type { Middleware, RequestContext } from "../lib/rpc";
-
-// Logging middleware
-const loggingMiddleware: Middleware = async (ctx, next) => {
-  const start = Date.now();
-  console.log(`→ [${ctx.type}] ${ctx.path}`);
-
-  try {
-    const result = await next();
-    console.log(`← ${ctx.path} (${Date.now() - start}ms)`);
-    return result;
-  } catch (error) {
-    console.error(`✗ ${ctx.path} - ${error}`);
-    throw error;
-  }
-};
-
-// Auth middleware
-const authMiddleware: Middleware = async (ctx, next) => {
-  // Add auth token to request
-  ctx.meta = {
-    ...ctx.meta,
-    token: getAuthToken(),
-  };
-  return next();
-};
-
-// Retry middleware
-const retryMiddleware: Middleware = async (ctx, next) => {
-  let lastError: unknown;
-
-  for (let i = 0; i < 3; i++) {
-    try {
-      return await next();
-    } catch (error) {
-      lastError = error;
-      if (!isRetryable(error)) throw error;
-      await sleep(1000 * Math.pow(2, i));
-    }
-  }
-
-  throw lastError;
-};
-```
-
-### Applying Middleware
-
-```typescript
-const rpc = createClient<RpcContract>({
-  subscriptionPaths: ["stream.counter"],
-  middleware: [
-    loggingMiddleware, // Executes first
-    authMiddleware, // Executes second
-    retryMiddleware, // Executes third
-  ],
-});
+throw createError("CUSTOM_ERROR", "Something went wrong", { field: "email" });
 ```
 
 ---
 
 ## 🛠️ Utilities
 
-### Path Validation
+### Retry Logic
 
 ```typescript
-import { validatePath } from "../lib/rpc";
-
-// Valid paths
-validatePath("health"); // ✓
-validatePath("user.get"); // ✓
-validatePath("api.v1.users.list"); // ✓
-
-// Invalid paths (throws VALIDATION_ERROR)
-validatePath(""); // ✗ Empty
-validatePath(".path"); // ✗ Starts with dot
-validatePath("path."); // ✗ Ends with dot
-validatePath("path..name"); // ✗ Consecutive dots
-validatePath("path/name"); // ✗ Invalid character
-```
-
-### Backend Utilities
-
-```typescript
-import { getProcedures, getSubscriptionCount } from "../lib/rpc";
-
-// List all available procedures
-const procedures = await getProcedures();
-// ['health', 'user.get', 'user.list', 'stream.counter', ...]
-
-// Get active subscription count
-const count = await getSubscriptionCount();
-// 3
-```
-
-### Retry Utilities
-
-```typescript
-import { withRetry, calculateBackoff, type RetryConfig } from "../lib/rpc";
+import { withRetry, calculateBackoff, type RetryConfig } from "./lib/rpc";
 
 const config: RetryConfig = {
   maxRetries: 3,
   baseDelay: 1000,
   maxDelay: 10000,
-  backoffMultiplier: 2,
+  retryableCodes: ["INTERNAL_ERROR", "TIMEOUT", "UNAVAILABLE"],
+  jitter: true,
 };
 
-// Wrap any async function with retry logic
 const result = await withRetry(() => rpc.user.get({ id: 1 }), config);
+```
 
-// Calculate backoff delay
-const delay = calculateBackoff(attempt, config);
+### Deduplication
+
+```typescript
+import { withDedup, deduplicationKey } from "./lib/rpc";
+
+// Deduplicate concurrent identical requests
+const key = deduplicationKey("user.get", { id: 1 });
+const result = await withDedup(key, () => rpc.user.get({ id: 1 }));
+```
+
+### Path Validation
+
+```typescript
+import { validatePath } from "./lib/rpc";
+
+validatePath("health"); // ✓
+validatePath("user.get"); // ✓
+validatePath("api.v1.users.list"); // ✓
+
+validatePath(""); // ✗ Empty
+validatePath(".path"); // ✗ Starts with dot
+validatePath("path."); // ✗ Ends with dot
+validatePath("path..name"); // ✗ Consecutive dots
+```
+
+### Backend Utilities
+
+```typescript
+import { getProcedures, getSubscriptionCount } from "./lib/rpc";
+
+const procedures = await getProcedures();
+// ['health', 'user.get', 'user.list', 'stream.counter', ...]
+
+const count = await getSubscriptionCount();
+// 3
 ```
 
 ---
@@ -786,59 +706,75 @@ const delay = calculateBackoff(attempt, config);
 ```
 src/lib/rpc/
 ├── index.ts           # Public exports
-├── types.ts           # TypeScript type definitions
-├── client.ts          # RPC client implementation
+├── types.ts           # Core TypeScript types
+├── schema.ts          # Zod validation & contract builder
+├── link.ts            # TauriLink & interceptors
+├── client.ts          # Legacy client implementation
+├── tanstack.ts        # TanStack Query integration
+├── hooks.ts           # React hooks (useSubscription)
 ├── event-iterator.ts  # Subscription handling
-├── hooks.ts           # React hooks
 ├── utils.ts           # Utility functions
 └── README.md          # This documentation
 ```
 
 ---
 
-## 📚 Type Reference
+## 📚 API Reference
 
-### Core Types
+### Contract Building
 
-| Type               | Description                            |
-| ------------------ | -------------------------------------- |
-| `RpcError`         | Structured error with code and message |
-| `RpcErrorCode`     | Union of standard error codes          |
-| `Event<T>`         | Event wrapper with optional metadata   |
-| `EventIterator<T>` | Async iterator for subscriptions       |
+| Function                                         | Description                              |
+| ------------------------------------------------ | ---------------------------------------- |
+| `procedure()`                                    | Start building a Zod-validated procedure |
+| `router(routes)`                                 | Create a router from procedures          |
+| `mergeRouters(...routers)`                       | Merge multiple routers                   |
+| `createValidatedClient(contract, link, config?)` | Create client with validation            |
 
-### Contract Types
+### TauriLink
 
-| Type                    | Description                        |
-| ----------------------- | ---------------------------------- |
-| `ContractRouter`        | Base type for contract definitions |
-| `QueryDef<I, O>`        | Query procedure definition         |
-| `MutationDef<I, O>`     | Mutation procedure definition      |
-| `SubscriptionDef<I, O>` | Subscription procedure definition  |
+| Function                     | Description               |
+| ---------------------------- | ------------------------- |
+| `new TauriLink(config)`      | Create a new link         |
+| `createClientFromLink(link)` | Create client from link   |
+| `logging(options?)`          | Logging interceptor       |
+| `retry(options?)`            | Retry interceptor         |
+| `onError(handler)`           | Error handler interceptor |
 
-### Client Types
+### TanStack Query
 
-| Type                  | Description                   |
-| --------------------- | ----------------------------- |
-| `RouterClient<T>`     | Typed client from contract    |
-| `RpcClientConfig`     | Client configuration options  |
-| `CallOptions`         | Options for queries/mutations |
-| `SubscriptionOptions` | Options for subscriptions     |
-| `Middleware`          | Middleware function type      |
+| Function                           | Description                     |
+| ---------------------------------- | ------------------------------- |
+| `createTanstackQueryUtils(client)` | Create query utils              |
+| `api.*.queryOptions(opts)`         | Generate query options          |
+| `api.*.mutationOptions()`          | Generate mutation options       |
+| `api.*.infiniteOptions(opts)`      | Generate infinite query options |
+| `api.*.key(opts?)`                 | Generate query key              |
+| `api.*.call(input?)`               | Direct procedure call           |
 
-### Hook Types
+### Subscriptions
 
-| Type                    | Description                    |
-| ----------------------- | ------------------------------ |
-| `QueryResult<T>`        | Return type of useQuery        |
-| `MutationResult<T, I>`  | Return type of useMutation     |
-| `SubscriptionResult<T>` | Return type of useSubscription |
+| Function                                   | Description                |
+| ------------------------------------------ | -------------------------- |
+| `subscribe(path, input, options?)`         | Create subscription        |
+| `useSubscription(fn, deps, options?)`      | React subscription hook    |
+| `consumeEventIterator(promise, callbacks)` | Callback-style consumption |
+
+### Utilities
+
+| Function                               | Description                |
+| -------------------------------------- | -------------------------- |
+| `withRetry(fn, config?)`               | Execute with retry logic   |
+| `withDedup(key, fn)`                   | Execute with deduplication |
+| `validatePath(path)`                   | Validate procedure path    |
+| `isRpcError(error)`                    | Check if error is RpcError |
+| `hasErrorCode(error, code)`            | Check error code           |
+| `createError(code, message, details?)` | Create RpcError            |
 
 ---
 
 ## 📄 License
 
-MIT © 2024-2026
+MIT © 2026
 
 ---
 
