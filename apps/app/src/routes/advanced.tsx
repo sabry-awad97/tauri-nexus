@@ -12,10 +12,17 @@ import {
   type LinkCallOptions,
 } from "@tauri-nexus/rpc-react";
 import type { AppContract } from "../rpc/contract";
-
-// =============================================================================
-// TauriLink Demo - Client Context & Interceptors
-// =============================================================================
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Spinner } from "@/components/ui/spinner";
 
 interface ClientContext {
   requestId: string;
@@ -40,10 +47,8 @@ function TauriLinkDemo() {
     setLogs([]);
     setResult("");
 
-    // Create a link with interceptors
     const link = new TauriLink<ClientContext>({
       interceptors: [
-        // Logging interceptor
         async (ctx, next) => {
           addLog(`→ Request: ${ctx.path}`);
           addLog(`  Context: requestId=${ctx.context.requestId}`);
@@ -52,28 +57,21 @@ function TauriLinkDemo() {
           addLog(`← Response: ${ctx.path} (${duration}ms)`);
           return res;
         },
-        // Custom header interceptor
         async (ctx, next) => {
           ctx.meta.customHeader = "demo-value";
           addLog(`  Added meta: customHeader`);
           return next();
         },
       ],
-      onRequest: (ctx) => {
-        addLog(`[Hook] onRequest: ${ctx.path}`);
-      },
-      onResponse: (_data, ctx) => {
-        addLog(`[Hook] onResponse: ${ctx.path}`);
-      },
-      onError: (error, ctx) => {
-        addLog(`[Hook] onError: ${ctx.path} - ${error.code}`);
-      },
+      onRequest: (ctx) => addLog(`[Hook] onRequest: ${ctx.path}`),
+      onResponse: (_data, ctx) => addLog(`[Hook] onResponse: ${ctx.path}`),
+      onError: (error, ctx) =>
+        addLog(`[Hook] onError: ${ctx.path} - ${error.code}`),
     });
 
     const client = createClientFromLink<AppContract, ClientContext>(link);
 
     try {
-      // Call with context - health has void input, so options is the first arg
       const options: LinkCallOptions<ClientContext> = {
         context: {
           requestId: `req-${Date.now()}`,
@@ -95,71 +93,60 @@ function TauriLinkDemo() {
   };
 
   return (
-    <div className="demo-card">
-      <div className="demo-header">
-        <h3>TauriLink with Interceptors</h3>
-        <span className="demo-badge">New</span>
-      </div>
-      <p className="demo-description">
-        Create a client with custom interceptors, client context, and lifecycle
-        hooks.
-      </p>
-
-      <button
-        onClick={runDemo}
-        disabled={isLoading}
-        className="demo-btn primary"
-      >
-        {isLoading ? "Running..." : "Run Demo"}
-      </button>
-
-      <div className="logs-panel">
-        <h4>Interceptor Logs</h4>
-        <div className="logs-list">
-          {logs.length === 0 ? (
-            <span className="no-logs">
-              Click "Run Demo" to see interceptor logs
-            </span>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">
+            TauriLink with Interceptors
+          </CardTitle>
+          <Badge>New</Badge>
+        </div>
+        <CardDescription>
+          Create a client with custom interceptors, client context, and
+          lifecycle hooks.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button onClick={runDemo} disabled={isLoading}>
+          {isLoading ? (
+            <>
+              <Spinner className="size-4 mr-2" /> Running...
+            </>
           ) : (
-            logs.map((log, i) => (
-              <div key={i} className="log-item">
-                {log}
-              </div>
-            ))
+            "Run Demo"
           )}
+        </Button>
+
+        <div className="bg-muted rounded-lg p-4">
+          <h4 className="text-xs font-semibold mb-2 text-muted-foreground">
+            Interceptor Logs
+          </h4>
+          <ScrollArea className="h-32">
+            {logs.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Click "Run Demo" to see interceptor logs
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {logs.map((log, i) => (
+                  <p key={i} className="text-xs font-mono">
+                    {log}
+                  </p>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
         </div>
-      </div>
 
-      {result && (
-        <div className="demo-result success">
-          <pre>{result}</pre>
-        </div>
-      )}
-
-      <div className="code-preview">
-        <pre>{`const link = new TauriLink<ClientContext>({
-  interceptors: [
-    logging(),
-    retry({ maxRetries: 3 }),
-    async (ctx, next) => {
-      ctx.meta.auth = \`Bearer \${ctx.context.token}\`;
-      return next();
-    },
-  ],
-});
-
-const client = createClientFromLink<AppContract, ClientContext>(link);
-const result = await client.health(undefined, {
-  context: { requestId: 'req-123', userId: 'user-1' },
-});`}</pre>
-      </div>
-    </div>
+        {result && (
+          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+            <pre className="text-xs font-mono text-green-500">{result}</pre>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
-
-// =============================================================================
-// Error Handling Demo
-// =============================================================================
 
 function ErrorHandlingDemo() {
   const [testResult, setTestResult] = useState<string>("");
@@ -167,7 +154,6 @@ function ErrorHandlingDemo() {
   const runErrorTests = () => {
     const results: string[] = [];
 
-    // Test isRpcError
     const validError: RpcError = {
       code: "NOT_FOUND",
       message: "User not found",
@@ -177,8 +163,6 @@ function ErrorHandlingDemo() {
     results.push(`isRpcError(validError): ${isRpcError(validError)}`);
     results.push(`isRpcError(invalidError): ${isRpcError(invalidError)}`);
     results.push(`isRpcError("string"): ${isRpcError("string")}`);
-
-    // Test hasErrorCode
     results.push(
       `hasErrorCode(validError, "NOT_FOUND"): ${hasErrorCode(validError, "NOT_FOUND")}`,
     );
@@ -186,7 +170,6 @@ function ErrorHandlingDemo() {
       `hasErrorCode(validError, "UNAUTHORIZED"): ${hasErrorCode(validError, "UNAUTHORIZED")}`,
     );
 
-    // Error with details
     const detailedError: RpcError = {
       code: "VALIDATION_ERROR",
       message: "Invalid input",
@@ -198,48 +181,32 @@ function ErrorHandlingDemo() {
   };
 
   return (
-    <div className="demo-card">
-      <div className="demo-header">
-        <h3>Error Handling Utilities</h3>
-        <span className="demo-badge">Utils</span>
-      </div>
-      <p className="demo-description">
-        Type-safe error checking with <code>isRpcError</code> and{" "}
-        <code>hasErrorCode</code>.
-      </p>
-
-      <button onClick={runErrorTests} className="demo-btn primary">
-        Run Error Tests
-      </button>
-
-      {testResult && (
-        <div className="demo-result">
-          <pre>{testResult}</pre>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Error Handling Utilities</CardTitle>
+          <Badge variant="outline">Utils</Badge>
         </div>
-      )}
+        <CardDescription>
+          Type-safe error checking with{" "}
+          <code className="bg-muted px-1 rounded text-xs">isRpcError</code> and{" "}
+          <code className="bg-muted px-1 rounded text-xs">hasErrorCode</code>.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button onClick={runErrorTests}>Run Error Tests</Button>
 
-      <div className="code-preview">
-        <pre>{`import { isRpcError, hasErrorCode } from '../lib/rpc';
-
-try {
-  await rpc.user.get({ id: 999 });
-} catch (error) {
-  if (isRpcError(error)) {
-    if (hasErrorCode(error, 'NOT_FOUND')) {
-      console.log('User not found');
-    } else if (hasErrorCode(error, 'UNAUTHORIZED')) {
-      console.log('Please login');
-    }
-  }
-}`}</pre>
-      </div>
-    </div>
+        {testResult && (
+          <div className="bg-muted rounded-lg p-4">
+            <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap">
+              {testResult}
+            </pre>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
-
-// =============================================================================
-// Backend Info Demo
-// =============================================================================
 
 function BackendInfoDemo() {
   const [procedures, setProcedures] = useState<string[]>([]);
@@ -269,61 +236,66 @@ function BackendInfoDemo() {
   }, []);
 
   return (
-    <div className="demo-card">
-      <div className="demo-header">
-        <h3>Backend Introspection</h3>
-        <span className="demo-badge">Meta</span>
-      </div>
-      <p className="demo-description">
-        Query available procedures and active subscriptions from the backend.
-      </p>
-
-      <button onClick={fetchInfo} disabled={isLoading} className="demo-btn">
-        {isLoading ? "Loading..." : "Refresh"}
-      </button>
-
-      {error && <div className="demo-result error">{error}</div>}
-
-      <div className="info-grid-small">
-        <div className="info-item">
-          <span className="info-label">Active Subscriptions</span>
-          <span className="info-value">{subCount ?? "—"}</span>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Backend Introspection</CardTitle>
+          <Badge variant="outline">Meta</Badge>
         </div>
-        <div className="info-item">
-          <span className="info-label">Total Procedures</span>
-          <span className="info-value">{procedures.length || "—"}</span>
-        </div>
-      </div>
+        <CardDescription>
+          Query available procedures and active subscriptions from the backend.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button variant="secondary" onClick={fetchInfo} disabled={isLoading}>
+          {isLoading ? (
+            <>
+              <Spinner className="size-4 mr-2" /> Loading...
+            </>
+          ) : (
+            "Refresh"
+          )}
+        </Button>
 
-      {procedures.length > 0 && (
-        <div className="procedures-list">
-          <h4>Available Procedures</h4>
-          <div className="procedures-grid">
-            {procedures.map((proc) => (
-              <span key={proc} className="procedure-tag">
-                {proc}
-              </span>
-            ))}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-muted rounded-lg p-4 text-center">
+            <p className="text-xs text-muted-foreground mb-1">
+              Active Subscriptions
+            </p>
+            <p className="text-2xl font-bold">{subCount ?? "—"}</p>
+          </div>
+          <div className="bg-muted rounded-lg p-4 text-center">
+            <p className="text-xs text-muted-foreground mb-1">
+              Total Procedures
+            </p>
+            <p className="text-2xl font-bold">{procedures.length || "—"}</p>
           </div>
         </div>
-      )}
 
-      <div className="code-preview">
-        <pre>{`import { getProcedures, getSubscriptionCount } from '../lib/rpc';
-
-const procedures = await getProcedures();
-// ${JSON.stringify(procedures.slice(0, 3))}...
-
-const activeSubscriptions = await getSubscriptionCount();
-// ${subCount ?? 0}`}</pre>
-      </div>
-    </div>
+        {procedures.length > 0 && (
+          <div>
+            <h4 className="text-xs font-semibold mb-2 text-muted-foreground">
+              Available Procedures
+            </h4>
+            <div className="flex flex-wrap gap-1.5">
+              {procedures.map((proc) => (
+                <Badge
+                  key={proc}
+                  variant="secondary"
+                  className="text-xs font-mono"
+                >
+                  {proc}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
-
-// =============================================================================
-// Middleware Configuration Demo
-// =============================================================================
 
 function MiddlewareDemo() {
   const [logs, setLogs] = useState<string[]>([]);
@@ -339,7 +311,6 @@ function MiddlewareDemo() {
 
     configureRpc({
       middleware: [
-        // Timing middleware
         async (ctx, next) => {
           const start = Date.now();
           addLog(`[Timing] Start: ${ctx.path}`);
@@ -352,7 +323,6 @@ function MiddlewareDemo() {
             throw error;
           }
         },
-        // Logging middleware
         async (ctx, next) => {
           addLog(`[Log] Input: ${JSON.stringify(ctx.input)}`);
           const result = await next();
@@ -369,66 +339,49 @@ function MiddlewareDemo() {
   };
 
   return (
-    <div className="demo-card">
-      <div className="demo-header">
-        <h3>Global Middleware</h3>
-        <span className="demo-badge">Config</span>
-      </div>
-      <p className="demo-description">
-        Configure global middleware for logging, timing, auth, and more.
-      </p>
-
-      <button onClick={setupMiddleware} className="demo-btn primary">
-        Setup Middleware
-      </button>
-
-      <div className="logs-panel">
-        <h4>Middleware Logs</h4>
-        <div className="logs-list">
-          {logs.length === 0 ? (
-            <span className="no-logs">
-              Click "Setup Middleware" to configure
-            </span>
-          ) : (
-            logs.map((log, i) => (
-              <div key={i} className="log-item">
-                {log}
-              </div>
-            ))
-          )}
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Global Middleware</CardTitle>
+          <Badge variant="outline">Config</Badge>
         </div>
-      </div>
+        <CardDescription>
+          Configure global middleware for logging, timing, auth, and more.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button onClick={setupMiddleware}>Setup Middleware</Button>
 
-      <div className="code-preview">
-        <pre>{`import { configureRpc } from '../lib/rpc';
-
-configureRpc({
-  middleware: [
-    async (ctx, next) => {
-      console.log(\`Request: \${ctx.path}\`);
-      const result = await next();
-      console.log(\`Response received\`);
-      return result;
-    },
-  ],
-  onError: (ctx, error) => {
-    console.error(\`Error in \${ctx.path}: \${error.message}\`);
-  },
-});`}</pre>
-      </div>
-    </div>
+        <div className="bg-muted rounded-lg p-4">
+          <h4 className="text-xs font-semibold mb-2 text-muted-foreground">
+            Middleware Logs
+          </h4>
+          <ScrollArea className="h-32">
+            {logs.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Click "Setup Middleware" to configure
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {logs.map((log, i) => (
+                  <p key={i} className="text-xs font-mono">
+                    {log}
+                  </p>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
-
-// =============================================================================
-// Interceptor Helpers Demo
-// =============================================================================
 
 function InterceptorHelpersDemo() {
   const [output, setOutput] = useState<string>("");
 
   const showHelpers = () => {
-    const examples = `// Built-in interceptor helpers:
+    setOutput(`// Built-in interceptor helpers:
 
 // 1. logging() - Log all requests/responses
 const link = new TauriLink({
@@ -456,62 +409,47 @@ const link = new TauriLink({
       });
     }),
   ],
-});
-
-// Combine multiple interceptors:
-const link = new TauriLink({
-  interceptors: [
-    logging(),
-    retry({ maxRetries: 2 }),
-    onError(reportToSentry),
-    authInterceptor,
-  ],
-});`;
-
-    setOutput(examples);
+});`);
   };
 
   return (
-    <div className="demo-card">
-      <div className="demo-header">
-        <h3>Interceptor Helpers</h3>
-        <span className="demo-badge">Helpers</span>
-      </div>
-      <p className="demo-description">
-        Pre-built interceptors for common patterns: logging, retry, error
-        handling.
-      </p>
-
-      <button onClick={showHelpers} className="demo-btn primary">
-        Show Examples
-      </button>
-
-      {output && (
-        <div className="demo-result">
-          <pre>{output}</pre>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Interceptor Helpers</CardTitle>
+          <Badge variant="outline">Helpers</Badge>
         </div>
-      )}
-    </div>
+        <CardDescription>
+          Pre-built interceptors for common patterns: logging, retry, error
+          handling.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button onClick={showHelpers}>Show Examples</Button>
+
+        {output && (
+          <div className="bg-muted rounded-lg p-4">
+            <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap">
+              {output}
+            </pre>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-// =============================================================================
-// Main Page
-// =============================================================================
-
 function AdvancedPage() {
   return (
-    <div className="page advanced-page">
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">🔧 Advanced Features</h1>
-          <p className="page-subtitle">
-            TauriLink, interceptors, error handling, and backend introspection
-          </p>
-        </div>
+    <div className="p-8 max-w-6xl mx-auto space-y-8">
+      <header>
+        <h1 className="text-3xl font-bold mb-2">🔧 Advanced Features</h1>
+        <p className="text-muted-foreground">
+          TauriLink, interceptors, error handling, and backend introspection
+        </p>
       </header>
 
-      <div className="demos-grid two-col">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <TauriLinkDemo />
         <ErrorHandlingDemo />
         <BackendInfoDemo />

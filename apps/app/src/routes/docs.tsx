@@ -7,7 +7,7 @@ export const Route = createFileRoute("/docs")({
 
 function DocsPage() {
   return (
-    <div className="page">
+    <div className="p-8 max-w-6xl mx-auto">
       <ApiDocs
         title="API Documentation"
         description="Browse and explore available RPC procedures in this application"

@@ -2,6 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { subscribe, useSubscription } from "@tauri-nexus/rpc-react";
 import type { StockPrice } from "../../rpc/contract";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const AVAILABLE_SYMBOLS = ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"];
 
@@ -16,50 +19,53 @@ function StockCard({
   isSelected: boolean;
   onToggle: () => void;
 }) {
-  const changeClass = price
-    ? price.change >= 0
-      ? "positive"
-      : "negative"
-    : "";
+  const isPositive = price ? price.change >= 0 : true;
 
   return (
-    <div
-      className={`stock-card ${isSelected ? "selected" : ""} ${changeClass}`}
+    <Card
+      className={`cursor-pointer transition-all hover:border-muted-foreground/50 ${
+        isSelected ? "border-primary" : ""
+      } ${price ? (isPositive ? "border-l-4 border-l-green-500" : "border-l-4 border-l-red-500") : ""}`}
       onClick={onToggle}
     >
-      <div className="stock-header">
-        <span className="stock-symbol">{symbol}</span>
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={onToggle}
-          onClick={(e) => e.stopPropagation()}
-        />
-      </div>
-
-      {price ? (
-        <>
-          <div className="stock-price">${price.price.toFixed(2)}</div>
-          <div className={`stock-change ${changeClass}`}>
-            <span className="change-value">
-              {price.change >= 0 ? "+" : ""}
-              {price.change.toFixed(2)}
-            </span>
-            <span className="change-percent">
-              ({price.changePercent >= 0 ? "+" : ""}
-              {price.changePercent.toFixed(2)}%)
-            </span>
-          </div>
-          <div className="stock-time">
-            {new Date(price.timestamp).toLocaleTimeString()}
-          </div>
-        </>
-      ) : (
-        <div className="stock-placeholder">
-          {isSelected ? "Waiting..." : "Click to track"}
+      <CardContent className="p-5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-lg font-bold">{symbol}</span>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={onToggle}
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
-      )}
-    </div>
+
+        {price ? (
+          <>
+            <div className="text-3xl font-bold mb-2">
+              ${price.price.toFixed(2)}
+            </div>
+            <div
+              className={`flex gap-2 text-sm mb-2 ${isPositive ? "text-green-500" : "text-red-500"}`}
+            >
+              <span>
+                {isPositive ? "+" : ""}
+                {price.change.toFixed(2)}
+              </span>
+              <span>
+                ({isPositive ? "+" : ""}
+                {price.changePercent.toFixed(2)}%)
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {new Date(price.timestamp).toLocaleTimeString()}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground py-4">
+            {isSelected ? "Waiting..." : "Click to track"}
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -84,8 +90,12 @@ function PriceChart({ history }: { history: StockPrice[] }) {
   const isUp = lastPrice.price >= firstPrice.price;
 
   return (
-    <div className="price-chart">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+    <div className="h-24 relative mb-2">
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        className="w-full h-full"
+      >
         <polyline
           points={points}
           fill="none"
@@ -94,7 +104,7 @@ function PriceChart({ history }: { history: StockPrice[] }) {
           vectorEffect="non-scaling-stroke"
         />
       </svg>
-      <div className="chart-labels">
+      <div className="flex justify-between text-[10px] text-muted-foreground">
         <span>${min.toFixed(2)}</span>
         <span>${max.toFixed(2)}</span>
       </div>
@@ -138,33 +148,36 @@ function StocksPage() {
   };
 
   return (
-    <div className="page stream-page stocks-page">
-      <header className="page-header">
+    <div className="p-8 max-w-6xl mx-auto space-y-8">
+      <header className="flex items-start justify-between">
         <div>
-          <h1 className="page-title">📈 Stock Ticker</h1>
-          <p className="page-subtitle">
+          <h1 className="text-3xl font-bold mb-2">📈 Stock Ticker</h1>
+          <p className="text-muted-foreground">
             Real-time simulated stock prices with live updates
           </p>
         </div>
-        <div
-          className={`connection-status ${isConnected ? "connected" : "disconnected"}`}
+        <Badge
+          variant={isConnected ? "default" : "secondary"}
+          className="gap-2"
         >
-          <span className="status-dot" />
+          <span
+            className={`size-2 rounded-full ${isConnected ? "bg-green-500 animate-pulse" : "bg-muted-foreground"}`}
+          />
           {isConnected
             ? "Live"
             : selectedSymbols.length === 0
               ? "Select stocks"
               : "Connecting..."}
-        </div>
+        </Badge>
       </header>
 
       {error && (
-        <div className="error-banner">
+        <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 flex items-center gap-2 text-destructive">
           <span>⚠️</span> {error.message}
         </div>
       )}
 
-      <div className="stocks-grid">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {AVAILABLE_SYMBOLS.map((symbol) => (
           <StockCard
             key={symbol}
@@ -177,39 +190,51 @@ function StocksPage() {
       </div>
 
       {selectedSymbols.length > 0 && (
-        <div className="charts-section">
-          <h2>Price History</h2>
-          <div className="charts-grid">
+        <section>
+          <h2 className="text-lg font-semibold mb-4">Price History</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {selectedSymbols.map((symbol) => {
               const symbolHistory = history.get(symbol) || [];
               const currentPrice = prices.get(symbol);
 
               return (
-                <div key={symbol} className="chart-card">
-                  <div className="chart-header">
-                    <span className="chart-symbol">{symbol}</span>
-                    {currentPrice && (
-                      <span
-                        className={`chart-price ${currentPrice.change >= 0 ? "positive" : "negative"}`}
-                      >
-                        ${currentPrice.price.toFixed(2)}
-                      </span>
-                    )}
-                  </div>
-                  <PriceChart history={symbolHistory} />
-                  <div className="chart-footer">
-                    {symbolHistory.length} data points
-                  </div>
-                </div>
+                <Card key={symbol}>
+                  <CardHeader className="pb-2">
+                    <div className="flex justify-between items-center">
+                      <CardTitle className="text-sm font-semibold">
+                        {symbol}
+                      </CardTitle>
+                      {currentPrice && (
+                        <span
+                          className={`font-mono font-semibold ${currentPrice.change >= 0 ? "text-green-500" : "text-red-500"}`}
+                        >
+                          ${currentPrice.price.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <PriceChart history={symbolHistory} />
+                    <p className="text-xs text-muted-foreground text-center">
+                      {symbolHistory.length} data points
+                    </p>
+                  </CardContent>
+                </Card>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      <div className="code-example">
-        <h3>Code Example</h3>
-        <pre>{`const { isConnected } = useSubscription<StockPrice>(
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm text-muted-foreground">
+            Code Example
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="bg-muted rounded-lg p-4 overflow-x-auto">
+            <pre className="text-xs font-mono text-muted-foreground">{`const { isConnected } = useSubscription<StockPrice>(
   async () => subscribe('stream.stocks', { 
     symbols: ${JSON.stringify(selectedSymbols)} 
   }),
@@ -220,7 +245,9 @@ function StocksPage() {
     },
   }
 );`}</pre>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

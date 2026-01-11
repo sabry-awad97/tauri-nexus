@@ -1,29 +1,48 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { orpc } from "../rpc/contract";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 function StatCard({
   icon,
   label,
   value,
   subtext,
-  color = "blue",
+  variant = "default",
 }: {
   icon: string;
   label: string;
   value: string | number;
   subtext?: string;
-  color?: "blue" | "green" | "purple" | "orange";
+  variant?: "default" | "success" | "info" | "warning";
 }) {
+  const borderColors = {
+    default: "border-l-primary",
+    success: "border-l-green-500",
+    info: "border-l-blue-500",
+    warning: "border-l-orange-500",
+  };
+
   return (
-    <div className={`stat-card ${color}`}>
-      <div className="stat-icon">{icon}</div>
-      <div className="stat-content">
-        <span className="stat-value">{value}</span>
-        <span className="stat-label">{label}</span>
-        {subtext && <span className="stat-subtext">{subtext}</span>}
-      </div>
-    </div>
+    <Card className={`border-l-4 ${borderColors[variant]}`}>
+      <CardContent className="flex items-center gap-4 p-5">
+        <span className="text-3xl">{icon}</span>
+        <div className="flex flex-col">
+          <span className="text-2xl font-bold">{value}</span>
+          <span className="text-sm text-muted-foreground">{label}</span>
+          {subtext && (
+            <span className="text-xs text-muted-foreground/70">{subtext}</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -39,18 +58,28 @@ function FeatureCard({
   tags: string[];
 }) {
   return (
-    <div className="feature-card">
-      <div className="feature-icon">{icon}</div>
-      <h3 className="feature-title">{title}</h3>
-      <p className="feature-description">{description}</p>
-      <div className="feature-tags">
-        {tags.map((tag) => (
-          <span key={tag} className="tag">
-            {tag}
-          </span>
-        ))}
-      </div>
-    </div>
+    <Card className="transition-all hover:border-muted-foreground/30 hover:-translate-y-0.5">
+      <CardHeader className="pb-3">
+        <span className="text-3xl mb-2">{icon}</span>
+        <CardTitle className="text-base">{title}</CardTitle>
+        <CardDescription className="text-sm leading-relaxed">
+          {description}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map((tag) => (
+            <Badge
+              key={tag}
+              variant="secondary"
+              className="text-xs font-normal"
+            >
+              {tag}
+            </Badge>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -59,50 +88,48 @@ function Dashboard() {
   const { data: users } = useQuery(orpc.user.list.queryOptions());
 
   return (
-    <div className="page dashboard">
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">
-            Type-safe RPC framework for Tauri with React hooks
-          </p>
-        </div>
+    <div className="p-8 max-w-6xl mx-auto space-y-10">
+      <header>
+        <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
+        <p className="text-muted-foreground">
+          Type-safe RPC framework for Tauri with React hooks
+        </p>
       </header>
 
-      <section className="stats-grid">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon="🚀"
           label="Status"
           value={health?.status === "ok" ? "Online" : "Offline"}
           subtext={health?.version ? `Version ${health.version}` : undefined}
-          color="green"
+          variant="success"
         />
         <StatCard
           icon="👥"
           label="Users"
           value={users?.length ?? 0}
           subtext="In database"
-          color="blue"
+          variant="info"
         />
         <StatCard
           icon="📡"
           label="Subscriptions"
           value={4}
           subtext="Available streams"
-          color="purple"
+          variant="default"
         />
         <StatCard
           icon="⚡"
           label="Procedures"
           value={9}
           subtext="Query + Mutation"
-          color="orange"
+          variant="warning"
         />
       </section>
 
-      <section className="features-section">
-        <h2 className="section-title">Features</h2>
-        <div className="features-grid">
+      <section>
+        <h2 className="text-lg font-semibold mb-4">Features</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <FeatureCard
             icon="🔒"
             title="Type-Safe"
@@ -130,35 +157,43 @@ function Dashboard() {
         </div>
       </section>
 
-      <section className="architecture-section">
-        <h2 className="section-title">Architecture</h2>
-        <div className="architecture-diagram">
-          <div className="arch-layer frontend">
-            <span className="arch-label">Frontend</span>
-            <div className="arch-items">
-              <span className="arch-item">React Hooks</span>
-              <span className="arch-item">TypeScript Client</span>
-              <span className="arch-item">Event Iterator</span>
+      <section>
+        <h2 className="text-lg font-semibold mb-4">Architecture</h2>
+        <Card>
+          <CardContent className="p-8 flex flex-col items-center gap-4">
+            <div className="w-full max-w-md p-4 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-center">
+              <span className="text-xs font-semibold uppercase tracking-wide text-indigo-400 block mb-2">
+                Frontend
+              </span>
+              <div className="flex justify-center gap-2 flex-wrap">
+                <Badge variant="secondary">React Hooks</Badge>
+                <Badge variant="secondary">TypeScript Client</Badge>
+                <Badge variant="secondary">Event Iterator</Badge>
+              </div>
             </div>
-          </div>
-          <div className="arch-arrow">↕</div>
-          <div className="arch-layer transport">
-            <span className="arch-label">Transport</span>
-            <div className="arch-items">
-              <span className="arch-item">Tauri IPC</span>
-              <span className="arch-item">JSON-RPC</span>
+            <span className="text-xl text-muted-foreground">↕</span>
+            <div className="w-full max-w-md p-4 rounded-lg bg-violet-500/10 border border-violet-500/30 text-center">
+              <span className="text-xs font-semibold uppercase tracking-wide text-violet-400 block mb-2">
+                Transport
+              </span>
+              <div className="flex justify-center gap-2 flex-wrap">
+                <Badge variant="secondary">Tauri IPC</Badge>
+                <Badge variant="secondary">JSON-RPC</Badge>
+              </div>
             </div>
-          </div>
-          <div className="arch-arrow">↕</div>
-          <div className="arch-layer backend">
-            <span className="arch-label">Backend</span>
-            <div className="arch-items">
-              <span className="arch-item">Router</span>
-              <span className="arch-item">Middleware</span>
-              <span className="arch-item">Handlers</span>
+            <span className="text-xl text-muted-foreground">↕</span>
+            <div className="w-full max-w-md p-4 rounded-lg bg-green-500/10 border border-green-500/30 text-center">
+              <span className="text-xs font-semibold uppercase tracking-wide text-green-400 block mb-2">
+                Backend
+              </span>
+              <div className="flex justify-center gap-2 flex-wrap">
+                <Badge variant="secondary">Router</Badge>
+                <Badge variant="secondary">Middleware</Badge>
+                <Badge variant="secondary">Handlers</Badge>
+              </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </section>
     </div>
   );
