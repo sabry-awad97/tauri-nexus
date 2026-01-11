@@ -31,13 +31,14 @@
 
 use crate::{
     Context, EmptyContext, RpcError, RpcResult,
-    handler::{BoxedHandler, Handler, into_boxed},
+    handler::{BoxedHandler, Handler, into_boxed, into_boxed_validated},
     middleware::{MiddlewareFn, Next, ProcedureType, Request, Response},
     plugin::DynRouter,
     subscription::{
         BoxedSubscriptionHandler, Event, SubscriptionContext, SubscriptionHandler,
         into_boxed_subscription,
     },
+    validation::Validate,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
@@ -105,7 +106,9 @@ impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
 
     /// List all registered procedure paths
     pub fn procedures(&self) -> Vec<String> {
-        let mut paths: Vec<_> = self.compiled_chains.keys()
+        let mut paths: Vec<_> = self
+            .compiled_chains
+            .keys()
             .chain(self.subscriptions.keys())
             .cloned()
             .collect();
@@ -308,6 +311,98 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         self
     }
 
+    /// Add a query procedure with automatic input validation.
+    ///
+    /// The input type must implement the `Validate` trait. Validation is
+    /// performed automatically before the handler is called. If validation
+    /// fails, a `VALIDATION_ERROR` is returned with field-level details.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use tauri_plugin_rpc::prelude::*;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct GetUserInput {
+    ///     id: String,
+    /// }
+    ///
+    /// impl Validate for GetUserInput {
+    ///     fn validate(&self) -> ValidationResult {
+    ///         ValidationRules::new()
+    ///             .required("id", &self.id)
+    ///             .build()
+    ///     }
+    /// }
+    ///
+    /// let router = Router::new()
+    ///     .context(AppContext::new())
+    ///     .query_validated("get_user", get_user_handler);
+    /// ```
+    pub fn query_validated<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
+    where
+        N: Into<String>,
+        Input: DeserializeOwned + Validate + Send + 'static,
+        Output: Serialize + Send + 'static,
+        H: Handler<Ctx, Input, Output>,
+    {
+        let full_path = self.make_path(&name.into());
+        self.procedures.insert(
+            full_path,
+            Procedure::Handler {
+                handler: into_boxed_validated(handler),
+                procedure_type: ProcedureType::Query,
+            },
+        );
+        self
+    }
+
+    /// Add a mutation procedure with automatic input validation.
+    ///
+    /// The input type must implement the `Validate` trait. Validation is
+    /// performed automatically before the handler is called. If validation
+    /// fails, a `VALIDATION_ERROR` is returned with field-level details.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use tauri_plugin_rpc::prelude::*;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct CreateUserInput {
+    ///     name: String,
+    ///     email: String,
+    /// }
+    ///
+    /// impl Validate for CreateUserInput {
+    ///     fn validate(&self) -> ValidationResult {
+    ///         ValidationRules::new()
+    ///             .required("name", &self.name)
+    ///             .email("email", &self.email)
+    ///             .build()
+    ///     }
+    /// }
+    ///
+    /// let router = Router::new()
+    ///     .context(AppContext::new())
+    ///     .mutation_validated("create_user", create_user_handler);
+    /// ```
+    pub fn mutation_validated<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
+    where
+        N: Into<String>,
+        Input: DeserializeOwned + Validate + Send + 'static,
+        Output: Serialize + Send + 'static,
+        H: Handler<Ctx, Input, Output>,
+    {
+        let full_path = self.make_path(&name.into());
+        self.procedures.insert(
+            full_path,
+            Procedure::Handler {
+                handler: into_boxed_validated(handler),
+                procedure_type: ProcedureType::Mutation,
+            },
+        );
+        self
+    }
+
     /// Add a subscription procedure (streaming)
     ///
     /// # Example
@@ -420,7 +515,10 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
 
         for (path, procedure) in self.procedures {
             match procedure {
-                Procedure::Handler { handler, procedure_type } => {
+                Procedure::Handler {
+                    handler,
+                    procedure_type,
+                } => {
                     // Build the handler as the final step
                     let final_handler: Next<Ctx> = Arc::new(move |ctx, req| {
                         let handler = handler.clone();
@@ -444,7 +542,10 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
 
                     compiled_chains.insert(
                         path,
-                        CompiledChain { chain, procedure_type },
+                        CompiledChain {
+                            chain,
+                            procedure_type,
+                        },
                     );
                 }
                 Procedure::Subscription { handler } => {

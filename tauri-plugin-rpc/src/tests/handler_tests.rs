@@ -226,3 +226,261 @@ async fn test_struct_handler_with_null_fails() {
     .await;
     assert!(result.is_err());
 }
+
+// =============================================================================
+// Property 2: Input Validation Execution
+// =============================================================================
+
+use crate::validation::{Validate, ValidationResult, ValidationRules};
+use crate::{Context, EmptyContext, Router, RpcErrorCode, RpcResult};
+
+/// Test input that implements Validate
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct ValidatedInput {
+    name: String,
+    email: String,
+    age: i64,
+}
+
+impl Validate for ValidatedInput {
+    fn validate(&self) -> ValidationResult {
+        ValidationRules::new()
+            .required("name", &self.name)
+            .min_length("name", &self.name, 2)
+            .email("email", &self.email)
+            .range("age", self.age, 0, 150)
+            .build()
+    }
+}
+
+/// Handler that uses validated input
+async fn validated_handler(
+    _ctx: Context<EmptyContext>,
+    input: ValidatedInput,
+) -> RpcResult<String> {
+    Ok(format!("Hello, {}!", input.name))
+}
+
+/// Handler without validation
+async fn unvalidated_handler(
+    _ctx: Context<EmptyContext>,
+    input: ValidatedInput,
+) -> RpcResult<String> {
+    Ok(format!("Hello, {}!", input.name))
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(100))]
+
+    /// **Property 2: Input Validation Execution**
+    /// *For any* handler with a validatable input type and any invalid input,
+    /// the RPC_Plugin SHALL execute validation before the handler and return
+    /// a VALIDATION_ERROR with field-level details.
+    /// **Feature: tauri-rpc-framework, Property 2: Input Validation Execution**
+    /// **Validates: Requirements 6.2, 6.3, 6.5**
+
+    /// Valid inputs should pass validation and execute handler
+    #[test]
+    fn prop_valid_input_passes_validation(
+        name in "[a-zA-Z]{2,20}",
+        domain in "[a-z]{3,10}",
+        tld in "[a-z]{2,4}",
+        age in 0i64..150
+    ) {
+        let email = format!("{}@{}.{}", name.to_lowercase(), domain, tld);
+        let input = ValidatedInput {
+            name: name.clone(),
+            email,
+            age,
+        };
+
+        // Validate directly
+        let result = input.validate();
+        prop_assert!(result.is_valid(), "Valid input should pass validation");
+    }
+
+    /// Invalid name (empty) should fail validation
+    #[test]
+    fn prop_empty_name_fails_validation(
+        domain in "[a-z]{3,10}",
+        tld in "[a-z]{2,4}",
+        age in 0i64..150
+    ) {
+        let email = format!("test@{}.{}", domain, tld);
+        let input = ValidatedInput {
+            name: "".to_string(),
+            email,
+            age,
+        };
+
+        let result = input.validate();
+        prop_assert!(!result.is_valid(), "Empty name should fail validation");
+        prop_assert!(
+            result.errors.iter().any(|e| e.field == "name"),
+            "Should have error for name field"
+        );
+    }
+
+    /// Invalid email should fail validation
+    #[test]
+    fn prop_invalid_email_fails_validation(
+        name in "[a-zA-Z]{2,20}",
+        invalid_email in "[a-z]{5,15}",  // No @ symbol
+        age in 0i64..150
+    ) {
+        let input = ValidatedInput {
+            name,
+            email: invalid_email,
+            age,
+        };
+
+        let result = input.validate();
+        prop_assert!(!result.is_valid(), "Invalid email should fail validation");
+        prop_assert!(
+            result.errors.iter().any(|e| e.field == "email"),
+            "Should have error for email field"
+        );
+    }
+
+    /// Age out of range should fail validation
+    #[test]
+    fn prop_age_out_of_range_fails_validation(
+        name in "[a-zA-Z]{2,20}",
+        domain in "[a-z]{3,10}",
+        tld in "[a-z]{2,4}",
+        age in 151i64..500
+    ) {
+        let email = format!("{}@{}.{}", name.to_lowercase(), domain, tld);
+        let input = ValidatedInput {
+            name,
+            email,
+            age,
+        };
+
+        let result = input.validate();
+        prop_assert!(!result.is_valid(), "Age out of range should fail validation");
+        prop_assert!(
+            result.errors.iter().any(|e| e.field == "age"),
+            "Should have error for age field"
+        );
+    }
+
+    /// Multiple invalid fields should aggregate all errors
+    #[test]
+    fn prop_multiple_errors_aggregated(
+        invalid_email in "[a-z]{5,15}",  // No @ symbol
+        age in 151i64..500
+    ) {
+        let input = ValidatedInput {
+            name: "".to_string(),  // Invalid: empty
+            email: invalid_email,  // Invalid: no @
+            age,                   // Invalid: out of range
+        };
+
+        let result = input.validate();
+        prop_assert!(!result.is_valid(), "Multiple invalid fields should fail");
+        prop_assert!(
+            result.errors.len() >= 2,
+            "Should have at least 2 errors, got {}",
+            result.errors.len()
+        );
+    }
+}
+
+#[cfg(test)]
+mod validation_execution_unit_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_router_with_validated_handler_valid_input() {
+        let router = Router::new()
+            .context(EmptyContext)
+            .query_validated("test", validated_handler)
+            .compile();
+
+        let input = json!({
+            "name": "John",
+            "email": "john@example.com",
+            "age": 30
+        });
+
+        let result = router.call("test", input).await;
+        assert!(result.is_ok(), "Valid input should succeed: {:?}", result);
+        assert_eq!(result.unwrap(), json!("Hello, John!"));
+    }
+
+    #[tokio::test]
+    async fn test_router_with_validated_handler_invalid_input() {
+        let router = Router::new()
+            .context(EmptyContext)
+            .query_validated("test", validated_handler)
+            .compile();
+
+        let input = json!({
+            "name": "",
+            "email": "invalid",
+            "age": 200
+        });
+
+        let result = router.call("test", input).await;
+        assert!(result.is_err(), "Invalid input should fail");
+
+        let err = result.unwrap_err();
+        assert_eq!(err.code, RpcErrorCode::ValidationError);
+        assert!(err.details.is_some(), "Should have error details");
+
+        let details = err.details.unwrap();
+        let errors = details.get("errors").expect("Should have errors array");
+        assert!(errors.is_array(), "Errors should be an array");
+        assert!(
+            !errors.as_array().unwrap().is_empty(),
+            "Should have at least one error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_router_without_validation_accepts_invalid_input() {
+        let router = Router::new()
+            .context(EmptyContext)
+            .query("test", unvalidated_handler) // Not using query_validated
+            .compile();
+
+        let input = json!({
+            "name": "",
+            "email": "invalid",
+            "age": 200
+        });
+
+        // Without validation, the handler should still execute
+        let result = router.call("test", input).await;
+        assert!(result.is_ok(), "Without validation, handler should execute");
+    }
+
+    #[tokio::test]
+    async fn test_validation_error_contains_field_details() {
+        let router = Router::new()
+            .context(EmptyContext)
+            .mutation_validated("create", validated_handler)
+            .compile();
+
+        let input = json!({
+            "name": "a",  // Too short (min 2)
+            "email": "test@example.com",
+            "age": 30
+        });
+
+        let result = router.call("create", input).await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert_eq!(err.code, RpcErrorCode::ValidationError);
+
+        let details = err.details.unwrap();
+        let errors = details.get("errors").unwrap().as_array().unwrap();
+
+        // Should have error for name field
+        let name_error = errors.iter().find(|e| e.get("field").unwrap() == "name");
+        assert!(name_error.is_some(), "Should have error for name field");
+        assert_eq!(name_error.unwrap().get("code").unwrap(), "min_length");
+    }
+}

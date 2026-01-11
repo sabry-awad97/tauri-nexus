@@ -292,6 +292,7 @@ mod plugin;
 mod router;
 pub mod subscription;
 pub mod types;
+pub mod validation;
 
 #[cfg(test)]
 mod tests;
@@ -314,6 +315,7 @@ pub use subscription::{
     generate_subscription_id, with_event_meta,
 };
 pub use types::*;
+pub use validation::{FieldError, Validate, ValidationResult, ValidationRules};
 
 /// Prelude for convenient imports
 ///
@@ -362,6 +364,11 @@ pub mod prelude {
         SubscriptionId,
         SubscriptionManager,
         SuccessResponse,
+        // Validation
+        FieldError,
+        Validate,
+        ValidationResult,
+        ValidationRules,
         // Functions
         event_channel,
         generate_subscription_id,
