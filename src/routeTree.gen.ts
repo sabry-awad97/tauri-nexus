@@ -8,210 +8,210 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from "./routes/__root";
-import { Route as UsersRouteImport } from "./routes/users";
-import { Route as GreetRouteImport } from "./routes/greet";
-import { Route as BatchRouteImport } from "./routes/batch";
-import { Route as AdvancedRouteImport } from "./routes/advanced";
-import { Route as IndexRouteImport } from "./routes/index";
-import { Route as StreamsTimeRouteImport } from "./routes/streams/time";
-import { Route as StreamsStocksRouteImport } from "./routes/streams/stocks";
-import { Route as StreamsCounterRouteImport } from "./routes/streams/counter";
-import { Route as StreamsChatRouteImport } from "./routes/streams/chat";
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as UsersRouteImport } from './routes/users'
+import { Route as GreetRouteImport } from './routes/greet'
+import { Route as BatchRouteImport } from './routes/batch'
+import { Route as AdvancedRouteImport } from './routes/advanced'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as StreamsTimeRouteImport } from './routes/streams/time'
+import { Route as StreamsStocksRouteImport } from './routes/streams/stocks'
+import { Route as StreamsCounterRouteImport } from './routes/streams/counter'
+import { Route as StreamsChatRouteImport } from './routes/streams/chat'
 
 const UsersRoute = UsersRouteImport.update({
-  id: "/users",
-  path: "/users",
+  id: '/users',
+  path: '/users',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const GreetRoute = GreetRouteImport.update({
-  id: "/greet",
-  path: "/greet",
+  id: '/greet',
+  path: '/greet',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const BatchRoute = BatchRouteImport.update({
-  id: "/batch",
-  path: "/batch",
+  id: '/batch',
+  path: '/batch',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const AdvancedRoute = AdvancedRouteImport.update({
-  id: "/advanced",
-  path: "/advanced",
+  id: '/advanced',
+  path: '/advanced',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const StreamsTimeRoute = StreamsTimeRouteImport.update({
-  id: "/streams/time",
-  path: "/streams/time",
+  id: '/streams/time',
+  path: '/streams/time',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const StreamsStocksRoute = StreamsStocksRouteImport.update({
-  id: "/streams/stocks",
-  path: "/streams/stocks",
+  id: '/streams/stocks',
+  path: '/streams/stocks',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const StreamsCounterRoute = StreamsCounterRouteImport.update({
-  id: "/streams/counter",
-  path: "/streams/counter",
+  id: '/streams/counter',
+  path: '/streams/counter',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const StreamsChatRoute = StreamsChatRouteImport.update({
-  id: "/streams/chat",
-  path: "/streams/chat",
+  id: '/streams/chat',
+  path: '/streams/chat',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 
 export interface FileRoutesByFullPath {
-  "/": typeof IndexRoute;
-  "/advanced": typeof AdvancedRoute;
-  "/batch": typeof BatchRoute;
-  "/greet": typeof GreetRoute;
-  "/users": typeof UsersRoute;
-  "/streams/chat": typeof StreamsChatRoute;
-  "/streams/counter": typeof StreamsCounterRoute;
-  "/streams/stocks": typeof StreamsStocksRoute;
-  "/streams/time": typeof StreamsTimeRoute;
+  '/': typeof IndexRoute
+  '/advanced': typeof AdvancedRoute
+  '/batch': typeof BatchRoute
+  '/greet': typeof GreetRoute
+  '/users': typeof UsersRoute
+  '/streams/chat': typeof StreamsChatRoute
+  '/streams/counter': typeof StreamsCounterRoute
+  '/streams/stocks': typeof StreamsStocksRoute
+  '/streams/time': typeof StreamsTimeRoute
 }
 export interface FileRoutesByTo {
-  "/": typeof IndexRoute;
-  "/advanced": typeof AdvancedRoute;
-  "/batch": typeof BatchRoute;
-  "/greet": typeof GreetRoute;
-  "/users": typeof UsersRoute;
-  "/streams/chat": typeof StreamsChatRoute;
-  "/streams/counter": typeof StreamsCounterRoute;
-  "/streams/stocks": typeof StreamsStocksRoute;
-  "/streams/time": typeof StreamsTimeRoute;
+  '/': typeof IndexRoute
+  '/advanced': typeof AdvancedRoute
+  '/batch': typeof BatchRoute
+  '/greet': typeof GreetRoute
+  '/users': typeof UsersRoute
+  '/streams/chat': typeof StreamsChatRoute
+  '/streams/counter': typeof StreamsCounterRoute
+  '/streams/stocks': typeof StreamsStocksRoute
+  '/streams/time': typeof StreamsTimeRoute
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport;
-  "/": typeof IndexRoute;
-  "/advanced": typeof AdvancedRoute;
-  "/batch": typeof BatchRoute;
-  "/greet": typeof GreetRoute;
-  "/users": typeof UsersRoute;
-  "/streams/chat": typeof StreamsChatRoute;
-  "/streams/counter": typeof StreamsCounterRoute;
-  "/streams/stocks": typeof StreamsStocksRoute;
-  "/streams/time": typeof StreamsTimeRoute;
+  __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
+  '/advanced': typeof AdvancedRoute
+  '/batch': typeof BatchRoute
+  '/greet': typeof GreetRoute
+  '/users': typeof UsersRoute
+  '/streams/chat': typeof StreamsChatRoute
+  '/streams/counter': typeof StreamsCounterRoute
+  '/streams/stocks': typeof StreamsStocksRoute
+  '/streams/time': typeof StreamsTimeRoute
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath;
+  fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | "/"
-    | "/advanced"
-    | "/batch"
-    | "/greet"
-    | "/users"
-    | "/streams/chat"
-    | "/streams/counter"
-    | "/streams/stocks"
-    | "/streams/time";
-  fileRoutesByTo: FileRoutesByTo;
+    | '/'
+    | '/advanced'
+    | '/batch'
+    | '/greet'
+    | '/users'
+    | '/streams/chat'
+    | '/streams/counter'
+    | '/streams/stocks'
+    | '/streams/time'
+  fileRoutesByTo: FileRoutesByTo
   to:
-    | "/"
-    | "/advanced"
-    | "/batch"
-    | "/greet"
-    | "/users"
-    | "/streams/chat"
-    | "/streams/counter"
-    | "/streams/stocks"
-    | "/streams/time";
+    | '/'
+    | '/advanced'
+    | '/batch'
+    | '/greet'
+    | '/users'
+    | '/streams/chat'
+    | '/streams/counter'
+    | '/streams/stocks'
+    | '/streams/time'
   id:
-    | "__root__"
-    | "/"
-    | "/advanced"
-    | "/batch"
-    | "/greet"
-    | "/users"
-    | "/streams/chat"
-    | "/streams/counter"
-    | "/streams/stocks"
-    | "/streams/time";
-  fileRoutesById: FileRoutesById;
+    | '__root__'
+    | '/'
+    | '/advanced'
+    | '/batch'
+    | '/greet'
+    | '/users'
+    | '/streams/chat'
+    | '/streams/counter'
+    | '/streams/stocks'
+    | '/streams/time'
+  fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute;
-  AdvancedRoute: typeof AdvancedRoute;
-  BatchRoute: typeof BatchRoute;
-  GreetRoute: typeof GreetRoute;
-  UsersRoute: typeof UsersRoute;
-  StreamsChatRoute: typeof StreamsChatRoute;
-  StreamsCounterRoute: typeof StreamsCounterRoute;
-  StreamsStocksRoute: typeof StreamsStocksRoute;
-  StreamsTimeRoute: typeof StreamsTimeRoute;
+  IndexRoute: typeof IndexRoute
+  AdvancedRoute: typeof AdvancedRoute
+  BatchRoute: typeof BatchRoute
+  GreetRoute: typeof GreetRoute
+  UsersRoute: typeof UsersRoute
+  StreamsChatRoute: typeof StreamsChatRoute
+  StreamsCounterRoute: typeof StreamsCounterRoute
+  StreamsStocksRoute: typeof StreamsStocksRoute
+  StreamsTimeRoute: typeof StreamsTimeRoute
 }
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    "/users": {
-      id: "/users";
-      path: "/users";
-      fullPath: "/users";
-      preLoaderRoute: typeof UsersRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/greet": {
-      id: "/greet";
-      path: "/greet";
-      fullPath: "/greet";
-      preLoaderRoute: typeof GreetRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/batch": {
-      id: "/batch";
-      path: "/batch";
-      fullPath: "/batch";
-      preLoaderRoute: typeof BatchRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/advanced": {
-      id: "/advanced";
-      path: "/advanced";
-      fullPath: "/advanced";
-      preLoaderRoute: typeof AdvancedRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/": {
-      id: "/";
-      path: "/";
-      fullPath: "/";
-      preLoaderRoute: typeof IndexRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/streams/time": {
-      id: "/streams/time";
-      path: "/streams/time";
-      fullPath: "/streams/time";
-      preLoaderRoute: typeof StreamsTimeRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/streams/stocks": {
-      id: "/streams/stocks";
-      path: "/streams/stocks";
-      fullPath: "/streams/stocks";
-      preLoaderRoute: typeof StreamsStocksRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/streams/counter": {
-      id: "/streams/counter";
-      path: "/streams/counter";
-      fullPath: "/streams/counter";
-      preLoaderRoute: typeof StreamsCounterRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/streams/chat": {
-      id: "/streams/chat";
-      path: "/streams/chat";
-      fullPath: "/streams/chat";
-      preLoaderRoute: typeof StreamsChatRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
+    '/users': {
+      id: '/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof UsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/greet': {
+      id: '/greet'
+      path: '/greet'
+      fullPath: '/greet'
+      preLoaderRoute: typeof GreetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/batch': {
+      id: '/batch'
+      path: '/batch'
+      fullPath: '/batch'
+      preLoaderRoute: typeof BatchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/advanced': {
+      id: '/advanced'
+      path: '/advanced'
+      fullPath: '/advanced'
+      preLoaderRoute: typeof AdvancedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/streams/time': {
+      id: '/streams/time'
+      path: '/streams/time'
+      fullPath: '/streams/time'
+      preLoaderRoute: typeof StreamsTimeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/streams/stocks': {
+      id: '/streams/stocks'
+      path: '/streams/stocks'
+      fullPath: '/streams/stocks'
+      preLoaderRoute: typeof StreamsStocksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/streams/counter': {
+      id: '/streams/counter'
+      path: '/streams/counter'
+      fullPath: '/streams/counter'
+      preLoaderRoute: typeof StreamsCounterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/streams/chat': {
+      id: '/streams/chat'
+      path: '/streams/chat'
+      fullPath: '/streams/chat'
+      preLoaderRoute: typeof StreamsChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -225,7 +225,7 @@ const rootRouteChildren: RootRouteChildren = {
   StreamsCounterRoute: StreamsCounterRoute,
   StreamsStocksRoute: StreamsStocksRoute,
   StreamsTimeRoute: StreamsTimeRoute,
-};
+}
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>();
+  ._addFileTypes<FileRouteTypes>()

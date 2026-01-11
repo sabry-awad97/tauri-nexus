@@ -87,7 +87,14 @@ pub struct SingleRequest {
     /// The procedure path to call (e.g., "user.get", "post.create").
     pub path: String,
     /// Input data for the procedure.
+    /// Defaults to null if not provided.
+    #[serde(default = "default_input")]
     pub input: serde_json::Value,
+}
+
+/// Default input value for requests without input.
+fn default_input() -> serde_json::Value {
+    serde_json::Value::Null
 }
 
 /// A batch of RPC requests to be processed together.

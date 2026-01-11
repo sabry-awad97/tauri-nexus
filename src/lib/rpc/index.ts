@@ -162,12 +162,16 @@ export {
 export {
   // Subscription hook (TanStack Query doesn't support streaming)
   useSubscription,
+  // Batch hook
+  useBatch,
   // Utility hooks
   useIsMounted,
   // Types
   type SubscriptionState,
   type SubscriptionResult,
   type SubscriptionHookOptions,
+  type BatchState,
+  type UseBatchOptions,
 } from "./hooks";
 
 // =============================================================================

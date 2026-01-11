@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { rpc } from "../rpc/contract";
+import { useBatch } from "../lib/rpc";
 
 interface BatchResultDisplay {
   id: string;
@@ -15,6 +16,31 @@ function BatchExample() {
   const [isLoading, setIsLoading] = useState(false);
   const [totalDuration, setTotalDuration] = useState<number | null>(null);
 
+  // ==========================================================================
+  // Hook-based batch (recommended for React components)
+  // ==========================================================================
+  const healthBatch = useBatch(
+    () =>
+      rpc
+        .batch()
+        .add("health", "health", undefined)
+        .add("greeting", "greet", { name: "Hook User" })
+        .add("users", "user.list", undefined),
+    { executeOnMount: false },
+  );
+
+  const runHookBatch = async () => {
+    try {
+      await healthBatch.execute();
+    } catch {
+      // Error is handled by the hook
+    }
+  };
+
+  // ==========================================================================
+  // Direct API examples
+  // ==========================================================================
+
   // Example 1: Type-Safe Batch - Basic
   const runBasicBatch = async () => {
     setIsLoading(true);
@@ -22,24 +48,18 @@ function BatchExample() {
     const startTime = performance.now();
 
     try {
-      // Full type safety! Paths autocomplete, inputs are validated at compile time
       const response = await rpc
         .batch()
-        .add("health-check", "health", undefined) // input: void
-        .add("greeting", "greet", { name: "TypeSafe" }) // input: { name: string }
-        .add("user-list", "user.list", undefined) // input: void
+        .add("health-check", "health", undefined)
+        .add("greeting", "greet", { name: "TypeSafe" })
+        .add("user-list", "user.list", undefined)
         .execute();
 
       const endTime = performance.now();
       setTotalDuration(endTime - startTime);
 
-      // Results are typed per request ID!
       const healthResult = response.getResult("health-check");
       const greetResult = response.getResult("greeting");
-
-      // TypeScript knows the types:
-      // healthResult.data is HealthResponse | undefined
-      // greetResult.data is string | undefined
 
       console.log("Health status:", healthResult.data?.status);
       console.log("Greeting:", greetResult.data);
@@ -71,20 +91,18 @@ function BatchExample() {
     try {
       const response = await rpc
         .batch()
-        .add("user-1", "user.get", { id: 1 }) // input: { id: number }
-        .add("user-2", "user.get", { id: 2 }) // input: { id: number }
-        .add("user-3", "user.get", { id: 3 }) // input: { id: number }
-        .add("all-users", "user.list", undefined) // input: void
+        .add("user-1", "user.get", { id: 1 })
+        .add("user-2", "user.get", { id: 2 })
+        .add("user-3", "user.get", { id: 3 })
+        .add("all-users", "user.list", undefined)
         .execute();
 
       const endTime = performance.now();
       setTotalDuration(endTime - startTime);
 
-      // Get typed results
       const user1 = response.getResult("user-1");
       const user2 = response.getResult("user-2");
 
-      // TypeScript knows user1.data is User | undefined
       console.log("User 1:", user1.data?.name);
       console.log("User 2:", user2.data?.name);
 
@@ -107,47 +125,7 @@ function BatchExample() {
     }
   };
 
-  // Example 3: Batch with mixed success/failure
-  const runMixedBatch = async () => {
-    setIsLoading(true);
-    setResults([]);
-    const startTime = performance.now();
-
-    try {
-      const response = await rpc
-        .batch()
-        .add("success-1", "health", undefined)
-        .add("success-2", "greet", { name: "Still Works" })
-        .add("success-3", "user.list", undefined)
-        .execute();
-
-      const endTime = performance.now();
-      setTotalDuration(endTime - startTime);
-
-      // Check success/failure counts
-      console.log(
-        `Success: ${response.successCount}, Errors: ${response.errorCount}`,
-      );
-
-      setResults(
-        response.results.map((r, i) => ({
-          id: r.id,
-          path: ["health", "greet", "user.list"][i] || "unknown",
-          success: !r.error,
-          data: r.data,
-          error: r.error
-            ? { code: r.error.code, message: r.error.message }
-            : undefined,
-        })),
-      );
-    } catch (error) {
-      console.error("Batch failed:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Example 4: Large batch with many requests
+  // Example 3: Large batch
   const runLargeBatch = async () => {
     setIsLoading(true);
     setResults([]);
@@ -169,7 +147,6 @@ function BatchExample() {
       const endTime = performance.now();
       setTotalDuration(endTime - startTime);
 
-      // Get all successful results
       const successful = response.getSuccessful();
       console.log(`${successful.length} requests succeeded`);
 
@@ -212,13 +189,46 @@ function BatchExample() {
       </header>
 
       <div className="batch-layout">
-        {/* Examples Section */}
+        {/* Hook-based Example */}
         <section className="batch-examples">
-          <h2>Type-Safe Batch Examples</h2>
+          <h2>⭐ useBatch Hook (Recommended)</h2>
 
           <div className="example-cards">
             <div className="example-card featured">
-              <h3>⭐ Basic Batch</h3>
+              <h3>🪝 React Hook</h3>
+              <p>Automatic state management</p>
+              <code>useBatch(() =&gt; rpc.batch()...)</code>
+              <button onClick={runHookBatch} disabled={healthBatch.isLoading}>
+                {healthBatch.isLoading ? "Running..." : "Run Hook Batch"}
+              </button>
+
+              {healthBatch.isSuccess && (
+                <div className="hook-results">
+                  <p>✓ Success in {healthBatch.duration?.toFixed(2)}ms</p>
+                  <p>Health: {healthBatch.getResult("health")?.data?.status}</p>
+                  <p>Greeting: {healthBatch.getResult("greeting")?.data}</p>
+                  <p>
+                    Users: {healthBatch.getResult("users")?.data?.length} found
+                  </p>
+                </div>
+              )}
+
+              {healthBatch.isError && (
+                <div className="hook-error">
+                  <p>✗ Error: {healthBatch.error?.message}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Direct API Examples */}
+        <section className="batch-examples">
+          <h2>Direct API Examples</h2>
+
+          <div className="example-cards">
+            <div className="example-card">
+              <h3>Basic Batch</h3>
               <p>Health, greeting, and user list</p>
               <code>rpc.batch().add(...).execute()</code>
               <button onClick={runBasicBatch} disabled={isLoading}>
@@ -232,15 +242,6 @@ function BatchExample() {
               <code>Multiple user.get calls</code>
               <button onClick={runUserBatch} disabled={isLoading}>
                 {isLoading ? "Running..." : "Run User Batch"}
-              </button>
-            </div>
-
-            <div className="example-card">
-              <h3>✅ Mixed Results</h3>
-              <p>Batch with success tracking</p>
-              <code>response.successCount</code>
-              <button onClick={runMixedBatch} disabled={isLoading}>
-                {isLoading ? "Running..." : "Run Mixed Batch"}
               </button>
             </div>
 
@@ -309,7 +310,39 @@ function BatchExample() {
           <h2>Code Examples</h2>
 
           <div className="code-block featured">
-            <h4>⭐ Type-Safe Batch (Recommended)</h4>
+            <h4>⭐ useBatch Hook (Recommended for React)</h4>
+            <pre>{`import { useBatch } from "../lib/rpc";
+import { rpc } from "../rpc/contract";
+
+function MyComponent() {
+  const batch = useBatch(
+    () => rpc.batch()
+      .add("health", "health", undefined)
+      .add("user", "user.get", { id: 1 })
+      .add("greeting", "greet", { name: "World" }),
+    { executeOnMount: true }  // or false for manual execution
+  );
+
+  if (batch.isLoading) return <div>Loading...</div>;
+  if (batch.isError) return <div>Error: {batch.error?.message}</div>;
+
+  // Results are typed!
+  const healthResult = batch.getResult("health");
+  const userResult = batch.getResult("user");
+
+  return (
+    <div>
+      <p>Health: {healthResult?.data?.status}</p>
+      <p>User: {userResult?.data?.name}</p>
+      <p>Duration: {batch.duration}ms</p>
+      <button onClick={() => batch.execute()}>Refresh</button>
+    </div>
+  );
+}`}</pre>
+          </div>
+
+          <div className="code-block">
+            <h4>Direct API (for non-React or manual control)</h4>
             <pre>{`import { rpc } from "../rpc/contract";
 
 // Full type safety! Paths autocomplete, inputs validated at compile time
@@ -332,26 +365,32 @@ if (userResult.data) {
           </div>
 
           <div className="code-block">
-            <h4>Response Helper Methods</h4>
-            <pre>{`const response = await rpc.batch()
-  .add("h", "health", undefined)
-  .add("u", "user.get", { id: 1 })
-  .execute();
+            <h4>Hook Options</h4>
+            <pre>{`const batch = useBatch(
+  () => rpc.batch().add("h", "health", undefined),
+  {
+    executeOnMount: true,     // Execute immediately
+    onSuccess: (response) => {
+      console.log("Batch succeeded:", response.successCount);
+    },
+    onError: (error) => {
+      console.error("Batch failed:", error.message);
+    },
+  }
+);
 
-// Check success/failure
-response.isSuccess("h");     // boolean
-response.isError("u");       // boolean
+// Hook state
+batch.isLoading;    // boolean
+batch.isSuccess;    // boolean
+batch.isError;      // boolean
+batch.error;        // RpcError | null
+batch.duration;     // number | null (ms)
+batch.response;     // TypedBatchResponseWrapper | null
 
-// Get counts
-response.successCount;       // number
-response.errorCount;         // number
-
-// Get filtered results
-response.getSuccessful();    // TypedBatchResult[]
-response.getFailed();        // TypedBatchResult[]
-
-// Get all results in order
-response.results;            // TypedBatchResult[]`}</pre>
+// Hook methods
+batch.execute();    // Execute the batch
+batch.reset();      // Reset state
+batch.getResult(id); // Get typed result by ID`}</pre>
           </div>
         </section>
       </div>

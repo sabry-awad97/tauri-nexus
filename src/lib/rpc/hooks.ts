@@ -279,3 +279,218 @@ export function useIsMounted(): () => boolean {
 
   return useCallback(() => mountedRef.current, []);
 }
+
+// =============================================================================
+// Batch Hook Types
+// =============================================================================
+
+import type { BatchCallOptions, TypedBatchResult } from "./types";
+import { TypedBatchBuilder, TypedBatchResponseWrapper } from "./client";
+
+export interface BatchState<TOutputMap extends Record<string, unknown>> {
+  /** The batch response wrapper (null before execution) */
+  response: TypedBatchResponseWrapper<TOutputMap> | null;
+  /** Whether the batch is currently executing */
+  isLoading: boolean;
+  /** Error if the entire batch failed */
+  error: RpcError | null;
+  /** Whether there was an error */
+  isError: boolean;
+  /** Whether the batch has been executed successfully */
+  isSuccess: boolean;
+  /** Execution duration in milliseconds */
+  duration: number | null;
+}
+
+export interface BatchResult<
+  TOutputMap extends Record<string, unknown>,
+> extends BatchState<TOutputMap> {
+  /** Execute the batch */
+  execute: (
+    options?: BatchCallOptions,
+  ) => Promise<TypedBatchResponseWrapper<TOutputMap>>;
+  /** Reset the state */
+  reset: () => void;
+  /** Get a typed result by ID (shorthand for response?.getResult) */
+  getResult: <TId extends keyof TOutputMap & string>(
+    id: TId,
+  ) => TypedBatchResult<TOutputMap[TId]> | undefined;
+}
+
+export interface UseBatchOptions {
+  /** Execute immediately on mount */
+  executeOnMount?: boolean;
+  /** Called when batch succeeds */
+  onSuccess?: (
+    response: TypedBatchResponseWrapper<Record<string, unknown>>,
+  ) => void;
+  /** Called when batch fails */
+  onError?: (error: RpcError) => void;
+}
+
+// =============================================================================
+// useBatch Hook
+// =============================================================================
+
+/**
+ * React hook for executing type-safe batch operations.
+ *
+ * This hook provides React state management for batch operations,
+ * including loading states, error handling, and result access.
+ *
+ * @example
+ * ```typescript
+ * function MyComponent() {
+ *   const batch = useBatch(
+ *     () => rpc.batch()
+ *       .add("health", "health", undefined)
+ *       .add("user", "user.get", { id: 1 })
+ *       .add("greeting", "greet", { name: "World" }),
+ *     { executeOnMount: true }
+ *   );
+ *
+ *   if (batch.isLoading) return <div>Loading...</div>;
+ *   if (batch.isError) return <div>Error: {batch.error?.message}</div>;
+ *
+ *   const healthResult = batch.getResult("health");
+ *   const userResult = batch.getResult("user");
+ *
+ *   return (
+ *     <div>
+ *       <p>Health: {healthResult?.data?.status}</p>
+ *       <p>User: {userResult?.data?.name}</p>
+ *       <p>Duration: {batch.duration}ms</p>
+ *       <button onClick={() => batch.execute()}>Refresh</button>
+ *     </div>
+ *   );
+ * }
+ * ```
+ *
+ * @example Manual execution
+ * ```typescript
+ * function MyComponent() {
+ *   const batch = useBatch(
+ *     () => rpc.batch()
+ *       .add("users", "user.list", undefined)
+ *   );
+ *
+ *   return (
+ *     <button onClick={() => batch.execute()} disabled={batch.isLoading}>
+ *       {batch.isLoading ? "Loading..." : "Fetch Users"}
+ *     </button>
+ *   );
+ * }
+ * ```
+ */
+export function useBatch<TContract, TOutputMap extends Record<string, unknown>>(
+  builderFn: () => TypedBatchBuilder<TContract, TOutputMap>,
+  options: UseBatchOptions = {},
+): BatchResult<TOutputMap> {
+  const { executeOnMount = false, onSuccess, onError } = options;
+
+  const [state, setState] = useState<BatchState<TOutputMap>>({
+    response: null,
+    isLoading: false,
+    error: null,
+    isError: false,
+    isSuccess: false,
+    duration: null,
+  });
+
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const execute = useCallback(
+    async (callOptions?: BatchCallOptions) => {
+      setState((s) => ({
+        ...s,
+        isLoading: true,
+        error: null,
+        isError: false,
+      }));
+
+      const startTime = performance.now();
+
+      try {
+        const builder = builderFn();
+        const response = await builder.execute(callOptions);
+        const duration = performance.now() - startTime;
+
+        if (mountedRef.current) {
+          setState({
+            response,
+            isLoading: false,
+            error: null,
+            isError: false,
+            isSuccess: true,
+            duration,
+          });
+          onSuccess?.(
+            response as TypedBatchResponseWrapper<Record<string, unknown>>,
+          );
+        }
+
+        return response;
+      } catch (err) {
+        const error = isRpcError(err)
+          ? err
+          : { code: "UNKNOWN", message: String(err) };
+        const duration = performance.now() - startTime;
+
+        if (mountedRef.current) {
+          setState({
+            response: null,
+            isLoading: false,
+            error,
+            isError: true,
+            isSuccess: false,
+            duration,
+          });
+          onError?.(error);
+        }
+
+        throw error;
+      }
+    },
+    [builderFn, onSuccess, onError],
+  );
+
+  const reset = useCallback(() => {
+    setState({
+      response: null,
+      isLoading: false,
+      error: null,
+      isError: false,
+      isSuccess: false,
+      duration: null,
+    });
+  }, []);
+
+  const getResult = useCallback(
+    <TId extends keyof TOutputMap & string>(id: TId) => {
+      return state.response?.getResult(id);
+    },
+    [state.response],
+  );
+
+  // Execute on mount if requested
+  useEffect(() => {
+    if (executeOnMount) {
+      execute();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return {
+    ...state,
+    execute,
+    reset,
+    getResult,
+  };
+}

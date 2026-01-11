@@ -16,6 +16,7 @@ use tauri::{
     plugin::{Builder, TauriPlugin},
 };
 use tokio::sync::mpsc;
+use tracing::{debug, warn};
 
 // =============================================================================
 // Type Aliases
@@ -177,15 +178,25 @@ async fn rpc_call_batch(
     let batch_config = BatchConfig::default();
 
     // Validate batch
-    batch
-        .validate(&batch_config)
-        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+    if let Err(e) = batch.validate(&batch_config) {
+        warn!(error = %e, "Batch validation failed");
+        return Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()));
+    }
 
     // Validate each request's path and input
     for req in &batch.requests {
-        validate_rpc_input(&req.path, &req.input, &config.0)
-            .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+        if let Err(e) = validate_rpc_input(&req.path, &req.input, &config.0) {
+            warn!(
+                request_id = %req.id,
+                path = %req.path,
+                error = %e,
+                "Batch request validation failed"
+            );
+            return Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()));
+        }
     }
+
+    debug!(batch_size = batch.requests.len(), "Executing batch request");
 
     // Execute batch using parallel execution
     let futures: Vec<_> = batch
@@ -198,15 +209,35 @@ async fn rpc_call_batch(
             let router = state.0.clone();
             async move {
                 match router.call(&path, input).await {
-                    Ok(data) => BatchResult::success(id, data),
-                    Err(error) => BatchResult::error(id, error),
+                    Ok(data) => {
+                        debug!(request_id = %id, path = %path, "Batch request succeeded");
+                        BatchResult::success(id, data)
+                    }
+                    Err(error) => {
+                        warn!(
+                            request_id = %id,
+                            path = %path,
+                            error_code = %error.code,
+                            error_message = %error.message,
+                            "Batch request failed"
+                        );
+                        BatchResult::error(id, error)
+                    }
                 }
             }
         })
         .collect();
 
     let results = futures::future::join_all(futures).await;
-    Ok(BatchResponse::new(results))
+    let response = BatchResponse::new(results);
+
+    debug!(
+        success_count = response.success_count(),
+        error_count = response.error_count(),
+        "Batch request completed"
+    );
+
+    Ok(response)
 }
 
 #[tauri::command]

@@ -5,6 +5,7 @@ Default permissions for the RPC plugin
 #### This default permission set includes the following:
 
 - `allow-rpc-call`
+- `allow-rpc-call-batch`
 - `allow-rpc-procedures`
 - `allow-rpc-subscribe`
 - `allow-rpc-unsubscribe`
@@ -17,6 +18,7 @@ Default permissions for the RPC plugin
 <th>Identifier</th>
 <th>Description</th>
 </tr>
+
 
 <tr>
 <td>
@@ -170,6 +172,32 @@ Enables the rpc_call command without any pre-configured scope.
 <td>
 
 Denies the rpc_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rpc:allow-rpc-call-batch`
+
+</td>
+<td>
+
+Enables the rpc_call_batch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`rpc:deny-rpc-call-batch`
+
+</td>
+<td>
+
+Denies the rpc_call_batch command without any pre-configured scope.
 
 </td>
 </tr>

@@ -1,5 +1,6 @@
 const COMMANDS: &[&str] = &[
     "rpc_call",
+    "rpc_call_batch",
     "rpc_procedures",
     "rpc_subscribe",
     "rpc_unsubscribe",

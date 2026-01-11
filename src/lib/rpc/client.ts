@@ -303,7 +303,13 @@ async function executeBatch<T = unknown>(
     validatePath(req.path);
   }
 
-  const batchRequest: BatchRequest = { requests };
+  // Ensure input is serialized as null instead of undefined
+  const normalizedRequests = requests.map((req) => ({
+    ...req,
+    input: req.input === undefined ? null : req.input,
+  }));
+
+  const batchRequest: BatchRequest = { requests: normalizedRequests };
   const timeoutMs = options?.timeout;
 
   try {
@@ -332,6 +338,10 @@ async function executeBatch<T = unknown>(
     });
   } catch (error) {
     const rpcError = parseError(error, timeoutMs);
+    console.warn(
+      `[RPC] Batch request failed: ${rpcError.code} - ${rpcError.message}`,
+      rpcError.details,
+    );
     throw rpcError;
   }
 }
@@ -468,6 +478,12 @@ export class TypedBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
     this.resultMap = new Map();
     for (const result of response.results) {
       this.resultMap.set(result.id, result);
+      // Log warnings for failed requests
+      if (result.error) {
+        console.warn(
+          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`,
+        );
+      }
     }
   }
 
