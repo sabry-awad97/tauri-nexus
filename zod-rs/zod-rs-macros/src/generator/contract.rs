@@ -38,7 +38,7 @@ impl From<CycleError> for ContractError {
 
 impl From<GeneratorError> for ContractError {
     fn from(e: GeneratorError) -> Self {
-        ContractError::GeneratorError(e.message)
+        ContractError::GeneratorError(e.to_string())
     }
 }
 
