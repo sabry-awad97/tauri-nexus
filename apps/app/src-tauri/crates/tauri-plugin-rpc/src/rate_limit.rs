@@ -37,6 +37,7 @@ use tokio::sync::RwLock;
 
 /// Strategy for rate limit calculation
 #[derive(Debug, Clone, PartialEq, Default)]
+#[non_exhaustive]
 pub enum RateLimitStrategy {
     /// Fixed window: counter resets at fixed intervals
     FixedWindow,

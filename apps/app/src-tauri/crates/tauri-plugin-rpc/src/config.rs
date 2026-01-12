@@ -22,6 +22,7 @@ use std::fmt;
 
 /// Error type for configuration validation failures.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ConfigValidationError {
     /// max_input_size must be greater than 0
     InvalidMaxInputSize,
@@ -79,6 +80,7 @@ impl std::error::Error for ConfigValidationError {}
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum BackpressureStrategy {
     /// Block the producer until space is available in the channel.
     /// This ensures no events are lost but may slow down the producer.

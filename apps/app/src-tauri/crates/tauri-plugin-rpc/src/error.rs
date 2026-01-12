@@ -29,6 +29,7 @@ use thiserror::Error;
 /// (e.g., `NotFound` becomes `"NOT_FOUND"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[non_exhaustive]
 pub enum RpcErrorCode {
     // Client errors (4xx equivalent)
     /// The request was malformed or invalid

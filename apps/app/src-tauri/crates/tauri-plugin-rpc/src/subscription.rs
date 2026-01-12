@@ -798,6 +798,7 @@ impl<T: Clone + Send + 'static> Default for ChannelPublisher<T> {
 /// Event sent to frontend via Tauri event system
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum SubscriptionEvent {
     /// Data event
     Data {

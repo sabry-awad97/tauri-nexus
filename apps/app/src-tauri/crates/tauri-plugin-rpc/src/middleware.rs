@@ -9,6 +9,7 @@ use std::sync::Arc;
 /// Type of procedure being called
 #[derive(Clone, Debug, PartialEq, Eq, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum ProcedureType {
     /// Read-only operation
     Query,
