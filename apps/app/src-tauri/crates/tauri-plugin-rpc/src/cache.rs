@@ -69,30 +69,35 @@ impl CacheConfig {
     }
 
     /// Set the default TTL for cached entries
+    #[must_use = "This method returns a new CacheConfig and does not modify self"]
     pub fn with_default_ttl(mut self, ttl: Duration) -> Self {
         self.default_ttl = ttl;
         self
     }
 
     /// Set a TTL for a specific procedure
+    #[must_use = "This method returns a new CacheConfig and does not modify self"]
     pub fn with_procedure_ttl(mut self, path: impl Into<String>, ttl: Duration) -> Self {
         self.procedure_ttl.insert(path.into(), ttl);
         self
     }
 
     /// Set the maximum number of entries
+    #[must_use = "This method returns a new CacheConfig and does not modify self"]
     pub fn with_max_entries(mut self, max: usize) -> Self {
         self.max_entries = max;
         self
     }
 
     /// Enable or disable caching
+    #[must_use = "This method returns a new CacheConfig and does not modify self"]
     pub fn with_enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
     }
 
     /// Add a pattern for procedures that should not be cached
+    #[must_use = "This method returns a new CacheConfig and does not modify self"]
     pub fn exclude_pattern(mut self, pattern: impl Into<String>) -> Self {
         self.excluded_patterns.push(pattern.into());
         self

@@ -91,18 +91,21 @@ impl AuthResult {
     }
 
     /// Add roles to the auth result.
+    #[must_use = "This method returns a new AuthResult and does not modify self"]
     pub fn with_roles(mut self, roles: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.roles = roles.into_iter().map(|r| r.into()).collect();
         self
     }
 
     /// Add a single role to the auth result.
+    #[must_use = "This method returns a new AuthResult and does not modify self"]
     pub fn with_role(mut self, role: impl Into<String>) -> Self {
         self.roles.push(role.into());
         self
     }
 
     /// Add metadata to the auth result.
+    #[must_use = "This method returns a new AuthResult and does not modify self"]
     pub fn with_metadata(mut self, metadata: impl Serialize) -> Self {
         self.metadata = serde_json::to_value(metadata).ok();
         self
@@ -194,6 +197,7 @@ impl AlwaysAuthProvider {
     }
 
     /// Add roles to the provider.
+    #[must_use = "This method returns a new AlwaysAuthProvider and does not modify self"]
     pub fn with_roles(mut self, roles: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.roles = roles.into_iter().map(|r| r.into()).collect();
         self
@@ -347,18 +351,21 @@ impl AuthConfig {
     }
 
     /// Add a public rule (no authentication required).
+    #[must_use = "This method returns a new AuthConfig and does not modify self"]
     pub fn public(mut self, pattern: impl Into<String>) -> Self {
         self.rules.push(AuthRule::public(pattern));
         self
     }
 
     /// Add a rule requiring authentication.
+    #[must_use = "This method returns a new AuthConfig and does not modify self"]
     pub fn requires_auth(mut self, pattern: impl Into<String>) -> Self {
         self.rules.push(AuthRule::requires_auth(pattern));
         self
     }
 
     /// Add a rule requiring specific roles (any of the roles).
+    #[must_use = "This method returns a new AuthConfig and does not modify self"]
     pub fn requires_roles(
         mut self,
         pattern: impl Into<String>,
@@ -369,6 +376,7 @@ impl AuthConfig {
     }
 
     /// Add a rule requiring all specified roles.
+    #[must_use = "This method returns a new AuthConfig and does not modify self"]
     pub fn requires_all_roles(
         mut self,
         pattern: impl Into<String>,
@@ -380,6 +388,7 @@ impl AuthConfig {
     }
 
     /// Add a custom rule.
+    #[must_use = "This method returns a new AuthConfig and does not modify self"]
     pub fn rule(mut self, rule: AuthRule) -> Self {
         self.rules.push(rule);
         self

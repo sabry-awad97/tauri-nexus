@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 // =============================================================================
 
 /// Configuration for batch request processing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchConfig {
     /// Maximum number of requests allowed in a single batch.
     /// Requests exceeding this limit will be rejected.
@@ -54,12 +54,14 @@ impl BatchConfig {
     }
 
     /// Set the maximum batch size.
+    #[must_use = "This method returns a new BatchConfig and does not modify self"]
     pub fn with_max_batch_size(mut self, size: usize) -> Self {
         self.max_batch_size = size;
         self
     }
 
     /// Set whether to execute requests in parallel.
+    #[must_use = "This method returns a new BatchConfig and does not modify self"]
     pub fn with_parallel_execution(mut self, parallel: bool) -> Self {
         self.parallel_execution = parallel;
         self

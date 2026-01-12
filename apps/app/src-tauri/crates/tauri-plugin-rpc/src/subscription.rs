@@ -804,10 +804,13 @@ pub enum SubscriptionEvent {
         /// Event payload
         payload: Event<serde_json::Value>,
     },
-    /// Error event
+    /// Error event with optional retry hint
     Error {
         /// Error details
         payload: crate::RpcError,
+        /// Suggested retry delay in milliseconds (None = don't retry)
+        #[serde(rename = "retryAfterMs", skip_serializing_if = "Option::is_none")]
+        retry_after_ms: Option<u64>,
     },
     /// Completion event
     Completed,
@@ -819,9 +822,53 @@ impl SubscriptionEvent {
         Self::Data { payload }
     }
 
-    /// Create an error event
+    /// Create an error event without retry hint (non-recoverable error)
     pub fn error(err: crate::RpcError) -> Self {
-        Self::Error { payload: err }
+        Self::Error {
+            payload: err,
+            retry_after_ms: None,
+        }
+    }
+
+    /// Create an error event with retry metadata.
+    ///
+    /// Use this for recoverable errors where the client should retry after
+    /// the specified delay.
+    ///
+    /// # Arguments
+    /// * `err` - The error that occurred
+    /// * `retry_after_ms` - Suggested retry delay in milliseconds
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let event = SubscriptionEvent::error_with_retry(
+    ///     RpcError::service_unavailable("Server busy"),
+    ///     5000, // Retry after 5 seconds
+    /// );
+    /// ```
+    pub fn error_with_retry(err: crate::RpcError, retry_after_ms: u64) -> Self {
+        Self::Error {
+            payload: err,
+            retry_after_ms: Some(retry_after_ms),
+        }
+    }
+
+    /// Create an error event without retry (non-recoverable).
+    ///
+    /// Use this for errors where retrying would not help, such as
+    /// authentication failures or validation errors.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let event = SubscriptionEvent::error_no_retry(
+    ///     RpcError::unauthorized("Invalid token"),
+    /// );
+    /// ```
+    pub fn error_no_retry(err: crate::RpcError) -> Self {
+        Self::Error {
+            payload: err,
+            retry_after_ms: None,
+        }
     }
 
     /// Create a completion event

@@ -4,7 +4,7 @@
 //!
 //! # Example
 //! ```rust,ignore
-//! use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy};
+//! use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy, BatchConfig};
 //!
 //! let config = RpcConfig {
 //!     max_input_size: 512 * 1024,  // 512KB
@@ -12,9 +12,11 @@
 //!     backpressure_strategy: BackpressureStrategy::DropOldest,
 //!     debug_logging: true,
 //!     cleanup_interval_secs: 30,
+//!     batch_config: BatchConfig::default(),
 //! };
 //! ```
 
+use crate::batch::BatchConfig;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -27,6 +29,8 @@ pub enum ConfigValidationError {
     InvalidChannelBuffer,
     /// cleanup_interval_secs must be greater than 0
     InvalidCleanupInterval,
+    /// BatchConfig validation failed
+    InvalidBatchConfig(String),
 }
 
 impl fmt::Display for ConfigValidationError {
@@ -40,6 +44,9 @@ impl fmt::Display for ConfigValidationError {
             }
             Self::InvalidCleanupInterval => {
                 write!(f, "cleanup_interval_secs must be greater than 0")
+            }
+            Self::InvalidBatchConfig(msg) => {
+                write!(f, "invalid batch config: {}", msg)
             }
         }
     }
@@ -108,9 +115,12 @@ pub enum BackpressureStrategy {
 /// * `cleanup_interval_secs` - Interval in seconds for subscription cleanup tasks.
 ///   Default: 60 seconds.
 ///
+/// * `batch_config` - Configuration for batch request processing.
+///   Default: `BatchConfig::default()`.
+///
 /// # Example
 /// ```rust,ignore
-/// use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy};
+/// use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy, BatchConfig};
 ///
 /// // Use defaults
 /// let config = RpcConfig::default();
@@ -122,6 +132,7 @@ pub enum BackpressureStrategy {
 ///     backpressure_strategy: BackpressureStrategy::DropOldest,
 ///     debug_logging: cfg!(debug_assertions),
 ///     cleanup_interval_secs: 120,
+///     batch_config: BatchConfig::default(),
 /// };
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +147,8 @@ pub struct RpcConfig {
     pub debug_logging: bool,
     /// Subscription cleanup interval in seconds (default: 60)
     pub cleanup_interval_secs: u64,
+    /// Batch request configuration
+    pub batch_config: BatchConfig,
 }
 
 impl Default for RpcConfig {
@@ -146,6 +159,7 @@ impl Default for RpcConfig {
             backpressure_strategy: BackpressureStrategy::default(),
             debug_logging: false,
             cleanup_interval_secs: 60,
+            batch_config: BatchConfig::default(),
         }
     }
 }
@@ -164,6 +178,7 @@ impl RpcConfig {
     /// - `max_input_size` is 0
     /// - `default_channel_buffer` is 0
     /// - `cleanup_interval_secs` is 0
+    /// - `batch_config` is invalid (e.g., max_batch_size is 0)
     ///
     /// # Example
     /// ```rust,ignore
@@ -180,6 +195,10 @@ impl RpcConfig {
         if self.cleanup_interval_secs == 0 {
             return Err(ConfigValidationError::InvalidCleanupInterval);
         }
+        // Validate embedded BatchConfig
+        if let Err(e) = self.batch_config.validate() {
+            return Err(ConfigValidationError::InvalidBatchConfig(e));
+        }
         Ok(())
     }
 
@@ -189,6 +208,7 @@ impl RpcConfig {
     /// ```rust,ignore
     /// let config = RpcConfig::new().with_max_input_size(512 * 1024);
     /// ```
+    #[must_use = "This method returns a new RpcConfig and does not modify self"]
     pub fn with_max_input_size(mut self, size: usize) -> Self {
         self.max_input_size = size;
         self
@@ -200,6 +220,7 @@ impl RpcConfig {
     /// ```rust,ignore
     /// let config = RpcConfig::new().with_channel_buffer(64);
     /// ```
+    #[must_use = "This method returns a new RpcConfig and does not modify self"]
     pub fn with_channel_buffer(mut self, size: usize) -> Self {
         self.default_channel_buffer = size;
         self
@@ -214,6 +235,7 @@ impl RpcConfig {
     /// let config = RpcConfig::new()
     ///     .with_backpressure_strategy(BackpressureStrategy::DropOldest);
     /// ```
+    #[must_use = "This method returns a new RpcConfig and does not modify self"]
     pub fn with_backpressure_strategy(mut self, strategy: BackpressureStrategy) -> Self {
         self.backpressure_strategy = strategy;
         self
@@ -225,6 +247,7 @@ impl RpcConfig {
     /// ```rust,ignore
     /// let config = RpcConfig::new().with_debug_logging(true);
     /// ```
+    #[must_use = "This method returns a new RpcConfig and does not modify self"]
     pub fn with_debug_logging(mut self, enabled: bool) -> Self {
         self.debug_logging = enabled;
         self
@@ -236,8 +259,24 @@ impl RpcConfig {
     /// ```rust,ignore
     /// let config = RpcConfig::new().with_cleanup_interval(30);
     /// ```
+    #[must_use = "This method returns a new RpcConfig and does not modify self"]
     pub fn with_cleanup_interval(mut self, secs: u64) -> Self {
         self.cleanup_interval_secs = secs;
+        self
+    }
+
+    /// Set the batch configuration.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use tauri_plugin_rpc::{RpcConfig, BatchConfig};
+    ///
+    /// let config = RpcConfig::new()
+    ///     .with_batch_config(BatchConfig::new().with_max_batch_size(50));
+    /// ```
+    #[must_use = "This method returns a new RpcConfig and does not modify self"]
+    pub fn with_batch_config(mut self, config: BatchConfig) -> Self {
+        self.batch_config = config;
         self
     }
 }

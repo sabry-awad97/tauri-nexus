@@ -363,6 +363,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     /// Set the context for this router
     ///
     /// The context is passed to all handlers and middleware.
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn context<NewCtx: Clone + Send + Sync + 'static>(self, ctx: NewCtx) -> Router<NewCtx> {
         Router {
             context: Some(ctx),
@@ -375,6 +376,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     /// Add middleware to the router
     ///
     /// Middleware is executed in the order it's added.
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn middleware<F, Fut>(mut self, f: F) -> Self
     where
         F: Fn(Context<Ctx>, Request, Next<Ctx>) -> Fut + Send + Sync + 'static,
@@ -399,12 +401,14 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     ///     .middleware_fn(auth_middleware(provider))
     ///     .query("protected", handler);
     /// ```
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn middleware_fn(mut self, middleware: MiddlewareFn<Ctx>) -> Self {
         self.middleware.push(middleware);
         self
     }
 
     /// Add a query procedure (read-only operation)
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn query<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
     where
         N: Into<String>,
@@ -424,6 +428,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     }
 
     /// Add a mutation procedure (write operation)
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn mutation<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
     where
         N: Into<String>,
@@ -469,6 +474,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     ///     .context(AppContext::new())
     ///     .query_validated("get_user", get_user_handler);
     /// ```
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn query_validated<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
     where
         N: Into<String>,
@@ -516,6 +522,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     ///     .context(AppContext::new())
     ///     .mutation_validated("create_user", create_user_handler);
     /// ```
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn mutation_validated<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
     where
         N: Into<String>,
@@ -553,6 +560,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     ///     Ok(rx)
     /// })
     /// ```
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn subscription<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
     where
         N: Into<String>,
@@ -579,6 +587,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     ///     .merge("posts", posts_router());
     /// // Creates: users.get, users.list, posts.get, posts.list, etc.
     /// ```
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn merge<N: Into<String>>(mut self, namespace: N, other: Router<Ctx>) -> Self {
         let namespace = namespace.into();
         for (path, procedure) in other.procedures {
@@ -613,6 +622,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     ///         .input::<CreateUserInput>()
     ///         .mutation(create_user);
     /// ```
+    #[must_use = "This method returns a ProcedureChain that must be used to register a procedure"]
     pub fn procedure<N: Into<String>>(self, path: N) -> ProcedureChain<Ctx> {
         ProcedureChain {
             router: self,
@@ -638,6 +648,7 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
     ///     .context(AppContext::default())
     ///     .register(get_user_proc);
     /// ```
+    #[must_use = "This method returns a new Router and does not modify self"]
     pub fn register(mut self, procedure: RegisteredProcedure<Ctx>) -> Self {
         let full_path = self.make_path(&procedure.path);
 
@@ -987,6 +998,7 @@ impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
     /// Add middleware to this procedure.
     ///
     /// Middleware is executed in registration order (first registered = outermost).
+    #[must_use = "This method returns a new ProcedureChain and does not modify self"]
     pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
     where
         F: Fn(Context<Ctx>, Request, Next<Ctx>) -> Fut + Send + Sync + 'static,
@@ -999,6 +1011,7 @@ impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
     }
 
     /// Add a middleware function (already wrapped as MiddlewareFn).
+    #[must_use = "This method returns a new ProcedureChain and does not modify self"]
     pub fn use_middleware_fn(mut self, middleware: MiddlewareFn<Ctx>) -> Self {
         self.middleware.push(middleware);
         self
@@ -1008,6 +1021,7 @@ impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
     ///
     /// Returns a `TypedProcedureChain` that allows you to register the procedure
     /// as a query or mutation with the specified input type.
+    #[must_use = "This method returns a TypedProcedureChain that must be used to register a procedure"]
     pub fn input<Input>(self) -> TypedProcedureChain<Ctx, Input>
     where
         Input: DeserializeOwned + Send + 'static,
@@ -1025,6 +1039,7 @@ impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
     ///
     /// Returns a `ValidatedProcedureChain` that automatically validates input
     /// before calling the handler.
+    #[must_use = "This method returns a ValidatedProcedureChain that must be used to register a procedure"]
     pub fn input_validated<Input>(self) -> ValidatedProcedureChain<Ctx, Input>
     where
         Input: DeserializeOwned + Validate + Send + 'static,
@@ -1039,6 +1054,7 @@ impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
     }
 
     /// Set an output transformer for this procedure.
+    #[must_use = "This method returns a new ProcedureChain and does not modify self"]
     pub fn output<F>(mut self, transformer: F) -> Self
     where
         F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
@@ -1065,6 +1081,7 @@ impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
     ///         .input::<GetProfileInput>()
     ///         .query(get_profile); // Handler receives Context<AuthContext>
     /// ```
+    #[must_use = "This method returns a ContextTransformedChain that must be used to register a procedure"]
     pub fn context<NewCtx, F, Fut>(self, transformer: F) -> ContextTransformedChain<Ctx, NewCtx>
     where
         NewCtx: Clone + Send + Sync + 'static,
@@ -1082,6 +1099,7 @@ impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
     }
 
     /// Register this procedure as a query with no input (unit type).
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn query<H, Fut, Output>(self, handler: H) -> Router<Ctx>
     where
         H: Fn(Context<Ctx>, ()) -> Fut + Send + Sync + Clone + 'static,
@@ -1092,6 +1110,7 @@ impl<Ctx: Clone + Send + Sync + 'static> ProcedureChain<Ctx> {
     }
 
     /// Register this procedure as a mutation with no input (unit type).
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<Ctx>
     where
         H: Fn(Context<Ctx>, ()) -> Fut + Send + Sync + Clone + 'static,
@@ -1116,6 +1135,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'stati
     TypedProcedureChain<Ctx, Input>
 {
     /// Add middleware to this procedure.
+    #[must_use = "This method returns a new TypedProcedureChain and does not modify self"]
     pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
     where
         F: Fn(Context<Ctx>, Request, Next<Ctx>) -> Fut + Send + Sync + 'static,
@@ -1128,6 +1148,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'stati
     }
 
     /// Set an output transformer for this procedure.
+    #[must_use = "This method returns a new TypedProcedureChain and does not modify self"]
     pub fn output<F>(mut self, transformer: F) -> Self
     where
         F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
@@ -1137,6 +1158,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'stati
     }
 
     /// Register this procedure as a query.
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn query<H, Fut, Output>(self, handler: H) -> Router<Ctx>
     where
         H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
@@ -1147,6 +1169,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'stati
     }
 
     /// Register this procedure as a mutation.
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<Ctx>
     where
         H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
@@ -1247,6 +1270,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
     ValidatedProcedureChain<Ctx, Input>
 {
     /// Add middleware to this procedure.
+    #[must_use = "This method returns a new ValidatedProcedureChain and does not modify self"]
     pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
     where
         F: Fn(Context<Ctx>, Request, Next<Ctx>) -> Fut + Send + Sync + 'static,
@@ -1259,6 +1283,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
     }
 
     /// Set an output transformer for this procedure.
+    #[must_use = "This method returns a new ValidatedProcedureChain and does not modify self"]
     pub fn output<F>(mut self, transformer: F) -> Self
     where
         F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
@@ -1268,6 +1293,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
     }
 
     /// Register this procedure as a query with validation.
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn query<H, Fut, Output>(self, handler: H) -> Router<Ctx>
     where
         H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
@@ -1278,6 +1304,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
     }
 
     /// Register this procedure as a mutation with validation.
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<Ctx>
     where
         H: Fn(Context<Ctx>, Input) -> Fut + Send + Sync + Clone + 'static,
@@ -1406,6 +1433,7 @@ impl<OrigCtx: Clone + Send + Sync + 'static, NewCtx: Clone + Send + Sync + 'stat
     /// Add middleware to this procedure.
     ///
     /// Note: Middleware operates on the original context type, before transformation.
+    #[must_use = "This method returns a new ContextTransformedChain and does not modify self"]
     pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
     where
         F: Fn(Context<OrigCtx>, Request, Next<OrigCtx>) -> Fut + Send + Sync + 'static,
@@ -1418,6 +1446,7 @@ impl<OrigCtx: Clone + Send + Sync + 'static, NewCtx: Clone + Send + Sync + 'stat
     }
 
     /// Set an output transformer for this procedure.
+    #[must_use = "This method returns a new ContextTransformedChain and does not modify self"]
     pub fn output<F>(mut self, transformer: F) -> Self
     where
         F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
@@ -1427,6 +1456,7 @@ impl<OrigCtx: Clone + Send + Sync + 'static, NewCtx: Clone + Send + Sync + 'stat
     }
 
     /// Set the input type for this procedure.
+    #[must_use = "This method returns a ContextTransformedTypedChain that must be used to register a procedure"]
     pub fn input<Input>(self) -> ContextTransformedTypedChain<OrigCtx, NewCtx, Input>
     where
         Input: DeserializeOwned + Send + 'static,
@@ -1442,6 +1472,7 @@ impl<OrigCtx: Clone + Send + Sync + 'static, NewCtx: Clone + Send + Sync + 'stat
     }
 
     /// Set the input type with validation for this procedure.
+    #[must_use = "This method returns a ContextTransformedValidatedChain that must be used to register a procedure"]
     pub fn input_validated<Input>(self) -> ContextTransformedValidatedChain<OrigCtx, NewCtx, Input>
     where
         Input: DeserializeOwned + Validate + Send + 'static,
@@ -1457,6 +1488,7 @@ impl<OrigCtx: Clone + Send + Sync + 'static, NewCtx: Clone + Send + Sync + 'stat
     }
 
     /// Register this procedure as a query with no input (unit type).
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn query<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
     where
         H: Fn(Context<NewCtx>, ()) -> Fut + Send + Sync + Clone + 'static,
@@ -1467,6 +1499,7 @@ impl<OrigCtx: Clone + Send + Sync + 'static, NewCtx: Clone + Send + Sync + 'stat
     }
 
     /// Register this procedure as a mutation with no input (unit type).
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
     where
         H: Fn(Context<NewCtx>, ()) -> Fut + Send + Sync + Clone + 'static,
@@ -1499,6 +1532,7 @@ impl<
 > ContextTransformedTypedChain<OrigCtx, NewCtx, Input>
 {
     /// Add middleware to this procedure.
+    #[must_use = "This method returns a new ContextTransformedTypedChain and does not modify self"]
     pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
     where
         F: Fn(Context<OrigCtx>, Request, Next<OrigCtx>) -> Fut + Send + Sync + 'static,
@@ -1511,6 +1545,7 @@ impl<
     }
 
     /// Set an output transformer for this procedure.
+    #[must_use = "This method returns a new ContextTransformedTypedChain and does not modify self"]
     pub fn output<F>(mut self, transformer: F) -> Self
     where
         F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
@@ -1520,6 +1555,7 @@ impl<
     }
 
     /// Register this procedure as a query.
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn query<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
     where
         H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,
@@ -1530,6 +1566,7 @@ impl<
     }
 
     /// Register this procedure as a mutation.
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
     where
         H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,
@@ -1644,6 +1681,7 @@ impl<
 > ContextTransformedValidatedChain<OrigCtx, NewCtx, Input>
 {
     /// Add middleware to this procedure.
+    #[must_use = "This method returns a new ContextTransformedValidatedChain and does not modify self"]
     pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
     where
         F: Fn(Context<OrigCtx>, Request, Next<OrigCtx>) -> Fut + Send + Sync + 'static,
@@ -1656,6 +1694,7 @@ impl<
     }
 
     /// Set an output transformer for this procedure.
+    #[must_use = "This method returns a new ContextTransformedValidatedChain and does not modify self"]
     pub fn output<F>(mut self, transformer: F) -> Self
     where
         F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
@@ -1665,6 +1704,7 @@ impl<
     }
 
     /// Register this procedure as a query with validation.
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn query<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
     where
         H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,
@@ -1675,6 +1715,7 @@ impl<
     }
 
     /// Register this procedure as a mutation with validation.
+    #[must_use = "This method returns a Router and does not modify self"]
     pub fn mutation<H, Fut, Output>(self, handler: H) -> Router<OrigCtx>
     where
         H: Fn(Context<NewCtx>, Input) -> Fut + Send + Sync + Clone + 'static,

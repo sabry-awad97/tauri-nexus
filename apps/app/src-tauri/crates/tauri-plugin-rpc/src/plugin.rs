@@ -1,7 +1,7 @@
 //! Tauri plugin integration
 
 use crate::RpcError;
-use crate::batch::{BatchConfig, BatchRequest, BatchResponse, BatchResult};
+use crate::batch::{BatchRequest, BatchResponse, BatchResult};
 use crate::config::RpcConfig;
 use crate::subscription::{
     Event, SubscriptionContext, SubscriptionEvent, SubscriptionId, SubscriptionManager,
@@ -173,12 +173,11 @@ async fn rpc_call_batch(
     state: State<'_, RouterState>,
     config: State<'_, ConfigState>,
 ) -> Result<BatchResponse, String> {
-    // Use default batch config for now
-    // TODO: Make batch config configurable via RpcConfig
-    let batch_config = BatchConfig::default();
+    // Use batch config from RpcConfig
+    let batch_config = &config.0.batch_config;
 
     // Validate batch
-    if let Err(e) = batch.validate(&batch_config) {
+    if let Err(e) = batch.validate(batch_config) {
         warn!(error = %e, "Batch validation failed");
         return Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()));
     }
@@ -385,6 +384,8 @@ where
 
     let router: Arc<dyn DynRouter> = Arc::new(router);
     let subscription_manager = Arc::new(SubscriptionManager::new());
+    // Clone subscription manager for shutdown handler
+    let shutdown_manager = subscription_manager.clone();
 
     Builder::new("rpc")
         .invoke_handler(tauri::generate_handler![
@@ -400,6 +401,27 @@ where
             app.manage(SubscriptionState(subscription_manager.clone()));
             app.manage(ConfigState(config.clone()));
             Ok(())
+        })
+        .on_drop(move |_app| {
+            // Spawn blocking task to run async shutdown
+            let manager = shutdown_manager.clone();
+            std::thread::spawn(move || {
+                // Create a new tokio runtime for the shutdown task
+                if let Ok(rt) = tokio::runtime::Runtime::new() {
+                    rt.block_on(async {
+                        // Add 5-second timeout for shutdown to prevent hanging
+                        let shutdown_timeout = std::time::Duration::from_secs(5);
+                        if tokio::time::timeout(shutdown_timeout, manager.shutdown())
+                            .await
+                            .is_err()
+                        {
+                            warn!("Subscription shutdown timed out after 5 seconds");
+                        } else {
+                            debug!("Subscription shutdown completed successfully");
+                        }
+                    });
+                }
+            });
         })
         .build()
 }

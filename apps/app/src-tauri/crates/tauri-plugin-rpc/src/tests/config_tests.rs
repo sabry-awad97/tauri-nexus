@@ -4,6 +4,7 @@
 
 use proptest::prelude::*;
 
+use crate::batch::BatchConfig;
 use crate::config::{BackpressureStrategy, ConfigValidationError, RpcConfig};
 
 // =============================================================================
@@ -98,6 +99,51 @@ proptest! {
 
         prop_assert!(config.validate().is_ok());
         prop_assert_eq!(config.backpressure_strategy, strategy);
+    }
+
+    /// **Property 2: BatchConfig Builder Preserves Values**
+    /// *For any* valid BatchConfig value, calling `RpcConfig::new().with_batch_config(config)`
+    /// SHALL result in an RpcConfig where `batch_config` equals the provided config.
+    /// **Feature: tauri-plugin-rpc-improvements, Property 2: BatchConfig Builder Preserves Values**
+    /// **Validates: Requirements 2.3**
+    #[test]
+    fn prop_batch_config_builder_preserves_values(
+        max_size in 1usize..1000,
+        parallel in any::<bool>(),
+    ) {
+        let batch_config = BatchConfig::new()
+            .with_max_batch_size(max_size)
+            .with_parallel_execution(parallel);
+        let rpc_config = RpcConfig::new().with_batch_config(batch_config);
+
+        prop_assert_eq!(rpc_config.batch_config.max_batch_size, max_size);
+        prop_assert_eq!(rpc_config.batch_config.parallel_execution, parallel);
+    }
+
+    /// **Property 3: RpcConfig Validation Propagates to BatchConfig**
+    /// *For any* RpcConfig with an invalid BatchConfig (e.g., max_batch_size = 0),
+    /// calling `validate()` on the RpcConfig SHALL return an error.
+    /// **Feature: tauri-plugin-rpc-improvements, Property 3: RpcConfig Validation Propagates to BatchConfig**
+    /// **Validates: Requirements 2.4**
+    #[test]
+    fn prop_rpc_config_validation_propagates_to_batch_config(
+        valid_max_input in 1usize..1000000,
+    ) {
+        // Valid RpcConfig with invalid BatchConfig should fail
+        let invalid_batch = BatchConfig::new().with_max_batch_size(0);
+        let config = RpcConfig::new()
+            .with_max_input_size(valid_max_input)
+            .with_batch_config(invalid_batch);
+
+        let result = config.validate();
+        prop_assert!(result.is_err(), "Config with invalid BatchConfig should fail validation");
+
+        // Verify it's specifically an InvalidBatchConfig error
+        if let Err(ConfigValidationError::InvalidBatchConfig(_)) = result {
+            // Expected error type
+        } else {
+            prop_assert!(false, "Expected InvalidBatchConfig error");
+        }
     }
 }
 

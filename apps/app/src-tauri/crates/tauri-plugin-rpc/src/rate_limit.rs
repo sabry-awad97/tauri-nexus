@@ -103,6 +103,7 @@ impl RateLimit {
     }
 
     /// Set the strategy
+    #[must_use = "This method returns a new RateLimit and does not modify self"]
     pub fn with_strategy(mut self, strategy: RateLimitStrategy) -> Self {
         self.strategy = strategy;
         self
@@ -138,18 +139,21 @@ impl RateLimitConfig {
     }
 
     /// Set the default rate limit
+    #[must_use = "This method returns a new RateLimitConfig and does not modify self"]
     pub fn with_default_limit(mut self, limit: RateLimit) -> Self {
         self.default_limit = Some(limit);
         self
     }
 
     /// Add a rate limit for a specific procedure
+    #[must_use = "This method returns a new RateLimitConfig and does not modify self"]
     pub fn with_procedure_limit(mut self, path: impl Into<String>, limit: RateLimit) -> Self {
         self.procedure_limits.insert(path.into(), limit);
         self
     }
 
     /// Enable or disable rate limiting
+    #[must_use = "This method returns a new RateLimitConfig and does not modify self"]
     pub fn with_enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self

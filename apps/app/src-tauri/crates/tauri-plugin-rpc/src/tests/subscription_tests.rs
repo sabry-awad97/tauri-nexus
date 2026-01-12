@@ -13,8 +13,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::subscription::{
-    CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, SubscriptionContext,
-    SubscriptionId, SubscriptionManager, generate_subscription_id,
+    generate_subscription_id, CancellationSignal, ChannelPublisher, Event, EventMeta,
+    EventPublisher, SubscriptionContext, SubscriptionId, SubscriptionManager,
 };
 
 // =============================================================================
@@ -666,5 +666,463 @@ proptest! {
 
             Ok(())
         })?;
+    }
+}
+
+// =============================================================================
+// Property 4: SubscriptionEvent Error Serialization Format
+// =============================================================================
+
+proptest! {
+    /// **Property 4: SubscriptionEvent Error Serialization Format**
+    /// *For any* SubscriptionEvent::Error with a retry_after_ms value, serializing to JSON
+    /// SHALL produce a field named "retryAfterMs" (camelCase).
+    /// **Feature: tauri-plugin-rpc-improvements, Property 4: SubscriptionEvent Error Serialization Format**
+    /// **Validates: Requirements 3.4**
+    #[test]
+    fn prop_subscription_event_error_serialization_format(
+        retry_ms in 100u64..10000
+    ) {
+        let error = crate::RpcError::internal("test error");
+        let event = crate::subscription::SubscriptionEvent::error_with_retry(error, retry_ms);
+
+        let json = serde_json::to_string(&event).unwrap();
+
+        // Verify the field is serialized as camelCase "retryAfterMs"
+        prop_assert!(
+            json.contains("retryAfterMs"),
+            "JSON should contain 'retryAfterMs' field: {}",
+            json
+        );
+
+        // Verify the retry value is present in the JSON
+        prop_assert!(
+            json.contains(&retry_ms.to_string()),
+            "JSON should contain the retry value {}: {}",
+            retry_ms,
+            json
+        );
+
+        // Verify the type is "error" (camelCase from rename_all)
+        prop_assert!(
+            json.contains("\"type\":\"error\""),
+            "JSON should contain type 'error': {}",
+            json
+        );
+    }
+
+    /// Test that error events without retry do not include retryAfterMs field
+    #[test]
+    fn prop_subscription_event_error_no_retry_serialization(
+        _dummy in 0..100
+    ) {
+        let error = crate::RpcError::unauthorized("test error");
+        let event = crate::subscription::SubscriptionEvent::error_no_retry(error);
+
+        let json = serde_json::to_string(&event).unwrap();
+
+        // Verify the field is NOT present when retry is None (skip_serializing_if)
+        prop_assert!(
+            !json.contains("retryAfterMs"),
+            "JSON should NOT contain 'retryAfterMs' field when None: {}",
+            json
+        );
+    }
+
+    /// Test that the existing error() method also excludes retryAfterMs
+    #[test]
+    fn prop_subscription_event_error_default_no_retry(
+        _dummy in 0..100
+    ) {
+        let error = crate::RpcError::not_found("test error");
+        let event = crate::subscription::SubscriptionEvent::error(error);
+
+        let json = serde_json::to_string(&event).unwrap();
+
+        // Verify the field is NOT present when using the default error() method
+        prop_assert!(
+            !json.contains("retryAfterMs"),
+            "JSON should NOT contain 'retryAfterMs' field for default error(): {}",
+            json
+        );
+    }
+}
+
+// =============================================================================
+// Property 5: Shutdown Cancels All Subscription Signals
+// =============================================================================
+
+proptest! {
+    /// **Property 5: Shutdown Cancels All Subscription Signals**
+    /// *For any* SubscriptionManager with active subscriptions, calling `shutdown()` SHALL
+    /// result in all subscription signals being cancelled (is_cancelled() returns true).
+    /// **Feature: tauri-plugin-rpc-improvements, Property 5: Shutdown Cancels All Subscription Signals**
+    /// **Validates: Requirements 4.3**
+    #[test]
+    fn prop_shutdown_cancels_all_signals(sub_count in 1usize..10) {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let manager = SubscriptionManager::new();
+            let mut signals = Vec::new();
+
+            // Create subscriptions and collect their signals
+            for i in 0..sub_count {
+                let id = generate_subscription_id();
+                let ctx = SubscriptionContext::new(id, None);
+                signals.push(ctx.signal());
+                let handle = crate::subscription::SubscriptionHandle::new(
+                    id,
+                    format!("test.path.{}", i),
+                    ctx.signal(),
+                );
+                manager.subscribe(handle).await;
+            }
+
+            // Verify all subscriptions exist before shutdown
+            prop_assert_eq!(manager.count().await, sub_count);
+
+            // Verify no signals are cancelled before shutdown
+            for signal in &signals {
+                prop_assert!(
+                    !signal.is_cancelled(),
+                    "Signal should not be cancelled before shutdown"
+                );
+            }
+
+            // Call shutdown
+            manager.shutdown().await;
+
+            // Verify all signals are cancelled after shutdown
+            for (i, signal) in signals.iter().enumerate() {
+                prop_assert!(
+                    signal.is_cancelled(),
+                    "Signal {} should be cancelled after shutdown",
+                    i
+                );
+            }
+
+            // Verify all subscriptions are removed
+            prop_assert_eq!(
+                manager.count().await,
+                0,
+                "All subscriptions should be removed after shutdown"
+            );
+
+            Ok(())
+        })?;
+    }
+}
+
+// =============================================================================
+// Property 6: Shutdown Waits for Tracked Tasks
+// =============================================================================
+
+proptest! {
+    /// **Property 6: Shutdown Waits for Tracked Tasks**
+    /// *For any* SubscriptionManager with spawned subscription tasks, calling `shutdown()` SHALL
+    /// wait for all tracked tasks to complete (or be aborted) before returning.
+    /// **Feature: tauri-plugin-rpc-improvements, Property 6: Shutdown Waits for Tracked Tasks**
+    /// **Validates: Requirements 4.4**
+    #[test]
+    fn prop_shutdown_waits_for_tracked_tasks(task_count in 1usize..5) {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let manager = Arc::new(SubscriptionManager::new());
+            let completed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+            // Spawn tracked subscription tasks
+            for i in 0..task_count {
+                let id = generate_subscription_id();
+                let signal = Arc::new(CancellationSignal::new());
+                let handle = crate::subscription::SubscriptionHandle::new(
+                    id,
+                    format!("task.{}", i),
+                    signal.clone(),
+                );
+                manager.subscribe(handle).await;
+
+                let completed_clone = completed.clone();
+                let signal_clone = signal.clone();
+                manager.spawn_subscription(id, async move {
+                    // Wait for cancellation signal (simulating a running subscription)
+                    signal_clone.cancelled().await;
+                    // Mark task as completed after receiving cancellation
+                    completed_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                }).await;
+            }
+
+            // Verify tasks are tracked
+            prop_assert!(
+                manager.task_count().await > 0,
+                "Tasks should be tracked before shutdown"
+            );
+
+            // Call shutdown - this should wait for all tasks to complete
+            manager.shutdown().await;
+
+            // After shutdown returns, all tasks should have been processed
+            // (either completed normally or aborted)
+            prop_assert_eq!(
+                manager.task_count().await,
+                0,
+                "No tasks should remain after shutdown"
+            );
+
+            // Verify all subscriptions are removed
+            prop_assert_eq!(
+                manager.count().await,
+                0,
+                "All subscriptions should be removed after shutdown"
+            );
+
+            Ok(())
+        })?;
+    }
+}
+
+// =============================================================================
+// Unit Tests for SubscriptionEvent Error Helper Methods
+// =============================================================================
+
+#[cfg(test)]
+mod subscription_event_error_tests {
+    use crate::subscription::SubscriptionEvent;
+    use crate::RpcError;
+
+    /// Test that error_with_retry creates an event with the specified retry value
+    #[test]
+    fn test_error_with_retry_creates_event_with_retry_value() {
+        let error = RpcError::service_unavailable("Server busy");
+        let retry_ms = 5000u64;
+
+        let event = SubscriptionEvent::error_with_retry(error.clone(), retry_ms);
+
+        match event {
+            SubscriptionEvent::Error {
+                payload,
+                retry_after_ms,
+            } => {
+                assert_eq!(payload.code, error.code);
+                assert_eq!(payload.message, error.message);
+                assert_eq!(retry_after_ms, Some(retry_ms));
+            }
+            _ => panic!("Expected Error variant"),
+        }
+    }
+
+    /// Test that error_no_retry creates an event without retry value
+    #[test]
+    fn test_error_no_retry_creates_event_without_retry_value() {
+        let error = RpcError::unauthorized("Invalid token");
+
+        let event = SubscriptionEvent::error_no_retry(error.clone());
+
+        match event {
+            SubscriptionEvent::Error {
+                payload,
+                retry_after_ms,
+            } => {
+                assert_eq!(payload.code, error.code);
+                assert_eq!(payload.message, error.message);
+                assert_eq!(retry_after_ms, None);
+            }
+            _ => panic!("Expected Error variant"),
+        }
+    }
+
+    /// Test that the default error() method creates an event without retry value
+    #[test]
+    fn test_error_default_creates_event_without_retry_value() {
+        let error = RpcError::not_found("Resource not found");
+
+        let event = SubscriptionEvent::error(error.clone());
+
+        match event {
+            SubscriptionEvent::Error {
+                payload,
+                retry_after_ms,
+            } => {
+                assert_eq!(payload.code, error.code);
+                assert_eq!(payload.message, error.message);
+                assert_eq!(retry_after_ms, None);
+            }
+            _ => panic!("Expected Error variant"),
+        }
+    }
+
+    /// Test that error_with_retry with zero retry value works correctly
+    #[test]
+    fn test_error_with_retry_zero_value() {
+        let error = RpcError::rate_limited("Too many requests");
+        let retry_ms = 0u64;
+
+        let event = SubscriptionEvent::error_with_retry(error, retry_ms);
+
+        match event {
+            SubscriptionEvent::Error { retry_after_ms, .. } => {
+                assert_eq!(retry_after_ms, Some(0));
+            }
+            _ => panic!("Expected Error variant"),
+        }
+    }
+
+    /// Test that error_with_retry with large retry value works correctly
+    #[test]
+    fn test_error_with_retry_large_value() {
+        let error = RpcError::service_unavailable("Maintenance mode");
+        let retry_ms = u64::MAX;
+
+        let event = SubscriptionEvent::error_with_retry(error, retry_ms);
+
+        match event {
+            SubscriptionEvent::Error { retry_after_ms, .. } => {
+                assert_eq!(retry_after_ms, Some(u64::MAX));
+            }
+            _ => panic!("Expected Error variant"),
+        }
+    }
+}
+
+// =============================================================================
+// Unit Tests for Shutdown Timeout Behavior
+// =============================================================================
+
+#[cfg(test)]
+mod shutdown_timeout_tests {
+    use crate::subscription::{
+        CancellationSignal, SubscriptionId, SubscriptionManager,
+    };
+    use std::sync::Arc;
+
+    /// Test that shutdown completes even with stuck tasks (tasks that don't respond to cancellation).
+    /// This validates Requirements 4.5 - shutdown should complete within a reasonable timeout.
+    /// **Validates: Requirements 4.5**
+    #[tokio::test]
+    async fn test_shutdown_completes_with_stuck_tasks() {
+        let manager = Arc::new(SubscriptionManager::new());
+
+        // Create a subscription with a "stuck" task that ignores cancellation
+        let id = SubscriptionId::new();
+        let signal = Arc::new(CancellationSignal::new());
+        let handle = crate::subscription::SubscriptionHandle::new(
+            id,
+            "stuck.task".to_string(),
+            signal.clone(),
+        );
+        manager.subscribe(handle).await;
+
+        // Spawn a task that ignores the cancellation signal (simulating a stuck task)
+        // Note: In reality, the JoinSet will abort this task during shutdown
+        manager
+            .spawn_subscription(id, async move {
+                // This task intentionally ignores the cancellation signal
+                // and would run forever if not aborted
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                }
+            })
+            .await;
+
+        // Verify task is tracked
+        assert!(manager.task_count().await > 0, "Task should be tracked");
+
+        // Shutdown should complete within a bounded time even with stuck tasks
+        // because the JoinSet aborts all tasks
+        let shutdown_result = tokio::time::timeout(
+            tokio::time::Duration::from_secs(2),
+            manager.shutdown(),
+        )
+        .await;
+
+        assert!(
+            shutdown_result.is_ok(),
+            "Shutdown should complete within timeout even with stuck tasks"
+        );
+
+        // After shutdown, no tasks should remain
+        assert_eq!(
+            manager.task_count().await,
+            0,
+            "No tasks should remain after shutdown"
+        );
+
+        // All subscriptions should be removed
+        assert_eq!(
+            manager.count().await,
+            0,
+            "All subscriptions should be removed after shutdown"
+        );
+    }
+
+    /// Test that shutdown completes immediately when there are no subscriptions
+    #[tokio::test]
+    async fn test_shutdown_with_no_subscriptions() {
+        let manager = SubscriptionManager::new();
+
+        // Verify no subscriptions
+        assert_eq!(manager.count().await, 0);
+
+        // Shutdown should complete immediately
+        let shutdown_result = tokio::time::timeout(
+            tokio::time::Duration::from_millis(100),
+            manager.shutdown(),
+        )
+        .await;
+
+        assert!(
+            shutdown_result.is_ok(),
+            "Shutdown should complete immediately with no subscriptions"
+        );
+    }
+
+    /// Test that shutdown properly handles multiple stuck tasks
+    #[tokio::test]
+    async fn test_shutdown_with_multiple_stuck_tasks() {
+        let manager = Arc::new(SubscriptionManager::new());
+        let task_count = 5;
+
+        // Create multiple subscriptions with stuck tasks
+        for i in 0..task_count {
+            let id = SubscriptionId::new();
+            let signal = Arc::new(CancellationSignal::new());
+            let handle = crate::subscription::SubscriptionHandle::new(
+                id,
+                format!("stuck.task.{}", i),
+                signal.clone(),
+            );
+            manager.subscribe(handle).await;
+
+            // Spawn a stuck task
+            manager
+                .spawn_subscription(id, async move {
+                    loop {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                    }
+                })
+                .await;
+        }
+
+        // Verify all tasks are tracked
+        assert_eq!(
+            manager.task_count().await,
+            task_count,
+            "All tasks should be tracked"
+        );
+
+        // Shutdown should complete within bounded time
+        let shutdown_result = tokio::time::timeout(
+            tokio::time::Duration::from_secs(2),
+            manager.shutdown(),
+        )
+        .await;
+
+        assert!(
+            shutdown_result.is_ok(),
+            "Shutdown should complete within timeout with multiple stuck tasks"
+        );
+
+        // All tasks and subscriptions should be cleaned up
+        assert_eq!(manager.task_count().await, 0);
+        assert_eq!(manager.count().await, 0);
     }
 }
