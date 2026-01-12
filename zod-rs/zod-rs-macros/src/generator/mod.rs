@@ -33,10 +33,14 @@
 //! println!("{}", generated.code);
 //! ```
 
+pub mod contract;
+pub mod registry;
 pub mod traits;
 pub mod zod;
 
 // Re-export main types for convenience
+pub use contract::{ContractError, ContractGenerator};
+pub use registry::{CycleError, SchemaRegistry};
 pub use traits::{
     CodeGenerator, GeneratedCode, GeneratorConfig, GeneratorFeature, IndentStyle, LineEnding,
     OutputStyle,

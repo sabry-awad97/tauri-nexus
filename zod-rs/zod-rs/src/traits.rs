@@ -219,6 +219,64 @@ impl<T: ZodSchema> ZodSchema for Vec<T> {
     }
 }
 
+#[cfg(feature = "std")]
+impl<K: ZodSchema, V: ZodSchema> ZodSchema for std::collections::HashMap<K, V> {
+    fn zod_schema() -> &'static str {
+        "z.record(z.unknown(), z.unknown())"
+    }
+
+    fn ts_type_name() -> &'static str {
+        "Record<unknown, unknown>"
+    }
+
+    fn schema_name() -> &'static str {
+        "HashMapSchema"
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: ZodSchema> ZodSchema for std::collections::HashSet<T> {
+    fn zod_schema() -> &'static str {
+        "z.set(z.unknown())"
+    }
+
+    fn ts_type_name() -> &'static str {
+        "Set<unknown>"
+    }
+
+    fn schema_name() -> &'static str {
+        "HashSetSchema"
+    }
+}
+
+impl<K: ZodSchema + Ord, V: ZodSchema> ZodSchema for std::collections::BTreeMap<K, V> {
+    fn zod_schema() -> &'static str {
+        "z.record(z.unknown(), z.unknown())"
+    }
+
+    fn ts_type_name() -> &'static str {
+        "Record<unknown, unknown>"
+    }
+
+    fn schema_name() -> &'static str {
+        "BTreeMapSchema"
+    }
+}
+
+impl<T: ZodSchema + Ord> ZodSchema for std::collections::BTreeSet<T> {
+    fn zod_schema() -> &'static str {
+        "z.set(z.unknown())"
+    }
+
+    fn ts_type_name() -> &'static str {
+        "Set<unknown>"
+    }
+
+    fn schema_name() -> &'static str {
+        "BTreeSetSchema"
+    }
+}
+
 // Feature-gated implementations
 
 #[cfg(feature = "uuid")]
@@ -248,5 +306,104 @@ impl<Tz: chrono::TimeZone> ZodSchema for chrono::DateTime<Tz> {
 
     fn schema_name() -> &'static str {
         "DateTimeSchema"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_string_zod_schema() {
+        assert_eq!(String::zod_schema(), "z.string()");
+        assert_eq!(String::ts_type_name(), "string");
+        assert_eq!(String::schema_name(), "StringSchema");
+    }
+
+    #[test]
+    fn test_bool_zod_schema() {
+        assert_eq!(bool::zod_schema(), "z.boolean()");
+        assert_eq!(bool::ts_type_name(), "boolean");
+        assert_eq!(bool::schema_name(), "BooleanSchema");
+    }
+
+    #[test]
+    fn test_i32_zod_schema() {
+        assert_eq!(i32::zod_schema(), "z.number().int()");
+        assert_eq!(i32::ts_type_name(), "number");
+        assert_eq!(i32::schema_name(), "I32Schema");
+    }
+
+    #[test]
+    fn test_u32_zod_schema() {
+        assert_eq!(u32::zod_schema(), "z.number().int().nonnegative()");
+        assert_eq!(u32::ts_type_name(), "number");
+        assert_eq!(u32::schema_name(), "U32Schema");
+    }
+
+    #[test]
+    fn test_f64_zod_schema() {
+        assert_eq!(f64::zod_schema(), "z.number()");
+        assert_eq!(f64::ts_type_name(), "number");
+        assert_eq!(f64::schema_name(), "F64Schema");
+    }
+
+    #[test]
+    fn test_char_zod_schema() {
+        assert_eq!(char::zod_schema(), "z.string().length(1)");
+        assert_eq!(char::ts_type_name(), "string");
+        assert_eq!(char::schema_name(), "CharSchema");
+    }
+
+    #[test]
+    fn test_option_zod_schema() {
+        assert_eq!(Option::<String>::zod_schema(), "z.unknown().optional()");
+        assert_eq!(Option::<String>::ts_type_name(), "unknown");
+        assert_eq!(Option::<String>::schema_name(), "OptionSchema");
+    }
+
+    #[test]
+    fn test_vec_zod_schema() {
+        assert_eq!(Vec::<String>::zod_schema(), "z.array(z.unknown())");
+        assert_eq!(Vec::<String>::ts_type_name(), "unknown[]");
+        assert_eq!(Vec::<String>::schema_name(), "VecSchema");
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_hashmap_zod_schema() {
+        use std::collections::HashMap;
+        assert_eq!(
+            HashMap::<String, i32>::zod_schema(),
+            "z.record(z.unknown(), z.unknown())"
+        );
+        assert_eq!(
+            HashMap::<String, i32>::ts_type_name(),
+            "Record<unknown, unknown>"
+        );
+        assert_eq!(HashMap::<String, i32>::schema_name(), "HashMapSchema");
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_hashset_zod_schema() {
+        use std::collections::HashSet;
+        assert_eq!(HashSet::<String>::zod_schema(), "z.set(z.unknown())");
+        assert_eq!(HashSet::<String>::ts_type_name(), "Set<unknown>");
+        assert_eq!(HashSet::<String>::schema_name(), "HashSetSchema");
+    }
+
+    #[test]
+    fn test_ts_declaration() {
+        let decl = String::ts_declaration();
+        assert!(decl.contains("export const StringSchema = z.string();"));
+        assert!(decl.contains("export type string = z.infer<typeof StringSchema>;"));
+    }
+
+    #[test]
+    fn test_metadata_default() {
+        let meta = String::metadata();
+        assert!(meta.description.is_none());
+        assert!(!meta.deprecated);
     }
 }
