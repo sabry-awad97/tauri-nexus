@@ -36,3 +36,5 @@ thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+trybuild.workspace = true
+zod-rs = { path = "../zod-rs" }

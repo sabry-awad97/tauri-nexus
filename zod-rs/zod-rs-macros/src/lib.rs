@@ -57,12 +57,18 @@
 //! - `#[zod(regex = "pattern")]` - Regex pattern validation
 
 use proc_macro::TokenStream;
+use syn::{Data, DeriveInput};
 
 mod codegen;
 mod error;
 mod generator;
 mod ir;
 mod parser;
+
+use codegen::impl_block::ImplBlockGenerator;
+use parser::enum_parser::EnumParser;
+use parser::struct_parser::StructParser;
+use parser::type_parser::ParseError as TypeParseError;
 
 /// Derive macro for generating Zod schemas from Rust types.
 ///
@@ -79,26 +85,106 @@ mod parser;
 /// ```
 #[proc_macro_derive(ZodSchema, attributes(zod, serde))]
 pub fn derive_zod_schema(input: TokenStream) -> TokenStream {
-    // Placeholder implementation - will be completed in later tasks
-    let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    let name = &input.ident;
-    let schema_name = format!("{}Schema", name);
+    let input = syn::parse_macro_input!(input as DeriveInput);
 
-    let expanded = quote::quote! {
-        impl zod_rs::ZodSchema for #name {
-            fn zod_schema() -> &'static str {
-                "z.object({})"
-            }
+    match derive_zod_schema_impl(&input) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.into_compile_error().into(),
+    }
+}
 
-            fn ts_type_name() -> &'static str {
-                stringify!(#name)
-            }
-
-            fn schema_name() -> &'static str {
-                #schema_name
-            }
+/// Internal implementation of the derive macro.
+///
+/// This function routes to the appropriate parser based on the input type
+/// (struct or enum) and generates the impl block.
+fn derive_zod_schema_impl(input: &DeriveInput) -> Result<proc_macro2::TokenStream, syn::Error> {
+    // Route to the appropriate parser based on the data type
+    let schema_ir = match &input.data {
+        Data::Struct(_) => StructParser::parse(input).map_err(|e| convert_parse_error(e, input))?,
+        Data::Enum(_) => {
+            EnumParser::parse(input).map_err(|e| convert_enum_parse_error(e, input))?
+        }
+        Data::Union(_) => {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "ZodSchema cannot be derived for unions",
+            ));
         }
     };
 
-    TokenStream::from(expanded)
+    // Generate the impl block
+    let generator = ImplBlockGenerator::new();
+    let impl_block = generator.generate(&schema_ir);
+
+    Ok(impl_block)
+}
+
+/// Convert a StructParseError to a syn::Error with proper span information.
+fn convert_parse_error(
+    error: parser::struct_parser::StructParseError,
+    input: &DeriveInput,
+) -> syn::Error {
+    use parser::struct_parser::StructParseError;
+
+    match error {
+        StructParseError::ContainerAttrs(msg) => syn::Error::new_spanned(
+            &input.ident,
+            format!("Invalid container attributes: {}", msg),
+        ),
+        StructParseError::FieldAttrs(msg) => {
+            syn::Error::new_spanned(&input.ident, format!("Invalid field attributes: {}", msg))
+        }
+        StructParseError::FieldType(parse_error) => convert_type_parse_error(parse_error, input),
+        StructParseError::NotAStruct(kind) => {
+            syn::Error::new_spanned(&input.ident, format!("Expected struct, found {}", kind))
+        }
+        StructParseError::MissingFieldIdent(index) => syn::Error::new_spanned(
+            &input.ident,
+            format!("Field at index {} has no identifier", index),
+        ),
+    }
+}
+
+/// Convert an EnumParseError to a syn::Error with proper span information.
+fn convert_enum_parse_error(
+    error: parser::enum_parser::EnumParseError,
+    input: &DeriveInput,
+) -> syn::Error {
+    use parser::enum_parser::EnumParseError;
+
+    match error {
+        EnumParseError::ContainerAttrs(msg) => syn::Error::new_spanned(
+            &input.ident,
+            format!("Invalid container attributes: {}", msg),
+        ),
+        EnumParseError::VariantAttrs(msg) => {
+            syn::Error::new_spanned(&input.ident, format!("Invalid variant attributes: {}", msg))
+        }
+        EnumParseError::FieldType(parse_error) => convert_type_parse_error(parse_error, input),
+        EnumParseError::NotAnEnum(kind) => {
+            syn::Error::new_spanned(&input.ident, format!("Expected enum, found {}", kind))
+        }
+        EnumParseError::MissingVariantIdent(index) => syn::Error::new_spanned(
+            &input.ident,
+            format!("Variant at index {} has no identifier", index),
+        ),
+        EnumParseError::MissingFieldIdent(variant, index) => syn::Error::new_spanned(
+            &input.ident,
+            format!(
+                "Field at index {} in variant '{}' has no identifier",
+                index, variant
+            ),
+        ),
+    }
+}
+
+/// Convert a TypeParseError to a syn::Error with proper span information.
+fn convert_type_parse_error(error: TypeParseError, input: &DeriveInput) -> syn::Error {
+    let message = match &error {
+        TypeParseError::UnsupportedType(ty) => format!("Unsupported type: {}", ty),
+        TypeParseError::EmptyPath => "Empty path in type".to_string(),
+        TypeParseError::MissingGeneric(ty) => format!("Missing generic parameter for {}", ty),
+        TypeParseError::InvalidArrayLength => "Invalid array length".to_string(),
+    };
+    syn::Error::new_spanned(&input.ident, message)
 }
