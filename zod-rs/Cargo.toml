@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = ["zod-rs", "zod-rs-macros", "zod-rs-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/example/zod-rs"
+authors = ["Your Name <your.email@example.com>"]
+rust-version = "1.70"
+
+[workspace.dependencies]
+# Core dependencies
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+# Proc-macro dependencies
+proc-macro2 = "1.0.105"
+quote = "1.0.43"
+syn = { version = "2.0.114", features = ["full", "parsing", "extra-traits"] }
+darling = "0.23.0"
+convert_case = "0.10.0"
+
+# Optional type support
+chrono = { version = "0.4.42", features = ["serde"] }
+uuid = { version = "1.19.0", features = ["serde"] }
+
+# Testing
+proptest = "1.9.0"
+
+# CLI dependencies
+clap = { version = "4.5.54", features = ["derive"] }

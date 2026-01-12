@@ -1,0 +1,34 @@
+[package]
+name = "zod-rs-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "CLI tool for generating TypeScript Zod schemas from Rust source files"
+readme = "README.md"
+keywords = ["zod", "typescript", "schema", "codegen", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "zod-rs"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+zod-rs = { path = "../zod-rs" }
+zod-rs-macros = { path = "../zod-rs-macros" }
+serde.workspace = true
+serde_json.workspace = true
+
+# File system and path handling
+walkdir = "2.4"
+toml = "0.8"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Output formatting
+colored = "2.0"

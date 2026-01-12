@@ -1,0 +1,37 @@
+[package]
+name = "zod-rs-macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Procedural macros for generating TypeScript Zod schemas from Rust types"
+readme = "README.md"
+keywords = ["zod", "typescript", "schema", "codegen", "derive", "macro"]
+categories = ["development-tools::procedural-macro-helpers"]
+
+[lib]
+proc-macro = true
+
+[features]
+default = ["serde-compat"]
+
+# Respect serde attributes
+serde-compat = []
+
+# Optional type support
+chrono = []
+uuid = []
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+darling.workspace = true
+convert_case.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
