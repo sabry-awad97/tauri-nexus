@@ -8,7 +8,7 @@
 ## Features
 
 - ⚛️ **React hooks** — `useSubscription`, `useBatch`, and more
-- 🔄 **TanStack Query integration** — Queries, mutations, and cache management
+- 🔄 **TanStack Query integration** — Queries, mutations, infinite queries
 - 📡 **Real-time subscriptions** — Auto-reconnect, error handling, lifecycle management
 - 🎯 **Type-safe** — Full TypeScript inference from your contract
 - 🔌 **Re-exports core** — Single import for all RPC functionality
@@ -17,16 +17,7 @@
 
 ```bash
 npm install @tauri-nexus/rpc-react @tanstack/react-query
-# or
-pnpm add @tauri-nexus/rpc-react @tanstack/react-query
-# or
-bun add @tauri-nexus/rpc-react @tanstack/react-query
 ```
-
-### Peer Dependencies
-
-- `react` ^18.0.0 || ^19.0.0
-- `@tanstack/react-query` ^5.0.0
 
 ## Quick Start
 
@@ -54,11 +45,9 @@ import {
   createTanstackQueryUtils,
 } from "@tauri-nexus/rpc-react";
 
-// Define your contract
 interface AppContract {
   user: {
     get: { type: "query"; input: { id: number }; output: User };
-    list: { type: "query"; input: void; output: User[] };
     create: { type: "mutation"; input: CreateUserInput; output: User };
   };
   notifications: {
@@ -66,12 +55,10 @@ interface AppContract {
   };
 }
 
-// Create client
 export const rpc = createClientWithSubscriptions<AppContract>({
   subscriptionPaths: ["notifications.stream"],
 });
 
-// Create TanStack Query utilities
 export const api = createTanstackQueryUtils<AppContract>(rpc);
 ```
 
@@ -79,33 +66,24 @@ export const api = createTanstackQueryUtils<AppContract>(rpc);
 
 ```tsx
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { api, rpc } from "./rpc";
+import { useSubscription } from "@tauri-nexus/rpc-react";
 
 function UserProfile({ userId }: { userId: number }) {
-  // Queries with full type inference
-  const { data: user, isLoading } = useQuery(
-    api.user.get.queryOptions({ input: { id: userId } }),
+  const { data: user } = useQuery(
+    api.user.get.queryOptions({ input: { id: userId } })
   );
-
-  // Mutations
   const createUser = useMutation(api.user.create.mutationOptions());
 
-  if (isLoading) return <div>Loading...</div>;
-
-  return (
-    <div>
-      <h1>{user?.name}</h1>
-      <button
-        onClick={() =>
-          createUser.mutate({ name: "New User", email: "new@example.com" })
-        }
-      >
-        Create User
-      </button>
-    </div>
+  const { data: notification, isConnected } = useSubscription(
+    () => rpc.notifications.stream(),
+    []
   );
+
+  return <div>{user?.name}</div>;
 }
 ```
+
+---
 
 ## React Hooks
 
@@ -114,13 +92,24 @@ function UserProfile({ userId }: { userId: number }) {
 Manage real-time subscriptions with automatic lifecycle handling:
 
 ```tsx
-import { useSubscription, subscribe } from "@tauri-nexus/rpc-react";
+import { useSubscription } from "@tauri-nexus/rpc-react";
 
 function NotificationFeed() {
-  const { data, isConnected, error } = useSubscription<Notification>(
-    () => subscribe("notifications.stream", {}),
+  const {
+    data, // Latest event data
+    events, // All received events (if collecting)
+    isConnected, // Connection status
+    error, // Last error
+    reconnectCount, // Number of reconnections
+  } = useSubscription(
+    () => rpc.notifications.stream(),
     [], // dependency array
     {
+      enabled: true, // Enable/disable subscription
+      autoReconnect: true, // Auto-reconnect on disconnect
+      maxReconnects: 5, // Max reconnection attempts
+      reconnectDelay: 1000, // Delay between reconnects (ms)
+      maxEvents: undefined, // Limit number of events stored
       onEvent: (notification) => {
         console.log("New notification:", notification);
       },
@@ -130,35 +119,18 @@ function NotificationFeed() {
       onComplete: () => {
         console.log("Subscription completed");
       },
-      enabled: true, // Enable/disable subscription
-      autoReconnect: true, // Auto-reconnect on disconnect
-      maxReconnects: 5, // Max reconnection attempts
-      reconnectDelay: 1000, // Delay between reconnects (ms)
-      maxEvents: undefined, // Limit number of events
-    },
+    }
   );
 
   return (
     <div>
-      <div className={isConnected ? "connected" : "disconnected"}>
+      <span className={isConnected ? "connected" : "disconnected"}>
         {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
-      </div>
+      </span>
       {error && <div className="error">{error.message}</div>}
       {data && <NotificationCard notification={data} />}
     </div>
   );
-}
-```
-
-#### Subscription State
-
-```typescript
-interface SubscriptionResult<T> {
-  data: T | null; // Latest event data
-  events: T[]; // All received events (if collecting)
-  isConnected: boolean; // Connection status
-  error: RpcError | null; // Last error
-  reconnectCount: number; // Number of reconnections
 }
 ```
 
@@ -168,7 +140,6 @@ Execute multiple RPC calls in a single request:
 
 ```tsx
 import { useBatch } from "@tauri-nexus/rpc-react";
-import { rpc } from "./rpc";
 
 function Dashboard() {
   const batch = useBatch(
@@ -179,50 +150,30 @@ function Dashboard() {
         .add("users", "user.list", undefined)
         .add("user1", "user.get", { id: 1 }),
     {
-      executeOnMount: true, // Execute immediately on mount
+      executeOnMount: true,
       onSuccess: (response) => {
         console.log(`${response.successCount} calls succeeded`);
       },
       onError: (error) => {
         console.error("Batch failed:", error);
       },
-    },
+    }
   );
 
   if (batch.isLoading) return <div>Loading...</div>;
   if (batch.isError) return <div>Error: {batch.error?.message}</div>;
 
-  // Type-safe result access
   const health = batch.getResult("health");
   const users = batch.getResult("users");
-  const user1 = batch.getResult("user1");
 
   return (
     <div>
       <p>Status: {health?.data?.status}</p>
       <p>Users: {users?.data?.length}</p>
-      <p>User 1: {user1?.data?.name}</p>
       <p>Duration: {batch.duration}ms</p>
       <button onClick={() => batch.execute()}>Refresh</button>
     </div>
   );
-}
-```
-
-#### Batch State
-
-```typescript
-interface BatchState {
-  isLoading: boolean;
-  isSuccess: boolean;
-  isError: boolean;
-  error: RpcError | null;
-  duration: number | null;
-  response: TypedBatchResponseWrapper | null;
-
-  execute(): Promise<void>;
-  reset(): void;
-  getResult(id: string): BatchResult | undefined;
 }
 ```
 
@@ -240,7 +191,7 @@ function AsyncComponent() {
   useEffect(() => {
     fetchData().then((result) => {
       if (isMounted()) {
-        setData(result); // Safe - won't update unmounted component
+        setData(result);
       }
     });
   }, []);
@@ -248,6 +199,8 @@ function AsyncComponent() {
   return <div>{data}</div>;
 }
 ```
+
+---
 
 ## TanStack Query Integration
 
@@ -264,7 +217,6 @@ const results = useQueries({
   queries: [
     api.user.get.queryOptions({ input: { id: 1 } }),
     api.user.get.queryOptions({ input: { id: 2 } }),
-    api.user.list.queryOptions(),
   ],
 });
 
@@ -287,7 +239,6 @@ function CreateUserForm() {
   const mutation = useMutation({
     ...api.user.create.mutationOptions(),
     onSuccess: () => {
-      // Invalidate user list cache
       queryClient.invalidateQueries({ queryKey: api.user.list.key() });
     },
   });
@@ -299,7 +250,6 @@ function CreateUserForm() {
         mutation.mutate({ name: "Alice", email: "alice@example.com" });
       }}
     >
-      {/* form fields */}
       <button disabled={mutation.isPending}>
         {mutation.isPending ? "Creating..." : "Create User"}
       </button>
@@ -313,12 +263,11 @@ function CreateUserForm() {
 ```tsx
 import { useInfiniteQuery } from "@tanstack/react-query";
 
-// Assuming your contract has pagination
 const { data, fetchNextPage, hasNextPage } = useInfiniteQuery(
   api.user.list.infiniteOptions({
     input: { limit: 10 },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-  }),
+  })
 );
 ```
 
@@ -328,9 +277,6 @@ const { data, fetchNextPage, hasNextPage } = useInfiniteQuery(
 // Get query key for cache operations
 const userKey = api.user.get.key({ id: 1 });
 // => ["user", "get", { id: 1 }]
-
-const userListKey = api.user.list.key();
-// => ["user", "list"]
 
 // Invalidate specific query
 queryClient.invalidateQueries({ queryKey: api.user.get.key({ id: 1 }) });
@@ -342,7 +288,7 @@ queryClient.invalidateQueries({ queryKey: api.user.key() });
 ### Direct Calls
 
 ```tsx
-// Call without hooks (useful in event handlers, effects, etc.)
+// Call without hooks
 const user = await api.user.get.call({ id: 1 });
 const newUser = await api.user.create.call({
   name: "Bob",
@@ -350,36 +296,31 @@ const newUser = await api.user.create.call({
 });
 ```
 
+---
+
 ## Custom Subscription Hooks
 
 Create typed subscription hooks for your specific use cases:
 
 ```tsx
-import { useSubscription, subscribe } from "@tauri-nexus/rpc-react";
-import { rpc } from "./rpc";
+import { useSubscription } from "@tauri-nexus/rpc-react";
 
-// Typed counter subscription
 export function useCounter(config: { start?: number; maxCount?: number } = {}) {
-  return useSubscription<CounterEvent>(
+  return useSubscription(
     () => rpc.stream.counter(config),
     [config.start, config.maxCount],
-    { autoReconnect: true },
+    { autoReconnect: true }
   );
 }
 
-// Typed chat subscription
 export function useChat(roomId: string) {
-  return useSubscription<ChatMessage>(
-    () => rpc.stream.chat({ roomId }),
-    [roomId],
-    {
-      autoReconnect: true,
-      maxReconnects: 10,
-      onEvent: (message) => {
-        // Play notification sound, etc.
-      },
+  return useSubscription(() => rpc.stream.chat({ roomId }), [roomId], {
+    autoReconnect: true,
+    maxReconnects: 10,
+    onEvent: (message) => {
+      // Play notification sound
     },
-  );
+  });
 }
 
 // Usage
@@ -389,9 +330,11 @@ function ChatRoom({ roomId }: { roomId: string }) {
 }
 ```
 
+---
+
 ## Re-exported from @tauri-nexus/rpc-core
 
-This package re-exports everything from `@tauri-nexus/rpc-core` for convenience:
+This package re-exports everything from `@tauri-nexus/rpc-core`:
 
 ```tsx
 import {
@@ -399,23 +342,19 @@ import {
   createClient,
   createClientWithSubscriptions,
   createClientFromLink,
-
   // TauriLink
   TauriLink,
   logging,
   retry,
   onError,
-
   // Zod validation
   procedure,
   router,
   createValidatedClient,
-
   // Utilities
   isRpcError,
   hasErrorCode,
   subscribe,
-
   // Types
   type RpcError,
   type InferInput,
@@ -423,9 +362,9 @@ import {
 } from "@tauri-nexus/rpc-react";
 ```
 
-## TypeScript Support
+---
 
-Full type inference from your contract:
+## TypeScript Support
 
 ```typescript
 import type {
@@ -436,15 +375,16 @@ import type {
   TanstackQueryUtils,
 } from "@tauri-nexus/rpc-react";
 
-// Infer types from your API utils
 type UserQueryOptions = ReturnType<typeof api.user.get.queryOptions>;
 type CreateUserMutation = ReturnType<typeof api.user.create.mutationOptions>;
 ```
 
+---
+
 ## Related Packages
 
 - [`@tauri-nexus/rpc-core`](../rpc-core) — Core RPC client (framework-agnostic)
-- [`@tauri-nexus/rpc-docs`](../rpc-docs) — Auto-generated API documentation components
+- [`@tauri-nexus/rpc-docs`](../rpc-docs) — Auto-generated API documentation
 
 ## License
 

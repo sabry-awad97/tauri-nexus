@@ -18,20 +18,9 @@
 
 ```bash
 npm install @tauri-nexus/rpc-docs
-# or
-pnpm add @tauri-nexus/rpc-docs
-# or
-bun add @tauri-nexus/rpc-docs
 ```
 
-### Peer Dependencies
-
-- `react` ^18.0.0 || ^19.0.0
-- `@tanstack/react-query` ^5.0.0
-
 ## Quick Start
-
-### Basic Usage
 
 ```tsx
 import { ApiDocs } from "@tauri-nexus/rpc-docs";
@@ -47,106 +36,94 @@ function DocsPage() {
 }
 ```
 
-That's it! The component will automatically fetch the schema from your Tauri backend and render interactive documentation.
+---
 
 ## Components
 
 ### ApiDocs
 
-The main documentation component that renders the full API explorer:
+The main documentation component:
 
 ```tsx
-import { ApiDocs } from "@tauri-nexus/rpc-docs";
-
 <ApiDocs
-  title="API Documentation" // Page title
-  description="API description" // Subtitle text
-  defaultExpanded={false} // Expand all procedures by default
-  showTester={true} // Show the procedure tester panel
-  groupBy="namespace" // Group by: "namespace" | "type" | "none"
-/>;
+  title="API Documentation"
+  description="API description"
+  defaultExpanded={false}
+  showTester={true}
+  groupBy="namespace" // "namespace" | "type" | "none"
+/>
 ```
 
 ### ProcedureCard
 
-Display a single procedure with its details:
+Display a single procedure:
 
 ```tsx
-import { ProcedureCard } from "@tauri-nexus/rpc-docs";
-
 <ProcedureCard
   procedure={procedureSchema}
   expanded={false}
   onToggle={() => {}}
   onTest={(procedure) => {}}
-/>;
+/>
 ```
 
 ### TypeRenderer
 
-Render type schemas with syntax highlighting:
+Render type schemas:
 
 ```tsx
-import { TypeRenderer } from "@tauri-nexus/rpc-docs";
-
-<TypeRenderer schema={typeSchema} depth={0} maxDepth={3} />;
+<TypeRenderer schema={typeSchema} depth={0} maxDepth={3} />
 ```
 
 ### FilterBar
 
-Search and filter procedures:
+Search and filter:
 
 ```tsx
-import { FilterBar } from "@tauri-nexus/rpc-docs";
-
-<FilterBar value={filterState} onChange={setFilterState} procedureCount={42} />;
+<FilterBar value={filterState} onChange={setFilterState} procedureCount={42} />
 ```
 
 ### ProcedureTester
 
-Interactive procedure testing panel:
+Interactive testing panel:
 
 ```tsx
-import { ProcedureTester } from "@tauri-nexus/rpc-docs";
-
-<ProcedureTester procedure={selectedProcedure} onClose={() => {}} />;
+<ProcedureTester procedure={selectedProcedure} onClose={() => {}} />
 ```
 
 ### InputEditor
 
-JSON input editor with validation:
+JSON input editor:
 
 ```tsx
-import { InputEditor } from "@tauri-nexus/rpc-docs";
-
 <InputEditor
   value={inputJson}
   onChange={setInputJson}
   schema={inputSchema}
   placeholder="Enter JSON input..."
-/>;
+/>
 ```
 
 ### ResponseViewer
 
-Display RPC responses with formatting:
+Display RPC responses:
 
 ```tsx
-import { ResponseViewer } from "@tauri-nexus/rpc-docs";
-
 <ResponseViewer
   response={response}
   error={error}
   duration={123}
   isLoading={false}
-/>;
+/>
 ```
+
+---
 
 ## Hooks
 
 ### useRouterSchema
 
-Fetch and parse the router schema from your backend:
+Fetch the router schema from your backend:
 
 ```tsx
 import { useRouterSchema } from "@tauri-nexus/rpc-docs";
@@ -168,69 +145,36 @@ function MyDocs() {
 }
 ```
 
+---
+
 ## Utilities
 
-### groupProcedures
-
-Group procedures by namespace:
-
 ```typescript
-import { groupProcedures } from "@tauri-nexus/rpc-docs";
+import {
+  groupProcedures,
+  filterProcedures,
+  generatePlaceholder,
+  generatePlaceholderJson,
+} from "@tauri-nexus/rpc-docs";
 
+// Group by namespace
 const groups = groupProcedures(procedures);
-// => { user: [...], stream: [...], ... }
-```
+// => { user: [...], stream: [...] }
 
-### filterProcedures
-
-Filter procedures by search query and type:
-
-```typescript
-import { filterProcedures } from "@tauri-nexus/rpc-docs";
-
+// Filter procedures
 const filtered = filterProcedures(procedures, {
   search: "user",
-  type: "query", // "query" | "mutation" | "subscription" | "all"
+  type: "query",
 });
-```
 
-### generatePlaceholder
-
-Generate placeholder input for a procedure:
-
-```typescript
-import { generatePlaceholder } from "@tauri-nexus/rpc-docs";
-
+// Generate placeholder input
 const placeholder = generatePlaceholder(procedure.inputSchema);
 // => { id: 0, name: "" }
 ```
 
-### generatePlaceholderJson
-
-Generate placeholder as formatted JSON string:
-
-```typescript
-import { generatePlaceholderJson } from "@tauri-nexus/rpc-docs";
-
-const json = generatePlaceholderJson(procedure.inputSchema);
-// => '{\n  "id": 0,\n  "name": ""\n}'
-```
+---
 
 ## Types
-
-```typescript
-import type {
-  RouterSchema, // Full router schema
-  ProcedureSchema, // Single procedure schema
-  TypeSchema, // Type definition schema
-  ProcedureType, // "query" | "mutation" | "subscription"
-  ProcedureGroup, // Grouped procedures
-  FilterState, // Filter state
-  FilterResult, // Filter result with counts
-} from "@tauri-nexus/rpc-docs";
-```
-
-### RouterSchema
 
 ```typescript
 interface RouterSchema {
@@ -238,27 +182,19 @@ interface RouterSchema {
   version?: string;
   description?: string;
 }
-```
 
-### ProcedureSchema
-
-```typescript
 interface ProcedureSchema {
-  path: string; // e.g., "user.get"
-  type: ProcedureType; // "query" | "mutation" | "subscription"
+  path: string;
+  type: "query" | "mutation" | "subscription";
   description?: string;
   inputSchema?: TypeSchema;
   outputSchema?: TypeSchema;
   deprecated?: boolean;
   tags?: string[];
 }
-```
 
-### TypeSchema
-
-```typescript
 interface TypeSchema {
-  type: string; // "object" | "array" | "string" | "number" | etc.
+  type: string;
   properties?: Record<string, TypeSchema>;
   items?: TypeSchema;
   required?: string[];
@@ -269,19 +205,17 @@ interface TypeSchema {
 }
 ```
 
+---
+
 ## Styling
 
-### Using the Default Styles
-
-Import the included stylesheet:
+### Default Styles
 
 ```tsx
 import "@tauri-nexus/rpc-docs/styles.css";
 ```
 
-### Custom Styling
-
-Override CSS variables for theming:
+### Custom Theming
 
 ```css
 :root {
@@ -293,57 +227,17 @@ Override CSS variables for theming:
   --rpc-docs-text-muted: #64748b;
   --rpc-docs-success: #22c55e;
   --rpc-docs-error: #ef4444;
-  --rpc-docs-warning: #f59e0b;
   --rpc-docs-query: #3b82f6;
   --rpc-docs-mutation: #8b5cf6;
   --rpc-docs-subscription: #22c55e;
 }
 ```
 
-### Component Classes
-
-All components use BEM-style class names for easy customization:
-
-```css
-.rpc-docs {
-}
-.rpc-docs__header {
-}
-.rpc-docs__content {
-}
-
-.procedure-card {
-}
-.procedure-card--expanded {
-}
-.procedure-card__header {
-}
-.procedure-card__body {
-}
-
-.type-renderer {
-}
-.type-renderer__property {
-}
-
-.filter-bar {
-}
-.filter-bar__search {
-}
-.filter-bar__filters {
-}
-
-.procedure-tester {
-}
-.procedure-tester__input {
-}
-.procedure-tester__output {
-}
-```
+---
 
 ## Backend Requirements
 
-Your Tauri backend should expose a `rpc_schema` command that returns the router schema:
+Your Tauri backend should expose a `rpc_schema` command:
 
 ```rust
 #[tauri::command]
@@ -355,76 +249,30 @@ fn rpc_schema() -> RouterSchema {
                 procedure_type: "query".to_string(),
                 input_schema: Some(json!({
                     "type": "object",
-                    "properties": {
-                        "id": { "type": "number" }
-                    },
+                    "properties": { "id": { "type": "number" } },
                     "required": ["id"]
                 })),
                 output_schema: Some(json!({
                     "type": "object",
                     "properties": {
                         "id": { "type": "number" },
-                        "name": { "type": "string" },
-                        "email": { "type": "string" }
+                        "name": { "type": "string" }
                     }
                 })),
                 ..Default::default()
             },
-            // ... more procedures
         ],
         ..Default::default()
     }
 }
 ```
 
-## Example
-
-Here's a complete example with custom configuration:
-
-```tsx
-import { useState } from "react";
-import {
-  ApiDocs,
-  useRouterSchema,
-  filterProcedures,
-  type FilterState,
-} from "@tauri-nexus/rpc-docs";
-import "@tauri-nexus/rpc-docs/styles.css";
-
-function CustomDocs() {
-  const { schema, isLoading } = useRouterSchema();
-  const [filter, setFilter] = useState<FilterState>({
-    search: "",
-    type: "all",
-  });
-
-  if (isLoading) {
-    return <div className="loading">Loading API documentation...</div>;
-  }
-
-  const filtered = filterProcedures(schema?.procedures ?? [], filter);
-
-  return (
-    <div className="custom-docs">
-      <header>
-        <h1>🚀 My API</h1>
-        <p>{filtered.length} procedures available</p>
-      </header>
-
-      <ApiDocs
-        title="" // Hide default title
-        showTester={true}
-        groupBy="namespace"
-      />
-    </div>
-  );
-}
-```
+---
 
 ## Related Packages
 
-- [`@tauri-nexus/rpc-core`](../rpc-core) — Core RPC client (framework-agnostic)
-- [`@tauri-nexus/rpc-react`](../rpc-react) — React hooks and TanStack Query integration
+- [`@tauri-nexus/rpc-core`](../rpc-core) — Core RPC client
+- [`@tauri-nexus/rpc-react`](../rpc-react) — React hooks and TanStack Query
 
 ## License
 
