@@ -1,5 +1,6 @@
 {
   "rust-analyzer.linkedProjects": [
-    "apps/app/src-tauri/Cargo.toml"
+    "apps/app/src-tauri/Cargo.toml",
+    "zod-rs/Cargo.toml"
   ]
 }
