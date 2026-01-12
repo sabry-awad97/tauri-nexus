@@ -391,3 +391,164 @@ async fn test_no_middleware_direct_handler_call() {
     // Only handler should be called
     assert_eq!(log.as_slice(), &["handler"]);
 }
+
+// =============================================================================
+// Property Tests for build_middleware_chain Helper
+// =============================================================================
+
+/// Create a middleware function that logs its execution order for testing
+/// the build_middleware_chain helper directly.
+fn create_chain_logging_middleware(
+    name: String,
+    log: Arc<Mutex<Vec<String>>>,
+) -> crate::middleware::MiddlewareFn<TestContext> {
+    Arc::new(move |ctx: Context<TestContext>, req: crate::middleware::Request, next: Next<TestContext>| {
+        let name = name.clone();
+        let log = log.clone();
+        Box::pin(async move {
+            // Log entry
+            {
+                let mut l = log.lock().await;
+                l.push(format!("{}_enter", name));
+            }
+
+            // Call next
+            let result = next(ctx, req).await;
+
+            // Log exit
+            {
+                let mut l = log.lock().await;
+                l.push(format!("{}_exit", name));
+            }
+
+            result
+        })
+    })
+}
+
+proptest! {
+    /// **Property 1: Middleware Chain Ordering**
+    /// *For any* list of middleware functions and a final handler, when the middleware chain
+    /// is built and executed, the middleware SHALL execute in registration order
+    /// (first registered = outermost, last registered = innermost), meaning the first
+    /// middleware wraps all subsequent middleware.
+    /// **Feature: tauri-plugin-rpc-improvements, Property 1: Middleware Chain Ordering**
+    /// **Validates: Requirements 1.1, 1.7**
+    #[test]
+    fn prop_build_middleware_chain_ordering(middleware_count in 1usize..6) {
+        use crate::router::build_middleware_chain;
+        use crate::middleware::{Request, ProcedureType};
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let execution_log = Arc::new(Mutex::new(Vec::new()));
+            let log_clone = execution_log.clone();
+
+            // Create middleware list
+            let mut middleware_list = Vec::new();
+            for i in 0..middleware_count {
+                let name = format!("M{}", i + 1);
+                middleware_list.push(create_chain_logging_middleware(name, execution_log.clone()));
+            }
+
+            // Create final handler that logs "handler"
+            let final_handler: Next<TestContext> = Arc::new(move |_ctx, _req| {
+                let log = log_clone.clone();
+                Box::pin(async move {
+                    let mut l = log.lock().await;
+                    l.push("handler".to_string());
+                    Ok(serde_json::json!({"success": true}))
+                })
+            });
+
+            // Build the middleware chain using the helper
+            let chain = build_middleware_chain(middleware_list, final_handler);
+
+            // Execute the chain
+            let ctx = Context::new(TestContext::default());
+            let request = Request {
+                path: "test".to_string(),
+                procedure_type: ProcedureType::Query,
+                input: serde_json::json!(null),
+            };
+
+            let result = chain(ctx, request).await;
+            prop_assert!(result.is_ok(), "Chain execution should succeed");
+
+            // Verify execution order
+            let log = execution_log.lock().await;
+
+            // Expected order: M1_enter, M2_enter, ..., MN_enter, handler, MN_exit, ..., M2_exit, M1_exit
+            let mut expected = Vec::new();
+            for i in 0..middleware_count {
+                expected.push(format!("M{}_enter", i + 1));
+            }
+            expected.push("handler".to_string());
+            for i in (0..middleware_count).rev() {
+                expected.push(format!("M{}_exit", i + 1));
+            }
+
+            prop_assert_eq!(
+                log.as_slice(),
+                expected.as_slice(),
+                "build_middleware_chain should execute middleware in onion order (first registered = outermost)"
+            );
+
+            Ok(())
+        })?;
+    }
+
+    /// **Property 1b: Empty Middleware Chain**
+    /// *For any* empty middleware list, the build_middleware_chain helper SHALL return
+    /// the final handler unchanged, executing only the handler.
+    /// **Feature: tauri-plugin-rpc-improvements, Property 1: Middleware Chain Ordering**
+    /// **Validates: Requirements 1.1, 1.7**
+    #[test]
+    fn prop_build_middleware_chain_empty(_dummy in 0..1) {
+        use crate::router::build_middleware_chain;
+        use crate::middleware::{Request, ProcedureType};
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let execution_log = Arc::new(Mutex::new(Vec::new()));
+            let log_clone = execution_log.clone();
+
+            // Empty middleware list
+            let middleware_list: Vec<crate::middleware::MiddlewareFn<TestContext>> = Vec::new();
+
+            // Create final handler that logs "handler"
+            let final_handler: Next<TestContext> = Arc::new(move |_ctx, _req| {
+                let log = log_clone.clone();
+                Box::pin(async move {
+                    let mut l = log.lock().await;
+                    l.push("handler".to_string());
+                    Ok(serde_json::json!({"success": true}))
+                })
+            });
+
+            // Build the middleware chain using the helper
+            let chain = build_middleware_chain(middleware_list, final_handler);
+
+            // Execute the chain
+            let ctx = Context::new(TestContext::default());
+            let request = Request {
+                path: "test".to_string(),
+                procedure_type: ProcedureType::Query,
+                input: serde_json::json!(null),
+            };
+
+            let result = chain(ctx, request).await;
+            prop_assert!(result.is_ok(), "Chain execution should succeed");
+
+            // Verify only handler was called
+            let log = execution_log.lock().await;
+            prop_assert_eq!(
+                log.as_slice(),
+                &["handler".to_string()],
+                "Empty middleware chain should only execute the handler"
+            );
+
+            Ok(())
+        })?;
+    }
+}

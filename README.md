@@ -119,21 +119,21 @@ function App() {
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        React Application                         │
+│                        React Application                        │
 ├─────────────────────────────────────────────────────────────────┤
 │  useQuery  │  useMutation  │  useSubscription  │  useBatch      │
 ├─────────────────────────────────────────────────────────────────┤
-│                    @tauri-nexus/rpc-react                        │
-│              TanStack Query Utils • React Hooks                  │
+│                    @tauri-nexus/rpc-react                       │
+│              TanStack Query Utils • React Hooks                 │
 ├─────────────────────────────────────────────────────────────────┤
-│                    @tauri-nexus/rpc-core                         │
+│                    @tauri-nexus/rpc-core                        │
 │     TauriLink • Interceptors • Batch • Subscriptions • Zod      │
 ├─────────────────────────────────────────────────────────────────┤
-│                      Tauri IPC Bridge                            │
-│                   invoke() • listen()                            │
+│                      Tauri IPC Bridge                           │
+│                   invoke() • listen()                           │
 ├─────────────────────────────────────────────────────────────────┤
-│                    tauri-plugin-rpc (Rust)                       │
-│           Router • Middleware • Subscription Manager             │
+│                    tauri-plugin-rpc (Rust)                      │
+│           Router • Middleware • Subscription Manager            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

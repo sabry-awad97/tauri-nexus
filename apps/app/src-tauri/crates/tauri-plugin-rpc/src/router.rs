@@ -49,6 +49,44 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+// =============================================================================
+// Middleware Chain Builder Helper
+// =============================================================================
+
+/// Build a middleware chain from a list of middleware functions and a final handler.
+///
+/// Middleware is applied in reverse order (last added = innermost), meaning
+/// the first middleware in the list wraps all subsequent middleware.
+///
+/// # Arguments
+/// * `middleware` - List of middleware functions in registration order
+/// * `final_handler` - The innermost handler (Next function)
+///
+/// # Returns
+/// A composed Next function with all middleware applied
+///
+/// # Example
+/// ```rust,ignore
+/// // Given middleware [M1, M2, M3] and handler H:
+/// // Execution order: M1 → M2 → M3 → H → M3 → M2 → M1
+/// let chain = build_middleware_chain(vec![m1, m2, m3], handler);
+/// ```
+pub(crate) fn build_middleware_chain<Ctx: Clone + Send + Sync + 'static>(
+    middleware: Vec<MiddlewareFn<Ctx>>,
+    final_handler: Next<Ctx>,
+) -> Next<Ctx> {
+    middleware
+        .into_iter()
+        .rev()
+        .fold(final_handler, |next, mw| {
+            Arc::new(move |ctx, req| {
+                let mw = mw.clone();
+                let next = next.clone();
+                Box::pin(async move { (mw)(ctx, req, next).await })
+            })
+        })
+}
+
 /// Procedure definition
 enum Procedure<Ctx: Clone + Send + Sync + 'static> {
     /// Query or Mutation procedure
@@ -719,20 +757,9 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
                         Box::pin(async move { (handler)(ctx, req.input).await })
                     });
 
-                    // Apply middleware in reverse order (last added = innermost)
+                    // Use the shared middleware chain builder
                     // This builds the chain once at compile time
-                    let chain = self
-                        .middleware
-                        .iter()
-                        .rev()
-                        .fold(final_handler, |next, mw| {
-                            let mw = mw.clone();
-                            Arc::new(move |ctx, req| {
-                                let mw = mw.clone();
-                                let next = next.clone();
-                                Box::pin(async move { (mw)(ctx, req, next).await })
-                            })
-                        });
+                    let chain = build_middleware_chain(self.middleware.clone(), final_handler);
 
                     compiled_chains.insert(
                         path,
@@ -787,19 +814,8 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
                     Box::pin(async move { (handler)(ctx, req.input).await })
                 });
 
-                // Apply middleware in reverse order (last added = innermost)
-                let chain = self
-                    .middleware
-                    .iter()
-                    .rev()
-                    .fold(final_handler, |next, mw| {
-                        let mw = mw.clone();
-                        Arc::new(move |ctx, req| {
-                            let mw = mw.clone();
-                            let next = next.clone();
-                            Box::pin(async move { (mw)(ctx, req, next).await })
-                        })
-                    });
+                // Use the shared middleware chain builder
+                let chain = build_middleware_chain(self.middleware.clone(), final_handler);
 
                 chain(ctx, request).await
             }
@@ -1189,18 +1205,9 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'stati
                 Box::pin(async move { (handler)(ctx, req.input).await })
             });
 
-            // Chain middleware in reverse order (last added = innermost)
-            let mut chain = handler_as_next;
-            for mw in middleware.into_iter().rev() {
-                let next = chain;
-                chain = Arc::new(move |ctx, req| {
-                    let mw = mw.clone();
-                    let next = next.clone();
-                    Box::pin(async move { (mw)(ctx, req, next).await })
-                });
-            }
+            // Use the shared middleware chain builder
+            let final_chain = build_middleware_chain(middleware, handler_as_next);
 
-            let final_chain = chain;
             Arc::new(move |ctx, input| {
                 let chain = final_chain.clone();
                 Box::pin(async move {
@@ -1337,18 +1344,9 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
                 Box::pin(async move { (handler)(ctx, req.input).await })
             });
 
-            // Chain middleware in reverse order (last added = innermost)
-            let mut chain = handler_as_next;
-            for mw in middleware.into_iter().rev() {
-                let next = chain;
-                chain = Arc::new(move |ctx, req| {
-                    let mw = mw.clone();
-                    let next = next.clone();
-                    Box::pin(async move { (mw)(ctx, req, next).await })
-                });
-            }
+            // Use the shared middleware chain builder
+            let final_chain = build_middleware_chain(middleware, handler_as_next);
 
-            let final_chain = chain;
             Arc::new(move |ctx, input| {
                 let chain = final_chain.clone();
                 Box::pin(async move {
@@ -1596,18 +1594,9 @@ impl<
                 Box::pin(async move { (handler)(ctx, req.input).await })
             });
 
-            // Chain middleware in reverse order (last added = innermost)
-            let mut chain = handler_as_next;
-            for mw in middleware.into_iter().rev() {
-                let next = chain;
-                chain = Arc::new(move |ctx, req| {
-                    let mw = mw.clone();
-                    let next = next.clone();
-                    Box::pin(async move { (mw)(ctx, req, next).await })
-                });
-            }
+            // Use the shared middleware chain builder
+            let final_chain = build_middleware_chain(middleware, handler_as_next);
 
-            let final_chain = chain;
             Arc::new(move |ctx, input| {
                 let chain = final_chain.clone();
                 Box::pin(async move {
@@ -1758,18 +1747,9 @@ impl<
                 Box::pin(async move { (handler)(ctx, req.input).await })
             });
 
-            // Chain middleware in reverse order (last added = innermost)
-            let mut chain = handler_as_next;
-            for mw in middleware.into_iter().rev() {
-                let next = chain;
-                chain = Arc::new(move |ctx, req| {
-                    let mw = mw.clone();
-                    let next = next.clone();
-                    Box::pin(async move { (mw)(ctx, req, next).await })
-                });
-            }
+            // Use the shared middleware chain builder
+            let final_chain = build_middleware_chain(middleware, handler_as_next);
 
-            let final_chain = chain;
             Arc::new(move |ctx, input| {
                 let chain = final_chain.clone();
                 Box::pin(async move {
