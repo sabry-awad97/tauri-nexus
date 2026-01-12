@@ -26,7 +26,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-const mockInvoke = vi.mocked(invoke);
+const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
 // =============================================================================
 // Test Contract

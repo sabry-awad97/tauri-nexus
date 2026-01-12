@@ -1009,5 +1009,107 @@ mod proptests {
                 Ok(())
             })?;
         }
+
+        /// **Property 4: Cache TTL Expiration**
+        /// *For any* cached value with TTL T, the value SHALL be retrievable before time T
+        /// and SHALL NOT be retrievable after time T has elapsed.
+        /// **Feature: tauri-rpc-production-audit, Property 4: Cache TTL Expiration**
+        /// **Validates: Requirements 4.6**
+        #[test]
+        fn prop_cache_ttl_expiration(
+            path in path_strategy(),
+            input in json_object_strategy(),
+            value in json_value_strategy(),
+        ) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                // Use a fixed short TTL for fast testing (5ms)
+                let ttl = Duration::from_millis(5);
+                let config = CacheConfig::new().with_default_ttl(ttl);
+                let cache = Cache::new(config);
+
+                // Set value with TTL
+                cache.set(&path, &input, value.clone()).await;
+
+                // Value should be retrievable immediately (before TTL)
+                let cached_before = cache.get(&path, &input).await;
+                prop_assert_eq!(
+                    cached_before,
+                    Some(value.clone()),
+                    "Value should be retrievable before TTL expires"
+                );
+
+                // Wait for TTL to expire (add small buffer for timing)
+                tokio::time::sleep(Duration::from_millis(15)).await;
+
+                // Value should NOT be retrievable after TTL
+                let cached_after = cache.get(&path, &input).await;
+                prop_assert_eq!(
+                    cached_after,
+                    None,
+                    "Value should NOT be retrievable after TTL expires"
+                );
+
+                Ok(())
+            })?;
+        }
+
+        /// Property: LRU eviction removes least recently used entries
+        /// **Feature: tauri-rpc-production-audit, Property 12: LRU Cache Eviction**
+        /// **Validates: Requirements 8.3**
+        #[test]
+        fn prop_lru_cache_eviction(
+            capacity in 2usize..10,
+        ) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let config = CacheConfig::new().with_max_entries(capacity);
+                let cache = Cache::new(config);
+                let input = json!({});
+
+                // Fill cache to capacity
+                for i in 0..capacity {
+                    let path = format!("path{}", i);
+                    cache.set(&path, &input, json!(i)).await;
+                }
+
+                // All entries should be present
+                for i in 0..capacity {
+                    let path = format!("path{}", i);
+                    prop_assert!(
+                        cache.get(&path, &input).await.is_some(),
+                        "Entry {} should be present before eviction",
+                        i
+                    );
+                }
+
+                // Add one more entry (should evict LRU - path0)
+                cache.set("new_path", &input, json!("new")).await;
+
+                // First entry (path0) should be evicted
+                prop_assert!(
+                    cache.get("path0", &input).await.is_none(),
+                    "LRU entry (path0) should be evicted"
+                );
+
+                // New entry should be present
+                prop_assert!(
+                    cache.get("new_path", &input).await.is_some(),
+                    "New entry should be present"
+                );
+
+                // Other entries should still be present
+                for i in 1..capacity {
+                    let path = format!("path{}", i);
+                    prop_assert!(
+                        cache.get(&path, &input).await.is_some(),
+                        "Entry {} should still be present after eviction",
+                        i
+                    );
+                }
+
+                Ok(())
+            })?;
+        }
     }
 }

@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! # Tauri RPC Plugin
 //!
 //! A production-ready, type-safe RPC framework for Tauri v2 applications.

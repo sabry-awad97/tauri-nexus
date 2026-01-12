@@ -13,8 +13,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::subscription::{
-    generate_subscription_id, CancellationSignal, ChannelPublisher, Event, EventMeta,
-    EventPublisher, SubscriptionContext, SubscriptionId, SubscriptionManager,
+    CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, SubscriptionContext,
+    SubscriptionId, SubscriptionManager, generate_subscription_id,
 };
 
 // =============================================================================
@@ -886,8 +886,8 @@ proptest! {
 
 #[cfg(test)]
 mod subscription_event_error_tests {
-    use crate::subscription::SubscriptionEvent;
     use crate::RpcError;
+    use crate::subscription::SubscriptionEvent;
 
     /// Test that error_with_retry creates an event with the specified retry value
     #[test]
@@ -989,9 +989,7 @@ mod subscription_event_error_tests {
 
 #[cfg(test)]
 mod shutdown_timeout_tests {
-    use crate::subscription::{
-        CancellationSignal, SubscriptionId, SubscriptionManager,
-    };
+    use crate::subscription::{CancellationSignal, SubscriptionId, SubscriptionManager};
     use std::sync::Arc;
 
     /// Test that shutdown completes even with stuck tasks (tasks that don't respond to cancellation).
@@ -1028,11 +1026,8 @@ mod shutdown_timeout_tests {
 
         // Shutdown should complete within a bounded time even with stuck tasks
         // because the JoinSet aborts all tasks
-        let shutdown_result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(2),
-            manager.shutdown(),
-        )
-        .await;
+        let shutdown_result =
+            tokio::time::timeout(tokio::time::Duration::from_secs(2), manager.shutdown()).await;
 
         assert!(
             shutdown_result.is_ok(),
@@ -1063,11 +1058,8 @@ mod shutdown_timeout_tests {
         assert_eq!(manager.count().await, 0);
 
         // Shutdown should complete immediately
-        let shutdown_result = tokio::time::timeout(
-            tokio::time::Duration::from_millis(100),
-            manager.shutdown(),
-        )
-        .await;
+        let shutdown_result =
+            tokio::time::timeout(tokio::time::Duration::from_millis(100), manager.shutdown()).await;
 
         assert!(
             shutdown_result.is_ok(),
@@ -1110,11 +1102,8 @@ mod shutdown_timeout_tests {
         );
 
         // Shutdown should complete within bounded time
-        let shutdown_result = tokio::time::timeout(
-            tokio::time::Duration::from_secs(2),
-            manager.shutdown(),
-        )
-        .await;
+        let shutdown_result =
+            tokio::time::timeout(tokio::time::Duration::from_secs(2), manager.shutdown()).await;
 
         assert!(
             shutdown_result.is_ok(),

@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn().mockResolvedValue(vi.fn()),
 }));
 
-const mockInvoke = vi.mocked(invoke);
+const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
 // =============================================================================
 // Test Contract - Using the same pattern as src/rpc/contract.ts

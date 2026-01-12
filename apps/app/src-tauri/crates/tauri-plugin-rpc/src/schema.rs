@@ -1265,3 +1265,288 @@ mod tests {
         assert_eq!(parsed.procedures.len(), schema.procedures.len());
     }
 }
+
+// =============================================================================
+// Property-Based Tests
+// =============================================================================
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    // Strategy for generating procedure paths
+    fn path_strategy() -> impl Strategy<Value = String> {
+        "[a-z]{1,5}(\\.[a-z]{1,5}){0,2}".prop_map(|s| s)
+    }
+
+    // Strategy for generating procedure types
+    fn procedure_type_strategy() -> impl Strategy<Value = ProcedureTypeSchema> {
+        prop_oneof![
+            Just(ProcedureTypeSchema::Query),
+            Just(ProcedureTypeSchema::Mutation),
+            Just(ProcedureTypeSchema::Subscription),
+        ]
+    }
+
+    // Strategy for generating type schemas
+    fn type_schema_strategy() -> impl Strategy<Value = TypeSchema> {
+        prop_oneof![
+            Just(TypeSchema::string()),
+            Just(TypeSchema::number()),
+            Just(TypeSchema::integer()),
+            Just(TypeSchema::boolean()),
+            Just(TypeSchema::null()),
+            Just(TypeSchema::object()),
+            Just(TypeSchema::array(TypeSchema::string())),
+        ]
+    }
+
+    // Strategy for generating procedure schemas
+    fn procedure_schema_strategy() -> impl Strategy<Value = ProcedureSchema> {
+        (
+            procedure_type_strategy(),
+            prop::option::of("[a-zA-Z0-9 ]{1,50}"),
+            prop::option::of(type_schema_strategy()),
+            prop::option::of(type_schema_strategy()),
+            any::<bool>(),
+            prop::collection::vec("[a-z]{1,10}", 0..3),
+        )
+            .prop_map(
+                |(proc_type, description, input, output, deprecated, tags)| {
+                    let mut schema = match proc_type {
+                        ProcedureTypeSchema::Query => ProcedureSchema::query(),
+                        ProcedureTypeSchema::Mutation => ProcedureSchema::mutation(),
+                        ProcedureTypeSchema::Subscription => ProcedureSchema::subscription(),
+                    };
+                    if let Some(desc) = description {
+                        schema = schema.with_description(desc);
+                    }
+                    if let Some(inp) = input {
+                        schema = schema.with_input(inp);
+                    }
+                    if let Some(out) = output {
+                        schema = schema.with_output(out);
+                    }
+                    if deprecated {
+                        schema = schema.deprecated();
+                    }
+                    for tag in tags {
+                        schema = schema.with_tag(tag);
+                    }
+                    schema
+                },
+            )
+    }
+
+    // Strategy for generating router schemas
+    fn router_schema_strategy() -> impl Strategy<Value = RouterSchema> {
+        (
+            prop::option::of("[a-zA-Z0-9 ]{1,30}"),
+            prop::option::of("[a-zA-Z0-9 ]{1,100}"),
+            prop::collection::vec((path_strategy(), procedure_schema_strategy()), 1..10),
+        )
+            .prop_map(|(name, description, procedures)| {
+                let mut schema = RouterSchema::new();
+                if let Some(n) = name {
+                    schema = schema.with_name(n);
+                }
+                if let Some(d) = description {
+                    schema = schema.with_description(d);
+                }
+                for (path, proc) in procedures {
+                    schema = schema.add_procedure(path, proc);
+                }
+                schema
+            })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        /// **Property 6: Schema Export Validity - JSON**
+        /// *For any* router with procedures, the exported JSON schema SHALL be valid JSON.
+        /// **Feature: tauri-rpc-production-audit, Property 6: Schema Export Validity**
+        /// **Validates: Requirements 4.8**
+        #[test]
+        fn prop_schema_export_valid_json(
+            schema in router_schema_strategy(),
+        ) {
+            // Export to JSON
+            let json_str = schema.to_json();
+
+            // Verify it's valid JSON by parsing it back
+            let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_str);
+            prop_assert!(
+                parsed.is_ok(),
+                "Exported JSON should be valid: {:?}",
+                parsed.err()
+            );
+
+            // Verify it can be deserialized back to RouterSchema
+            let roundtrip: Result<RouterSchema, _> = serde_json::from_str(&json_str);
+            prop_assert!(
+                roundtrip.is_ok(),
+                "JSON should deserialize back to RouterSchema: {:?}",
+                roundtrip.err()
+            );
+
+            // Verify procedure count is preserved
+            let parsed_schema = roundtrip.unwrap();
+            prop_assert_eq!(
+                parsed_schema.procedures.len(),
+                schema.procedures.len(),
+                "Procedure count should be preserved after roundtrip"
+            );
+        }
+
+        /// **Property 6: Schema Export Validity - OpenAPI**
+        /// *For any* router with procedures, the exported OpenAPI schema SHALL conform
+        /// to OpenAPI 3.0.3 specification structure.
+        /// **Feature: tauri-rpc-production-audit, Property 6: Schema Export Validity**
+        /// **Validates: Requirements 4.8**
+        #[test]
+        fn prop_schema_export_valid_openapi(
+            schema in router_schema_strategy(),
+        ) {
+            // Export to OpenAPI
+            let openapi = schema.to_openapi();
+
+            // Verify OpenAPI version
+            prop_assert_eq!(
+                &openapi.openapi,
+                "3.0.3",
+                "OpenAPI version should be 3.0.3"
+            );
+
+            // Verify info section exists and has required fields
+            prop_assert!(
+                !openapi.info.title.is_empty(),
+                "OpenAPI info.title should not be empty"
+            );
+            prop_assert!(
+                !openapi.info.version.is_empty(),
+                "OpenAPI info.version should not be empty"
+            );
+
+            // Verify paths are generated for each procedure
+            prop_assert_eq!(
+                openapi.paths.len(),
+                schema.procedures.len(),
+                "OpenAPI should have a path for each procedure"
+            );
+
+            // Verify each path has the correct HTTP method
+            for (path, procedure) in &schema.procedures {
+                let openapi_path = format!("/rpc/{}", path.replace('.', "/"));
+                prop_assert!(
+                    openapi.paths.contains_key(&openapi_path),
+                    "OpenAPI should contain path: {}",
+                    openapi_path
+                );
+
+                let path_item = openapi.paths.get(&openapi_path).unwrap();
+                match procedure.procedure_type {
+                    ProcedureTypeSchema::Query | ProcedureTypeSchema::Subscription => {
+                        prop_assert!(
+                            path_item.get.is_some(),
+                            "Query/Subscription should have GET method"
+                        );
+                    }
+                    ProcedureTypeSchema::Mutation => {
+                        prop_assert!(
+                            path_item.post.is_some(),
+                            "Mutation should have POST method"
+                        );
+                    }
+                }
+            }
+
+            // Verify OpenAPI can be serialized to valid JSON
+            let json_str = openapi.to_json();
+            let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_str);
+            prop_assert!(
+                parsed.is_ok(),
+                "OpenAPI JSON should be valid: {:?}",
+                parsed.err()
+            );
+        }
+
+        /// Property: Schema preserves procedure types
+        #[test]
+        fn prop_schema_preserves_procedure_types(
+            path in path_strategy(),
+            proc_type in procedure_type_strategy(),
+        ) {
+            let procedure = match proc_type {
+                ProcedureTypeSchema::Query => ProcedureSchema::query(),
+                ProcedureTypeSchema::Mutation => ProcedureSchema::mutation(),
+                ProcedureTypeSchema::Subscription => ProcedureSchema::subscription(),
+            };
+
+            let schema = RouterSchema::new().add_procedure(&path, procedure);
+
+            // Verify procedure type is preserved
+            let stored = schema.procedures.get(&path).unwrap();
+            prop_assert_eq!(
+                stored.procedure_type,
+                proc_type,
+                "Procedure type should be preserved"
+            );
+
+            // Verify after JSON roundtrip
+            let json = schema.to_json();
+            let parsed: RouterSchema = serde_json::from_str(&json).unwrap();
+            let parsed_proc = parsed.procedures.get(&path).unwrap();
+            prop_assert_eq!(
+                parsed_proc.procedure_type,
+                proc_type,
+                "Procedure type should be preserved after JSON roundtrip"
+            );
+        }
+
+        /// Property: Type schema serialization roundtrip
+        #[test]
+        fn prop_type_schema_roundtrip(
+            type_schema in type_schema_strategy(),
+        ) {
+            let json = serde_json::to_string(&type_schema).unwrap();
+            let parsed: TypeSchema = serde_json::from_str(&json).unwrap();
+
+            prop_assert_eq!(
+                parsed.type_name,
+                type_schema.type_name,
+                "Type name should be preserved after roundtrip"
+            );
+        }
+
+        /// Property: Procedure metadata is preserved
+        #[test]
+        fn prop_procedure_metadata_preserved(
+            path in path_strategy(),
+            description in prop::option::of("[a-zA-Z0-9 ]{1,50}"),
+            deprecated in any::<bool>(),
+            tags in prop::collection::vec("[a-z]{1,10}", 0..3),
+        ) {
+            let mut procedure = ProcedureSchema::query();
+            if let Some(desc) = &description {
+                procedure = procedure.with_description(desc.clone());
+            }
+            if deprecated {
+                procedure = procedure.deprecated();
+            }
+            for tag in &tags {
+                procedure = procedure.with_tag(tag.clone());
+            }
+
+            let schema = RouterSchema::new().add_procedure(&path, procedure);
+            let json = schema.to_json();
+            let parsed: RouterSchema = serde_json::from_str(&json).unwrap();
+            let parsed_proc = parsed.procedures.get(&path).unwrap();
+
+            prop_assert_eq!(parsed_proc.description.clone(), description);
+            prop_assert_eq!(parsed_proc.deprecated, deprecated);
+            prop_assert_eq!(parsed_proc.tags.clone(), tags);
+        }
+    }
+}

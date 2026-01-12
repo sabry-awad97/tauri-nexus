@@ -363,49 +363,6 @@ describe("Property 6: Filter Count Accuracy", () => {
 import { generatePlaceholder, generatePlaceholderJson } from "../utils";
 import type { TypeSchema } from "../types";
 
-/** Generate a TypeSchema for testing */
-const typeSchemaArb: fc.Arbitrary<TypeSchema> = fc
-  .letrec((tie) => ({
-    primitive: fc.oneof(
-      fc.record({ type: fc.constant("string") }),
-      fc.record({ type: fc.constant("number") }),
-      fc.record({ type: fc.constant("integer") }),
-      fc.record({ type: fc.constant("boolean") }),
-      fc.record({ type: fc.constant("null") }),
-    ),
-    object: fc.record({
-      type: fc.constant("object"),
-      properties: fc.option(
-        fc.dictionary(
-          fc
-            .string({ minLength: 1, maxLength: 10 })
-            .filter((s) => /^[a-z][a-z0-9]*$/i.test(s)),
-          tie("primitive") as fc.Arbitrary<TypeSchema>,
-          { minKeys: 0, maxKeys: 5 },
-        ),
-        { nil: undefined },
-      ),
-    }),
-    array: fc.record({
-      type: fc.constant("array"),
-      items: fc.option(tie("primitive") as fc.Arbitrary<TypeSchema>, {
-        nil: undefined,
-      }),
-    }),
-  }))
-  .object.chain((obj) =>
-    fc.oneof(
-      fc.constant(obj),
-      (fc as any).letrec((tie: any) => ({
-        primitive: fc.oneof(
-          fc.record({ type: fc.constant("string") }),
-          fc.record({ type: fc.constant("number") }),
-          fc.record({ type: fc.constant("boolean") }),
-        ),
-      })).primitive,
-    ),
-  ) as fc.Arbitrary<TypeSchema>;
-
 /** Generate a simple object schema with properties */
 const objectSchemaArb: fc.Arbitrary<TypeSchema> = fc.record({
   type: fc.constant("object" as const),

@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-const mockInvoke = vi.mocked(invoke);
+const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
 // =============================================================================
 // Setup & Teardown
@@ -553,9 +553,24 @@ describe("withDedup()", () => {
     const promise1 = withDedup("key", fn);
     const promise2 = withDedup("key", fn);
 
-    await expect(promise1).rejects.toThrow("Failed");
-    await expect(promise2).rejects.toThrow("Failed");
+    // Both promises should reject with the same error
+    let error1: Error | undefined;
+    let error2: Error | undefined;
+    
+    try {
+      await promise1;
+    } catch (e) {
+      error1 = e as Error;
+    }
+    
+    try {
+      await promise2;
+    } catch (e) {
+      error2 = e as Error;
+    }
 
+    expect(error1?.message).toBe("Failed");
+    expect(error2?.message).toBe("Failed");
     expect(fn).toHaveBeenCalledTimes(1);
   });
 

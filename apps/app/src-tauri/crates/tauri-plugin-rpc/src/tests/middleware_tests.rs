@@ -402,28 +402,32 @@ fn create_chain_logging_middleware(
     name: String,
     log: Arc<Mutex<Vec<String>>>,
 ) -> crate::middleware::MiddlewareFn<TestContext> {
-    Arc::new(move |ctx: Context<TestContext>, req: crate::middleware::Request, next: Next<TestContext>| {
-        let name = name.clone();
-        let log = log.clone();
-        Box::pin(async move {
-            // Log entry
-            {
-                let mut l = log.lock().await;
-                l.push(format!("{}_enter", name));
-            }
+    Arc::new(
+        move |ctx: Context<TestContext>,
+              req: crate::middleware::Request,
+              next: Next<TestContext>| {
+            let name = name.clone();
+            let log = log.clone();
+            Box::pin(async move {
+                // Log entry
+                {
+                    let mut l = log.lock().await;
+                    l.push(format!("{}_enter", name));
+                }
 
-            // Call next
-            let result = next(ctx, req).await;
+                // Call next
+                let result = next(ctx, req).await;
 
-            // Log exit
-            {
-                let mut l = log.lock().await;
-                l.push(format!("{}_exit", name));
-            }
+                // Log exit
+                {
+                    let mut l = log.lock().await;
+                    l.push(format!("{}_exit", name));
+                }
 
-            result
-        })
-    })
+                result
+            })
+        },
+    )
 }
 
 proptest! {

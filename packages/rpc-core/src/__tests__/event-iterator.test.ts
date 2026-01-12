@@ -25,8 +25,8 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
 
-const mockInvoke = vi.mocked(invoke);
-const mockListen = vi.mocked(listen);
+const mockInvoke = invoke as ReturnType<typeof vi.fn>;
+const mockListen = listen as ReturnType<typeof vi.fn>;
 
 // Helper to create a mock event emitter
 function createMockEventEmitter() {

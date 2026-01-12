@@ -14,7 +14,7 @@ import { call } from "@tauri-nexus/rpc-core";
 import { rpc } from "../rpc/contract";
 
 // Mock is set up in setup.ts
-const mockInvoke = vi.mocked(invoke);
+const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
 describe("Unit Type Serialization", () => {
   beforeEach(() => {

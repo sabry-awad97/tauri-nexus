@@ -13,7 +13,7 @@
  *
  * Backend codes (from Rust RpcErrorCode):
  * - BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, VALIDATION_ERROR,
- *   CONFLICT, PAYLOAD_TOO_LARGE (client errors)
+ *   CONFLICT, PAYLOAD_TOO_LARGE, RATE_LIMITED (client errors)
  * - INTERNAL_ERROR, NOT_IMPLEMENTED, SERVICE_UNAVAILABLE (server errors)
  * - PROCEDURE_NOT_FOUND, SUBSCRIPTION_ERROR, MIDDLEWARE_ERROR, SERIALIZATION_ERROR (RPC-specific)
  *
@@ -31,6 +31,7 @@ export type RpcErrorCode =
   | "VALIDATION_ERROR"
   | "CONFLICT"
   | "PAYLOAD_TOO_LARGE"
+  | "RATE_LIMITED"
   // Server errors (5xx equivalent) - from backend
   | "INTERNAL_ERROR"
   | "NOT_IMPLEMENTED"
