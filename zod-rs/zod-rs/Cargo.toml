@@ -32,7 +32,7 @@ chrono = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 
 # Re-export the derive macro
-zod-rs-macros = { path = "../zod-rs-macros", optional = true }
+zod-rs-macros = { path = "../zod-rs-macros", version = "0.1.0", optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

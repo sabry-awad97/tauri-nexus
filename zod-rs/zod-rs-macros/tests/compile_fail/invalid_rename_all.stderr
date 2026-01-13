@@ -1,0 +1,5 @@
+error: Invalid container attributes: Unknown value: `invalid_case`. Available values: `PascalCase`, `SCREAMING_SNAKE_CASE`, `camelCase`, `kebab-case`, `snake_case` at rename_all
+ --> tests/compile_fail/invalid_rename_all.rs:7:8
+  |
+7 | struct User {
+  |        ^^^^

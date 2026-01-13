@@ -1,0 +1,5 @@
+error: ZodSchema cannot be derived for unions
+ --> tests/compile_fail/union_not_supported.rs:6:7
+  |
+6 | union MyUnion {
+  |       ^^^^^^^

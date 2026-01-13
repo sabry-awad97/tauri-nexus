@@ -1,0 +1,5 @@
+error: Invalid field attributes: Unknown value: `not_a_number` at min
+ --> tests/compile_fail/invalid_min_type.rs:6:8
+  |
+6 | struct Product {
+  |        ^^^^^^^

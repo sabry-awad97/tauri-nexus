@@ -17,18 +17,32 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
-zod-rs = { path = "../zod-rs" }
-zod-rs-macros = { path = "../zod-rs-macros" }
+zod-rs = { path = "../zod-rs", version = "0.1.0" }
+zod-rs-macros = { path = "../zod-rs-macros", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 
+# Rust source parsing
+syn = { version = "2.0.114", features = ["full", "parsing", "extra-traits"] }
+proc-macro2 = "1.0.105"
+
 # File system and path handling
-walkdir = "2.4"
-toml = "0.8"
+walkdir = "2.5.0"
+toml = "0.9.8"
+ignore = "0.4.25"
+glob = "0.3.3"
+
+# File watching
+notify = "8.2.0"
+notify-debouncer-mini = "0.7.0"
 
 # Error handling
-anyhow = "1.0"
-thiserror = "1.0"
+anyhow = "1.0.100"
+thiserror = "2.0.17"
 
 # Output formatting
-colored = "2.0"
+colored = "3.0.0"
+
+[dev-dependencies]
+tempfile = "3.24.0"
+proptest = "1.9.0"
