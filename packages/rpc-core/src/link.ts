@@ -512,6 +512,98 @@ export function createClientFromLink<T, TClientContext = unknown>(
 }
 
 // =============================================================================
+// Rate Limit Helpers
+// =============================================================================
+
+/**
+ * Details structure for rate limit errors from the backend.
+ * Matches the Rust RateLimiter::rate_limited_error output.
+ */
+interface RateLimitDetails {
+  retry_after_ms: number;
+  retry_after_secs: number;
+}
+
+/**
+ * Type guard to check if error details are rate limit details.
+ * @internal
+ */
+function isRateLimitDetails(details: unknown): details is RateLimitDetails {
+  return (
+    typeof details === "object" &&
+    details !== null &&
+    "retry_after_ms" in details &&
+    typeof (details as RateLimitDetails).retry_after_ms === "number"
+  );
+}
+
+/**
+ * Check if an RPC error is a rate limit error.
+ *
+ * @param error - The error to check
+ * @returns True if the error is a rate limit error with code "RATE_LIMITED"
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await rpc.user.get({ id: 1 });
+ * } catch (error) {
+ *   if (isRateLimitError(error)) {
+ *     const retryAfter = getRateLimitRetryAfter(error);
+ *     console.log(`Rate limited, retry after ${retryAfter}ms`);
+ *   }
+ * }
+ * ```
+ */
+export function isRateLimitError(error: unknown): error is RpcError {
+  return isRpcError(error) && error.code === "RATE_LIMITED";
+}
+
+/**
+ * Extract the retry-after time in milliseconds from a rate limit error.
+ *
+ * @param error - The RPC error to extract retry time from
+ * @returns The retry time in milliseconds, or undefined if not a rate limit error
+ *          or if the details don't contain retry_after_ms
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await rpc.user.get({ id: 1 });
+ * } catch (error) {
+ *   if (isRateLimitError(error)) {
+ *     const retryAfter = getRateLimitRetryAfter(error);
+ *     if (retryAfter !== undefined) {
+ *       await new Promise(resolve => setTimeout(resolve, retryAfter));
+ *       // Retry the request...
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * const link = new TauriLink({
+ *   onError: async (error, ctx) => {
+ *     const retryAfter = getRateLimitRetryAfter(error);
+ *     if (retryAfter !== undefined) {
+ *       console.log(`Rate limited on ${ctx.path}, retry after ${retryAfter}ms`);
+ *     }
+ *   },
+ * });
+ * ```
+ */
+export function getRateLimitRetryAfter(error: RpcError): number | undefined {
+  if (error.code !== "RATE_LIMITED") {
+    return undefined;
+  }
+  if (!isRateLimitDetails(error.details)) {
+    return undefined;
+  }
+  return error.details.retry_after_ms;
+}
+
+// =============================================================================
 // Interceptor Helpers
 // =============================================================================
 
@@ -622,6 +714,87 @@ export function retry<TClientContext = unknown>(
     }
 
     throw lastError;
+  };
+}
+
+// =============================================================================
+// Authentication Interceptor
+// =============================================================================
+
+/**
+ * Configuration options for the auth interceptor.
+ */
+export interface AuthInterceptorOptions {
+  /** The header name to use for the token. Defaults to "Authorization" */
+  headerName?: string;
+  /** The property name in context that contains the token. Defaults to "token" */
+  tokenProperty?: string;
+  /** The token prefix. Defaults to "Bearer" */
+  prefix?: string;
+}
+
+/**
+ * Create an authentication interceptor that adds Bearer tokens to requests.
+ *
+ * The interceptor reads the token from the client context and adds it
+ * to the request metadata as an Authorization header.
+ *
+ * @param options - Configuration options
+ * @returns A link interceptor function
+ *
+ * @example
+ * ```typescript
+ * interface ClientContext {
+ *   token?: string;
+ * }
+ *
+ * const link = new TauriLink<ClientContext>({
+ *   interceptors: [
+ *     authInterceptor(),
+ *     logging(),
+ *   ],
+ * });
+ *
+ * const client = createClientFromLink<AppContract, ClientContext>(link);
+ *
+ * // Call with auth token
+ * const user = await client.user.get(
+ *   { id: 1 },
+ *   { context: { token: 'my-jwt-token' } }
+ * );
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Custom header name and token property
+ * interface MyContext {
+ *   authToken?: string;
+ * }
+ *
+ * const link = new TauriLink<MyContext>({
+ *   interceptors: [
+ *     authInterceptor({
+ *       headerName: 'X-Auth-Token',
+ *       tokenProperty: 'authToken',
+ *       prefix: 'Token',
+ *     }),
+ *   ],
+ * });
+ * ```
+ */
+export function authInterceptor<
+  TClientContext extends Record<string, unknown> = Record<string, unknown>,
+>(options: AuthInterceptorOptions = {}): LinkInterceptor<TClientContext> {
+  const headerName = options.headerName ?? "Authorization";
+  const tokenProperty = options.tokenProperty ?? "token";
+  const prefix = options.prefix ?? "Bearer";
+
+  return async (ctx, next) => {
+    const token = ctx.context[tokenProperty];
+    if (token) {
+      ctx.meta[headerName] = `${prefix} ${token}`;
+    }
+    return next();
   };
 }
 

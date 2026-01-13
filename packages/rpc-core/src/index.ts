@@ -128,6 +128,11 @@ export {
 export {
   TauriLink,
   createClientFromLink,
+  // Rate limit helpers
+  isRateLimitError,
+  getRateLimitRetryAfter,
+  // Auth interceptor
+  authInterceptor,
   // Interceptor helpers
   onError,
   logging,
@@ -145,6 +150,7 @@ export {
   type ResponseHandler,
   type InferLinkContext,
   type InferClientContext,
+  type AuthInterceptorOptions,
 } from "./link";
 
 // =============================================================================

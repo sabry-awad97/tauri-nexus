@@ -552,3 +552,434 @@ describe("interceptor helpers", () => {
     });
   });
 });
+
+
+// =============================================================================
+// Rate Limit Helpers Tests
+// =============================================================================
+
+import {
+  isRateLimitError,
+  getRateLimitRetryAfter,
+  authInterceptor,
+  type AuthInterceptorOptions,
+} from "@tauri-nexus/rpc-core";
+import type { RpcError } from "@tauri-nexus/rpc-core";
+import * as fc from "fast-check";
+
+describe("Rate Limit Helpers", () => {
+  describe("isRateLimitError", () => {
+    it("should return true for rate limit errors", () => {
+      const error: RpcError = {
+        code: "RATE_LIMITED",
+        message: "Rate limit exceeded",
+        details: { retry_after_ms: 1000, retry_after_secs: 1 },
+      };
+      expect(isRateLimitError(error)).toBe(true);
+    });
+
+    it("should return false for other error codes", () => {
+      const error: RpcError = {
+        code: "NOT_FOUND",
+        message: "Not found",
+      };
+      expect(isRateLimitError(error)).toBe(false);
+    });
+
+    it("should return false for non-RpcError values", () => {
+      expect(isRateLimitError(null)).toBe(false);
+      expect(isRateLimitError(undefined)).toBe(false);
+      expect(isRateLimitError("error")).toBe(false);
+      expect(isRateLimitError({ code: 123, message: "test" })).toBe(false);
+    });
+  });
+
+  describe("getRateLimitRetryAfter", () => {
+    it("should extract retry_after_ms from rate limit error", () => {
+      const error: RpcError = {
+        code: "RATE_LIMITED",
+        message: "Rate limit exceeded",
+        details: { retry_after_ms: 5000, retry_after_secs: 5 },
+      };
+      expect(getRateLimitRetryAfter(error)).toBe(5000);
+    });
+
+    it("should return undefined for non-rate-limit errors", () => {
+      const error: RpcError = {
+        code: "NOT_FOUND",
+        message: "Not found",
+        details: { retry_after_ms: 1000 },
+      };
+      expect(getRateLimitRetryAfter(error)).toBeUndefined();
+    });
+
+    it("should return undefined when details are missing", () => {
+      const error: RpcError = {
+        code: "RATE_LIMITED",
+        message: "Rate limit exceeded",
+      };
+      expect(getRateLimitRetryAfter(error)).toBeUndefined();
+    });
+
+    it("should return undefined when retry_after_ms is not a number", () => {
+      const error: RpcError = {
+        code: "RATE_LIMITED",
+        message: "Rate limit exceeded",
+        details: { retry_after_ms: "1000" },
+      };
+      expect(getRateLimitRetryAfter(error)).toBeUndefined();
+    });
+  });
+
+  // =============================================================================
+  // Property-Based Tests for Rate Limit Helpers
+  // Feature: rpc-client-helpers, Property 1: Rate Limit Retry Extraction Correctness
+  // Feature: rpc-client-helpers, Property 2: Rate Limit Error Type Guard Correctness
+  // =============================================================================
+
+  describe("Property-Based Tests", () => {
+    // Arbitrary for generating RPC error codes
+    const rpcErrorCodeArb = fc.oneof(
+      fc.constant("BAD_REQUEST"),
+      fc.constant("UNAUTHORIZED"),
+      fc.constant("FORBIDDEN"),
+      fc.constant("NOT_FOUND"),
+      fc.constant("VALIDATION_ERROR"),
+      fc.constant("CONFLICT"),
+      fc.constant("PAYLOAD_TOO_LARGE"),
+      fc.constant("RATE_LIMITED"),
+      fc.constant("INTERNAL_ERROR"),
+      fc.constant("NOT_IMPLEMENTED"),
+      fc.constant("SERVICE_UNAVAILABLE"),
+      fc.constant("PROCEDURE_NOT_FOUND"),
+      fc.constant("SUBSCRIPTION_ERROR"),
+      fc.constant("MIDDLEWARE_ERROR"),
+      fc.constant("SERIALIZATION_ERROR"),
+      fc.constant("TIMEOUT"),
+      fc.constant("CANCELLED"),
+      fc.constant("UNKNOWN"),
+    );
+
+    // Arbitrary for generating rate limit details
+    const rateLimitDetailsArb = fc.record({
+      retry_after_ms: fc.nat({ max: 1000000 }),
+      retry_after_secs: fc.nat({ max: 1000 }),
+    });
+
+    // Arbitrary for generating RpcError objects
+    const rpcErrorArb = fc.record({
+      code: rpcErrorCodeArb,
+      message: fc.string({ minLength: 1, maxLength: 100 }),
+      details: fc.option(
+        fc.oneof(
+          rateLimitDetailsArb,
+          fc.record({ other: fc.string() }),
+          fc.constant(null),
+        ),
+        { nil: undefined },
+      ),
+    });
+
+    /**
+     * Property 1: Rate Limit Retry Extraction Correctness
+     * For any RpcError, getRateLimitRetryAfter returns retry_after_ms if and only if
+     * code is "RATE_LIMITED" and details contains numeric retry_after_ms
+     * Validates: Requirements 1.2, 1.3, 1.4
+     */
+    it("Property 1: getRateLimitRetryAfter returns correct value based on error structure", () => {
+      fc.assert(
+        fc.property(rpcErrorArb, (error) => {
+          const result = getRateLimitRetryAfter(error as RpcError);
+
+          const isRateLimited = error.code === "RATE_LIMITED";
+          const hasValidDetails =
+            error.details !== undefined &&
+            error.details !== null &&
+            typeof error.details === "object" &&
+            "retry_after_ms" in error.details &&
+            typeof (error.details as { retry_after_ms: unknown }).retry_after_ms === "number";
+
+          if (isRateLimited && hasValidDetails) {
+            // Should return the retry_after_ms value
+            expect(result).toBe(
+              (error.details as { retry_after_ms: number }).retry_after_ms,
+            );
+          } else {
+            // Should return undefined
+            expect(result).toBeUndefined();
+          }
+        }),
+        { numRuns: 100 },
+      );
+    });
+
+    /**
+     * Property 2: Rate Limit Error Type Guard Correctness
+     * For any unknown value, isRateLimitError returns true iff value is RpcError with code "RATE_LIMITED"
+     * Validates: Requirements 1.5
+     */
+    it("Property 2: isRateLimitError correctly identifies rate limit errors", () => {
+      fc.assert(
+        fc.property(rpcErrorArb, (error) => {
+          const result = isRateLimitError(error);
+          const expected = error.code === "RATE_LIMITED";
+          expect(result).toBe(expected);
+        }),
+        { numRuns: 100 },
+      );
+    });
+
+    // Test with non-RpcError values
+    it("Property 2 (edge cases): isRateLimitError returns false for non-RpcError values", () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.string(),
+            fc.integer(),
+            fc.boolean(),
+            fc.constant(null),
+            fc.constant(undefined),
+            fc.array(fc.anything()),
+            fc.record({ notCode: fc.string(), notMessage: fc.string() }),
+          ),
+          (value) => {
+            expect(isRateLimitError(value)).toBe(false);
+          },
+        ),
+        { numRuns: 100 },
+      );
+    });
+  });
+});
+
+// =============================================================================
+// Auth Interceptor Tests
+// =============================================================================
+
+describe("authInterceptor", () => {
+  describe("basic functionality", () => {
+    it("should add Authorization header when token is present", async () => {
+      const interceptor = authInterceptor<{ token: string }>();
+
+      const ctx: LinkRequestContext<{ token: string }> = {
+        path: "test",
+        input: null,
+        type: "query",
+        context: { token: "my-secret-token" },
+        meta: {},
+      };
+
+      await interceptor(ctx, () => Promise.resolve("result"));
+
+      expect(ctx.meta["Authorization"]).toBe("Bearer my-secret-token");
+    });
+
+    it("should not add header when token is missing", async () => {
+      const interceptor = authInterceptor<{ token?: string }>();
+
+      const ctx: LinkRequestContext<{ token?: string }> = {
+        path: "test",
+        input: null,
+        type: "query",
+        context: {},
+        meta: {},
+      };
+
+      await interceptor(ctx, () => Promise.resolve("result"));
+
+      expect(ctx.meta["Authorization"]).toBeUndefined();
+    });
+
+    it("should not add header when token is empty string", async () => {
+      const interceptor = authInterceptor<{ token: string }>();
+
+      const ctx: LinkRequestContext<{ token: string }> = {
+        path: "test",
+        input: null,
+        type: "query",
+        context: { token: "" },
+        meta: {},
+      };
+
+      await interceptor(ctx, () => Promise.resolve("result"));
+
+      expect(ctx.meta["Authorization"]).toBeUndefined();
+    });
+  });
+
+  describe("custom options", () => {
+    it("should use custom header name", async () => {
+      const interceptor = authInterceptor<{ token: string }>({
+        headerName: "X-Auth-Token",
+      });
+
+      const ctx: LinkRequestContext<{ token: string }> = {
+        path: "test",
+        input: null,
+        type: "query",
+        context: { token: "my-token" },
+        meta: {},
+      };
+
+      await interceptor(ctx, () => Promise.resolve("result"));
+
+      expect(ctx.meta["X-Auth-Token"]).toBe("Bearer my-token");
+      expect(ctx.meta["Authorization"]).toBeUndefined();
+    });
+
+    it("should use custom token property", async () => {
+      const interceptor = authInterceptor<{ authToken: string }>({
+        tokenProperty: "authToken",
+      });
+
+      const ctx: LinkRequestContext<{ authToken: string }> = {
+        path: "test",
+        input: null,
+        type: "query",
+        context: { authToken: "custom-token" },
+        meta: {},
+      };
+
+      await interceptor(ctx, () => Promise.resolve("result"));
+
+      expect(ctx.meta["Authorization"]).toBe("Bearer custom-token");
+    });
+
+    it("should use custom prefix", async () => {
+      const interceptor = authInterceptor<{ token: string }>({
+        prefix: "Token",
+      });
+
+      const ctx: LinkRequestContext<{ token: string }> = {
+        path: "test",
+        input: null,
+        type: "query",
+        context: { token: "api-key" },
+        meta: {},
+      };
+
+      await interceptor(ctx, () => Promise.resolve("result"));
+
+      expect(ctx.meta["Authorization"]).toBe("Token api-key");
+    });
+
+    it("should use all custom options together", async () => {
+      const interceptor = authInterceptor<{ apiKey: string }>({
+        headerName: "X-API-Key",
+        tokenProperty: "apiKey",
+        prefix: "Key",
+      });
+
+      const ctx: LinkRequestContext<{ apiKey: string }> = {
+        path: "test",
+        input: null,
+        type: "query",
+        context: { apiKey: "secret-key" },
+        meta: {},
+      };
+
+      await interceptor(ctx, () => Promise.resolve("result"));
+
+      expect(ctx.meta["X-API-Key"]).toBe("Key secret-key");
+    });
+  });
+
+  // =============================================================================
+  // Property-Based Tests for Auth Interceptor
+  // Feature: rpc-client-helpers, Property 3: Auth Interceptor Token Injection
+  // Feature: rpc-client-helpers, Property 4: Auth Interceptor Configuration Options
+  // =============================================================================
+
+  describe("Property-Based Tests", () => {
+    // Arbitrary for generating tokens (non-empty strings)
+    const tokenArb = fc.string({ minLength: 1, maxLength: 100 });
+
+    // Arbitrary for generating header names
+    const headerNameArb = fc.string({ minLength: 1, maxLength: 50 }).filter(
+      (s) => /^[a-zA-Z][a-zA-Z0-9-]*$/.test(s),
+    );
+
+    // Arbitrary for generating token property names
+    const tokenPropertyArb = fc.string({ minLength: 1, maxLength: 30 }).filter(
+      (s) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s),
+    );
+
+    // Arbitrary for generating prefixes
+    const prefixArb = fc.string({ minLength: 1, maxLength: 20 });
+
+    /**
+     * Property 3: Auth Interceptor Token Injection
+     * For any context with a truthy token, the interceptor adds the header;
+     * for falsy tokens, no header is added
+     * Validates: Requirements 2.2, 2.3
+     */
+    it("Property 3: authInterceptor adds header iff token is truthy", async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.option(tokenArb, { nil: undefined }),
+          async (token) => {
+            const interceptor = authInterceptor<{ token?: string }>();
+
+            const ctx: LinkRequestContext<{ token?: string }> = {
+              path: "test",
+              input: null,
+              type: "query",
+              context: token !== undefined ? { token } : {},
+              meta: {},
+            };
+
+            await interceptor(ctx, () => Promise.resolve("result"));
+
+            if (token) {
+              expect(ctx.meta["Authorization"]).toBe(`Bearer ${token}`);
+            } else {
+              expect(ctx.meta["Authorization"]).toBeUndefined();
+            }
+          },
+        ),
+        { numRuns: 100 },
+      );
+    });
+
+    /**
+     * Property 4: Auth Interceptor Configuration Options
+     * For any configuration, the interceptor uses provided values or defaults
+     * Validates: Requirements 2.4, 2.5
+     */
+    it("Property 4: authInterceptor respects configuration options", async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          tokenArb,
+          fc.option(headerNameArb, { nil: undefined }),
+          fc.option(tokenPropertyArb, { nil: undefined }),
+          fc.option(prefixArb, { nil: undefined }),
+          async (token, headerName, tokenProperty, prefix) => {
+            const options: AuthInterceptorOptions = {};
+            if (headerName !== undefined) options.headerName = headerName;
+            if (tokenProperty !== undefined) options.tokenProperty = tokenProperty;
+            if (prefix !== undefined) options.prefix = prefix;
+
+            const actualTokenProperty = tokenProperty ?? "token";
+            const actualHeaderName = headerName ?? "Authorization";
+            const actualPrefix = prefix ?? "Bearer";
+
+            const interceptor = authInterceptor<Record<string, string>>(options);
+
+            const ctx: LinkRequestContext<Record<string, string>> = {
+              path: "test",
+              input: null,
+              type: "query",
+              context: { [actualTokenProperty]: token },
+              meta: {},
+            };
+
+            await interceptor(ctx, () => Promise.resolve("result"));
+
+            expect(ctx.meta[actualHeaderName]).toBe(`${actualPrefix} ${token}`);
+          },
+        ),
+        { numRuns: 100 },
+      );
+    });
+  });
+});
