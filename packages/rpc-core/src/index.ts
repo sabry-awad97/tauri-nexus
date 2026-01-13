@@ -21,3 +21,15 @@ export * from "./utils";
 
 // Zod schema validation and procedure builder
 export * from "./schema";
+
+// =============================================================================
+// Effect-Based API (Advanced)
+// =============================================================================
+// For users who want Effect's benefits (type-safe errors, composition).
+// Most users should use the standard Promise-based API above.
+//
+// Import from '@tauri-nexus/rpc-core/effect' for the Effect API:
+//
+// ```typescript
+// import { createEffectClient, loggingInterceptor } from '@tauri-nexus/rpc-core/effect';
+// ```

@@ -8,6 +8,14 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
+    },
+    "./effect": {
+      "import": "./src/effect/index.ts",
+      "types": "./src/effect/index.ts"
+    },
+    "./internal": {
+      "import": "./src/internal/index.ts",
+      "types": "./src/internal/index.ts"
     }
   },
   "files": [
@@ -19,6 +27,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
+    "effect": "^3.19.14",
     "zod": "^4.3.5"
   },
   "devDependencies": {
