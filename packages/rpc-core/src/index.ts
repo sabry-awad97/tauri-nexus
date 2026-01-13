@@ -185,6 +185,8 @@ export {
   extractQueryPaths,
   extractMutationPaths,
   extractPathsByType,
+  // Event extraction utilities
+  extractEvents,
   // Types
   type SchemaProcedure,
   type SchemaContract,
@@ -192,6 +194,10 @@ export {
   type ValidationConfig,
   type ValidationErrorDetails,
   type SchemaContractToContract,
+  type ExtractEventsOptions,
+  type ExtractEventsType,
+  type InferEventName,
+  type EventPayload,
   // Type inference utilities
   type InferSchemaInput,
   type InferSchemaOutput,

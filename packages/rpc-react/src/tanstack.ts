@@ -119,8 +119,12 @@ export interface CreateTanstackQueryUtilsOptions {
   path?: string[];
 }
 
+/** Extract contract type from RpcClient via the __contract brand */
+type InferContract<T> = T extends { readonly __contract?: infer C } ? C : T;
+
 /**
  * Create TanStack Query utilities from an RPC client.
+ * The contract type is automatically inferred from the client.
  *
  * @example
  * ```typescript
@@ -146,10 +150,10 @@ export interface CreateTanstackQueryUtilsOptions {
  * const user = await orpc.user.get.call({ id: 1 });
  * ```
  */
-export function createTanstackQueryUtils<TContract extends object>(
-  client: unknown,
+export function createTanstackQueryUtils<TClient extends { readonly __contract?: unknown }>(
+  client: TClient,
   options: CreateTanstackQueryUtilsOptions = {},
-): TanstackQueryUtils<TContract> {
+): TanstackQueryUtils<InferContract<TClient>> {
   const basePath = options.path ?? [];
 
   function createUtils(target: unknown, currentPath: string[]): unknown {
@@ -298,5 +302,5 @@ export function createTanstackQueryUtils<TContract extends object>(
     return current as (input?: unknown) => Promise<unknown>;
   }
 
-  return createUtils(client, basePath) as TanstackQueryUtils<TContract>;
+  return createUtils(client, basePath) as TanstackQueryUtils<InferContract<TClient>>;
 }

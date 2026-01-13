@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { subscribe, useSubscription } from "@tauri-nexus/rpc-react";
-import type { ChatMessage } from "../../rpc/contract";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ChatMessage } from "@/generated/schemas";
 
 const ROOMS = [
   { id: "general", name: "General", icon: "💬" },

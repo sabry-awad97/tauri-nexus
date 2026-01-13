@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { subscribe, useSubscription } from "@tauri-nexus/rpc-react";
-import type { StockPrice } from "../../rpc/contract";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { StockPrice } from "@/generated/schemas";
 
 const AVAILABLE_SYMBOLS = ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"];
 

@@ -565,8 +565,11 @@ export { TypedBatchResponseWrapper as TypedBatchResponse };
 
 /**
  * Extended client type that includes the batch() method.
+ * The __contract brand allows type inference in createTanstackQueryUtils.
  */
 export type RpcClient<T> = RouterClient<T> & {
+  /** Brand to carry contract type for inference */
+  readonly __contract?: T;
   /**
    * Create a type-safe batch builder for executing multiple requests.
    *

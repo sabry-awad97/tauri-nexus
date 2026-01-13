@@ -11,45 +11,10 @@ import { z } from "zod";
 import {
   procedure,
   router,
-  extractSubscriptionPaths,
+  extractEvents,
   type SchemaContractToContract,
+  type InferEventName,
 } from "@tauri-nexus/rpc-core";
-
-// =============================================================================
-// Zod Schemas (Generated from Rust structs via zod-rs-cli)
-// =============================================================================
-
-// Re-export all schemas from the generated schemas file
-export {
-  UserSchema,
-  type User,
-  GetUserInputSchema,
-  type GetUserInput,
-  CreateUserInputSchema,
-  type CreateUserInput,
-  UpdateUserInputSchema,
-  type UpdateUserInput,
-  DeleteUserInputSchema,
-  type DeleteUserInput,
-  GreetInputSchema,
-  type GreetInput,
-  HealthResponseSchema,
-  type HealthResponse,
-  CounterInputSchema,
-  type CounterInput,
-  CounterEventSchema,
-  type CounterEvent,
-  ChatRoomInputSchema,
-  type ChatRoomInput,
-  ChatMessageSchema,
-  type ChatMessage,
-  SendMessageInputSchema,
-  type SendMessageInput,
-  StockInputSchema,
-  type StockInput,
-  StockPriceSchema,
-  type StockPrice,
-} from "./schemas";
 
 // Import schemas for use in contract definition
 import {
@@ -151,27 +116,11 @@ export const appContractSchema = router({
 export type AppContract = SchemaContractToContract<typeof appContractSchema>;
 
 // =============================================================================
-// Dynamic Subscription Path Extraction
+// Event Types (Extracted from Schema Subscriptions)
 // =============================================================================
 
-/** Dynamically extracted subscription paths from the contract schema */
-export const SUBSCRIPTION_PATHS = extractSubscriptionPaths(
-  appContractSchema,
-) as readonly string[];
+/** Event names extracted from subscription paths in the contract */
+export const Events = extractEvents(appContractSchema);
 
-// =============================================================================
-// Event Types (Generated from Tauri events)
-// =============================================================================
-
-export type EventPayload<T> = {
-  payload: T;
-};
-
-export const Events = {
-  COUNTER_TICK: "counter:tick",
-  STOCK_UPDATE: "stock:update",
-  CHAT_MESSAGE: "chat:message",
-  TIME_UPDATE: "time:update",
-} as const;
-
-export type EventName = (typeof Events)[keyof typeof Events];
+/** Union type of all event names */
+export type EventName = InferEventName<typeof Events>;

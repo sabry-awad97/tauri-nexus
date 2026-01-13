@@ -11,7 +11,6 @@ import {
   type RpcError,
   type LinkCallOptions,
 } from "@tauri-nexus/rpc-react";
-import type { AppContract } from "../rpc/contract";
 import {
   Card,
   CardContent,
@@ -23,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
+import { AppContract } from "@/generated/bindings";
 
 interface ClientContext {
   requestId: string;

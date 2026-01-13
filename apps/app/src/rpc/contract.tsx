@@ -24,13 +24,12 @@ import { createContext, useContext, type ReactNode } from "react";
 
 // Import schema and types from auto-generated Tauri bindings
 import {
-  appContractSchema,
-  type AppContract,
   type CounterInput,
   type CounterEvent,
   type ChatMessage,
   type StockPrice,
-} from "../generated/bindings";
+} from "../generated/schemas";
+import { appContractSchema } from "../generated/bindings";
 
 // =============================================================================
 // Client Instance
@@ -61,7 +60,7 @@ export const rpc = createClientFromSchema(appContractSchema);
  * const user = await orpc.user.get.call({ id: 1 });
  * ```
  */
-export const orpc = createTanstackQueryUtils<AppContract>(rpc);
+export const orpc = createTanstackQueryUtils(rpc);
 
 // =============================================================================
 // Query Client
@@ -100,7 +99,11 @@ export function useRpc() {
 
 /** Counter subscription */
 export function useCounter(
-  input: CounterInput = {},
+  input: CounterInput = {
+    start: 0,
+    maxCount: 0,
+    intervalMs: 0
+  },
   options?: SubscriptionHookOptions<CounterEvent>,
 ): SubscriptionResult<CounterEvent> {
   return useSubscription(
@@ -154,13 +157,3 @@ export {
   useQueryClient,
 };
 export type { RpcError, SubscriptionResult, SubscriptionHookOptions };
-
-// Re-export types from bindings
-export type {
-  User,
-  AppContract,
-  CounterInput,
-  CounterEvent,
-  ChatMessage,
-  StockPrice,
-} from "../generated/bindings";

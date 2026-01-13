@@ -5,7 +5,7 @@
 // Similar to tRPC/oRPC patterns for defining type-safe RPC contracts.
 
 import { z } from "zod";
-import type { ProcedureType, RpcError } from "./types";
+import type { ProcedureType, RpcError, Prettify } from "./types";
 import type {
   LinkInterceptor,
   LinkRequestContext,
@@ -506,6 +506,143 @@ export function extractPathsByType(
   }
 
   return paths;
+}
+
+// =============================================================================
+// Event Name Extraction
+// =============================================================================
+
+/**
+ * Type-level extraction of subscription keys from a schema contract.
+ * Extracts the last segment of each subscription path (up to 2 levels deep).
+ */
+type IsSubscriptionProcedure<T> = T extends SchemaProcedure<
+  "subscription",
+  z.ZodTypeAny | null,
+  z.ZodTypeAny
+>
+  ? true
+  : false;
+
+type ExtractSubscriptionKeysL2<T> = {
+  [K in keyof T]: IsSubscriptionProcedure<T[K]> extends true
+    ? K
+    : T[K] extends object
+      ? {
+          [K2 in keyof T[K]]: IsSubscriptionProcedure<T[K][K2]> extends true
+            ? K2
+            : never;
+        }[keyof T[K]]
+      : never;
+}[keyof T];
+
+/**
+ * Generate the Events object type from a schema contract.
+ * Keys are uppercase subscription names, values are the subscription path as event channel.
+ */
+export type ExtractEventsType<T extends SchemaContract> = Prettify<{
+  readonly [K in ExtractSubscriptionKeysL2<T> as K extends string ? Uppercase<K> : never]: K extends string ? K : never;
+}>;
+
+/**
+ * Extract event name union type from an Events object.
+ * 
+ * @example
+ * ```typescript
+ * const Events = extractEvents(appContractSchema);
+ * type EventName = InferEventName<typeof Events>;
+ * // "counter" | "stocks" | "chat" | "time"
+ * ```
+ */
+export type InferEventName<T extends Record<string, string>> = T[keyof T];
+
+/**
+ * Tauri event payload wrapper type.
+ * Used to type event payloads received from Tauri's event system.
+ * 
+ * @example
+ * ```typescript
+ * import { listen } from '@tauri-apps/api/event';
+ * 
+ * listen<EventPayload<CounterEvent>>(Events.COUNTER, (event) => {
+ *   console.log(event.payload); // CounterEvent
+ * });
+ * ```
+ */
+export type EventPayload<T> = {
+  payload: T;
+};
+
+/**
+ * Options for extracting event names from subscriptions.
+ */
+export interface ExtractEventsOptions {
+  /**
+   * Transform function for converting subscription path to event name.
+   * Default: converts "stream.counter" to "COUNTER" (takes last segment, uppercases)
+   */
+  transformKey?: (path: string) => string;
+  /**
+   * Transform function for converting subscription path to event channel name.
+   * Default: converts "stream.counter" to "counter:tick" format
+   */
+  transformValue?: (path: string) => string;
+}
+
+/**
+ * Default key transformer: "stream.counter" -> "COUNTER"
+ */
+function defaultKeyTransform(path: string): string {
+  const segments = path.split(".");
+  const lastSegment = segments[segments.length - 1];
+  return lastSegment.toUpperCase().replace(/-/g, "_");
+}
+
+/**
+ * Default value transformer: "stream.counter" -> "counter"
+ * Uses the last segment as the event channel name
+ */
+function defaultValueTransform(path: string): string {
+  const segments = path.split(".");
+  return segments[segments.length - 1];
+}
+
+/**
+ * Extract event names from subscription paths in a schema contract.
+ * Returns a fully typed object with literal types for keys and values.
+ *
+ * @example
+ * ```typescript
+ * const Events = extractEvents(appContractSchema);
+ * // Type: {
+ * //   readonly COUNTER: "counter";
+ * //   readonly STOCKS: "stocks";
+ * //   readonly CHAT: "chat";
+ * //   readonly TIME: "time";
+ * // }
+ * 
+ * Events.COUNTER // "counter" - fully typed!
+ * ```
+ */
+export function extractEvents<T extends SchemaContract>(
+  contract: T,
+  options: ExtractEventsOptions = {},
+): ExtractEventsType<T> {
+  const {
+    transformKey = defaultKeyTransform,
+    transformValue = defaultValueTransform,
+  } = options;
+
+  const subscriptionPaths = extractSubscriptionPaths(contract);
+  const events: Record<string, string> = {};
+
+  for (const path of subscriptionPaths) {
+    const key = transformKey(path);
+    const value = transformValue(path);
+    events[key] = value;
+  }
+
+  return Object.freeze(events) as ExtractEventsType<T>;
 }
 
 // =============================================================================
