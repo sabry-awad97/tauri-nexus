@@ -50,6 +50,7 @@ pub struct SchemaRegistry {
 
 impl SchemaRegistry {
     /// Create a new empty schema registry.
+    #[allow(unused)]
     pub fn new() -> Self {
         Self {
             schemas: HashMap::new(),
@@ -61,6 +62,7 @@ impl SchemaRegistry {
     /// Register a schema in the registry.
     ///
     /// This extracts dependencies from the schema and updates the dependency graph.
+    #[allow(unused)]
     pub fn register(&mut self, schema: SchemaIR) {
         let name = schema.name.clone();
         let deps = Self::extract_dependencies(&schema);
@@ -74,41 +76,49 @@ impl SchemaRegistry {
     }
 
     /// Get a schema by name.
+    #[allow(unused)]
     pub fn get(&self, name: &str) -> Option<&SchemaIR> {
         self.schemas.get(name)
     }
 
     /// Check if a schema is registered.
+    #[allow(unused)]
     pub fn contains(&self, name: &str) -> bool {
         self.schemas.contains_key(name)
     }
 
     /// Get all registered schema names.
+    #[allow(unused)]
     pub fn schema_names(&self) -> impl Iterator<Item = &String> {
         self.schemas.keys()
     }
 
     /// Get the number of registered schemas.
+    #[allow(unused)]
     pub fn len(&self) -> usize {
         self.schemas.len()
     }
 
     /// Check if the registry is empty.
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.schemas.is_empty()
     }
 
     /// Get schemas marked for export.
+    #[allow(unused)]
     pub fn exports(&self) -> &HashSet<String> {
         &self.exports
     }
 
     /// Check if a schema is marked for export.
+    #[allow(unused)]
     pub fn is_exported(&self, name: &str) -> bool {
         self.exports.contains(name)
     }
 
     /// Get the dependencies of a schema.
+    #[allow(unused)]
     pub fn get_dependencies(&self, name: &str) -> Option<&HashSet<String>> {
         self.dependencies.get(name)
     }
@@ -617,8 +627,8 @@ mod proptest_tests {
     fn prop_circular_reference_detection() {
         proptest!(|(
             name_a in arb_schema_name(),
-            name_b in arb_schema_name().prop_filter("different from a", |b| b.len() > 0),
-            name_c in arb_schema_name().prop_filter("different from a and b", |c| c.len() > 0),
+            name_b in arb_schema_name().prop_filter("different from a", |b| !b.is_empty()),
+            name_c in arb_schema_name().prop_filter("different from a and b", |c| !c.is_empty()),
         )| {
             // Ensure unique names
             let name_b = if name_b == name_a { format!("{}X", name_b) } else { name_b };

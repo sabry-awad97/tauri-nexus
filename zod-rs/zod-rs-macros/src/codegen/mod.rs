@@ -4,4 +4,5 @@
 
 pub mod impl_block;
 
+#[allow(unused)]
 pub use impl_block::ImplBlockGenerator;

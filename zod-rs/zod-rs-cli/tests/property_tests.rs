@@ -35,11 +35,13 @@ use zod_rs_cli::{
 // =============================================================================
 
 /// Generate a valid Rust identifier.
+#[allow(unused)]
 fn arb_identifier() -> impl Strategy<Value = String> {
     "[a-zA-Z][a-zA-Z0-9_]{0,15}".prop_map(|s| s)
 }
 
 /// Generate a valid file name (without extension).
+#[allow(unused)]
 fn arb_filename() -> impl Strategy<Value = String> {
     "[a-z][a-z0-9_]{0,10}".prop_map(|s| s)
 }
@@ -87,6 +89,7 @@ pub struct {} {{
 }
 
 /// Generate a directory structure with Rust files.
+#[allow(unused)]
 fn create_test_directory(files: &[(&str, &str)]) -> TempDir {
     let dir = TempDir::new().unwrap();
     for (path, content) in files {

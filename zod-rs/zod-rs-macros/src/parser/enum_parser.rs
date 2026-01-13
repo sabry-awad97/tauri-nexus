@@ -38,6 +38,7 @@ pub enum EnumParseError {
     NotAnEnum(String),
 
     #[error("Variant '{0}' has no identifier")]
+    #[allow(unused)]
     MissingVariantIdent(usize),
 
     #[error("Field in variant '{0}' has no identifier (index: {1})")]
@@ -132,7 +133,7 @@ impl EnumParser {
     ) -> Result<Vec<VariantIR>, EnumParseError> {
         let mut variant_irs = Vec::with_capacity(variants.len());
 
-        for (index, variant) in variants.iter().enumerate() {
+        for variant in variants.iter() {
             // Parse variant attributes using darling
             let variant_attrs = VariantAttrs::from_variant(variant)
                 .map_err(|e| EnumParseError::VariantAttrs(e.to_string()))?;
@@ -312,6 +313,7 @@ impl EnumParser {
     }
 
     /// Check if an enum is unit-only (all variants are unit variants).
+    #[allow(unused)]
     pub fn is_unit_only(input: &DeriveInput) -> bool {
         if let Data::Enum(data_enum) = &input.data {
             data_enum

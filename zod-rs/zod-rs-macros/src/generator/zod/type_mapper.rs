@@ -61,6 +61,7 @@ impl ZodTypeMapper {
     }
 
     /// Create a ZodTypeMapper with custom type overrides.
+    #[allow(unused)]
     pub fn with_overrides(overrides: HashMap<String, String>) -> Self {
         Self {
             type_overrides: overrides,
@@ -68,6 +69,7 @@ impl ZodTypeMapper {
     }
 
     /// Add a custom type override.
+    #[allow(unused)]
     pub fn add_override(&mut self, rust_type: impl Into<String>, zod_schema: impl Into<String>) {
         self.type_overrides
             .insert(rust_type.into(), zod_schema.into());
@@ -246,6 +248,7 @@ impl ZodTypeMapper {
     /// Map a type with a custom override.
     ///
     /// This is used when `#[zod(type = "...")]` is specified.
+    #[allow(unused)]
     pub fn map_with_override(&self, ty: &TypeIR, override_schema: &str) -> String {
         self.apply_nullable(override_schema.to_string(), ty.nullable)
     }

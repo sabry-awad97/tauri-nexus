@@ -3,6 +3,9 @@
 //! These tests verify that serde attributes are correctly parsed and that
 //! zod attributes can override serde attributes when both are present.
 
+#![allow(unused)]
+#![allow(non_snake_case)]
+
 use zod_rs::ZodSchema;
 
 // =============================================================================

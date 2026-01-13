@@ -157,6 +157,7 @@ pub enum ValidationRule {
 
 impl ValidationRule {
     /// Check if this is a string validation rule.
+    #[allow(unused)]
     pub fn is_string_validation(&self) -> bool {
         matches!(
             self,
@@ -185,6 +186,7 @@ impl ValidationRule {
     }
 
     /// Check if this is a number validation rule.
+    #[allow(unused)]
     pub fn is_number_validation(&self) -> bool {
         matches!(
             self,
@@ -204,6 +206,7 @@ impl ValidationRule {
     }
 
     /// Check if this is an array validation rule.
+    #[allow(unused)]
     pub fn is_array_validation(&self) -> bool {
         matches!(
             self,
@@ -215,6 +218,7 @@ impl ValidationRule {
     }
 
     /// Check if this is a custom validation rule.
+    #[allow(unused)]
     pub fn is_custom_validation(&self) -> bool {
         matches!(
             self,
@@ -226,6 +230,7 @@ impl ValidationRule {
     }
 
     /// Create a refinement with a message.
+    #[allow(unused)]
     pub fn refine_with_message(expression: impl Into<String>, message: impl Into<String>) -> Self {
         ValidationRule::Refine {
             expression: expression.into(),
@@ -234,6 +239,7 @@ impl ValidationRule {
     }
 
     /// Create a refinement without a message.
+    #[allow(unused)]
     pub fn refine(expression: impl Into<String>) -> Self {
         ValidationRule::Refine {
             expression: expression.into(),

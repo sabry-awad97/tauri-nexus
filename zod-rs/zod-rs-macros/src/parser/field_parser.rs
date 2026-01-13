@@ -17,6 +17,7 @@ use crate::parser::type_parser::{ParseError, TypeParser};
 
 /// Error type for field parsing failures.
 #[derive(Debug, Clone, thiserror::Error)]
+#[allow(unused)]
 pub enum FieldParseError {
     #[error("Failed to parse field attributes: {0}")]
     Attributes(String),
@@ -29,10 +30,12 @@ pub enum FieldParseError {
 }
 
 /// Parses struct fields into FieldIR.
+#[allow(unused)]
 pub struct FieldParser;
 
 impl FieldParser {
     /// Parse a single named field into FieldIR.
+    #[allow(unused)]
     pub fn parse_named(
         field: &Field,
         index: usize,
@@ -73,10 +76,12 @@ impl FieldParser {
     }
 
     /// Parse a tuple struct field into TypeIR.
+    #[allow(unused)]
     pub fn parse_unnamed(field: &Field) -> Result<TypeIR, FieldParseError> {
         TypeParser::parse(&field.ty).map_err(FieldParseError::from)
     }
 
+    #[allow(unused)]
     fn parse_field_type(field: &Field, attrs: &FieldAttrs) -> Result<TypeIR, FieldParseError> {
         if let Some(type_override) = &attrs.type_override {
             return Ok(TypeIR::new(crate::ir::TypeKind::Reference {
@@ -87,6 +92,7 @@ impl FieldParser {
         TypeParser::parse(&field.ty).map_err(FieldParseError::from)
     }
 
+    #[allow(unused)]
     fn build_metadata(attrs: &FieldAttrs, doc_description: Option<String>) -> FieldMetadata {
         let mut metadata = FieldMetadata::default();
         if let Some(desc) = doc_description {
@@ -99,6 +105,7 @@ impl FieldParser {
     }
 
     /// Extract validation rules from field attributes.
+    #[allow(unused)]
     pub fn extract_validation_rules(attrs: &FieldAttrs) -> Vec<ValidationRule> {
         attrs.to_validation_rules()
     }

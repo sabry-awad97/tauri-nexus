@@ -12,6 +12,7 @@ use crate::ir::SchemaIR;
 
 /// Error type for contract generation.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub enum ContractError {
     /// Circular dependency detected in schemas.
     CyclicDependency(CycleError),
@@ -46,6 +47,7 @@ impl From<GeneratorError> for ContractError {
 ///
 /// The ContractGenerator takes a code generator (like ZodEmitter) and configuration,
 /// then produces complete contract files from a schema registry.
+#[allow(unused)]
 pub struct ContractGenerator<G: CodeGenerator> {
     /// The code generator to use for schema generation.
     generator: G,
@@ -55,16 +57,19 @@ pub struct ContractGenerator<G: CodeGenerator> {
 
 impl<G: CodeGenerator> ContractGenerator<G> {
     /// Create a new ContractGenerator with the given generator and config.
+    #[allow(unused)]
     pub fn new(generator: G, config: GeneratorConfig) -> Self {
         Self { generator, config }
     }
 
     /// Get a reference to the underlying generator.
+    #[allow(unused)]
     pub fn generator(&self) -> &G {
         &self.generator
     }
 
     /// Get a reference to the configuration.
+    #[allow(unused)]
     pub fn config(&self) -> &GeneratorConfig {
         &self.config
     }
@@ -75,6 +80,7 @@ impl<G: CodeGenerator> ContractGenerator<G> {
     /// 1. Preamble (imports)
     /// 2. All schemas in dependency order
     /// 3. Postamble (exports)
+    #[allow(unused)]
     pub fn generate(&self, registry: &SchemaRegistry) -> Result<String, ContractError> {
         let schemas = registry.sorted_schemas()?;
         let schema_refs: Vec<&SchemaIR> = schemas.to_vec();
@@ -108,6 +114,7 @@ impl<G: CodeGenerator> ContractGenerator<G> {
     /// Generate a contract file with schemas grouped by namespace.
     ///
     /// Schemas are grouped based on their module path or a custom namespace attribute.
+    #[allow(unused)]
     pub fn generate_with_namespaces(
         &self,
         registry: &SchemaRegistry,
@@ -177,6 +184,7 @@ impl<G: CodeGenerator> ContractGenerator<G> {
     }
 
     /// Generate only the schemas that are marked for export.
+    #[allow(unused)]
     pub fn generate_exports_only(
         &self,
         registry: &SchemaRegistry,
@@ -210,7 +218,7 @@ impl<G: CodeGenerator> ContractGenerator<G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generator::traits::{GeneratedCode, GeneratorFeature, OutputStyle};
+    use crate::generator::traits::{GeneratedCode, GeneratorFeature};
     use crate::ir::{FieldIR, SchemaIR, SchemaKind, StructSchema, TypeIR, TypeKind};
 
     /// A simple mock generator for testing.

@@ -39,8 +39,13 @@ pub mod traits;
 pub mod zod;
 
 // Re-export main types for convenience
+#[allow(unused)]
 pub use contract::{ContractError, ContractGenerator};
+
+#[allow(unused)]
 pub use registry::{CycleError, SchemaRegistry};
+
+#[allow(unused)]
 pub use traits::{
     CodeGenerator, GeneratedCode, GeneratorConfig, GeneratorFeature, IndentStyle, LineEnding,
     OutputStyle,

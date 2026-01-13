@@ -18,6 +18,7 @@ pub struct ImplBlockGenerator {
     /// The Zod emitter for generating schema strings.
     emitter: ZodEmitter,
     /// Configuration for code generation.
+    #[allow(unused)]
     config: GeneratorConfig,
 }
 
@@ -37,6 +38,7 @@ impl ImplBlockGenerator {
     }
 
     /// Create a new ImplBlockGenerator with custom config.
+    #[allow(unused)]
     pub fn with_config(config: GeneratorConfig) -> Self {
         Self {
             emitter: ZodEmitter::new(),
@@ -176,6 +178,7 @@ impl ImplBlockGenerator {
     /// Generate a schema string for a given SchemaIR.
     ///
     /// This is a convenience method that delegates to the emitter.
+    #[allow(unused)]
     pub fn generate_schema_string(&self, schema: &SchemaIR) -> String {
         self.emitter.generate_schema_string(schema)
     }
@@ -255,7 +258,6 @@ mod tests {
     fn test_impl_block_generator_new() {
         let generator = ImplBlockGenerator::new();
         // Just verify it creates without panic
-        assert!(true);
         let _ = generator;
     }
 

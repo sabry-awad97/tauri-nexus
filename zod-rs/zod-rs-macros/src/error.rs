@@ -11,6 +11,7 @@ use std::fmt;
 /// Each variant provides specific context about what went wrong,
 /// enabling helpful error messages with suggestions.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub enum ParseError {
     /// An unsupported type was encountered.
     UnsupportedType {
@@ -107,6 +108,7 @@ pub enum ParseError {
 
 impl ParseError {
     /// Create an unsupported type error.
+    #[allow(unused)]
     pub fn unsupported_type(type_name: impl Into<String>) -> Self {
         Self::UnsupportedType {
             type_name: type_name.into(),
@@ -116,11 +118,13 @@ impl ParseError {
     }
 
     /// Create an empty path error.
+    #[allow(unused)]
     pub fn empty_path() -> Self {
         Self::EmptyPath { span: None }
     }
 
     /// Create a missing generic error.
+    #[allow(unused)]
     pub fn missing_generic(type_name: &'static str) -> Self {
         Self::MissingGeneric {
             type_name,
@@ -129,6 +133,7 @@ impl ParseError {
     }
 
     /// Create an invalid attribute error.
+    #[allow(unused)]
     pub fn invalid_attribute(attribute: impl Into<String>) -> Self {
         Self::InvalidAttribute {
             attribute: attribute.into(),
@@ -138,6 +143,7 @@ impl ParseError {
     }
 
     /// Create a conflicting attributes error.
+    #[allow(unused)]
     pub fn conflicting_attributes(first: impl Into<String>, second: impl Into<String>) -> Self {
         Self::ConflictingAttributes {
             first: first.into(),
@@ -148,6 +154,7 @@ impl ParseError {
     }
 
     /// Create an invalid regex error.
+    #[allow(unused)]
     pub fn invalid_regex(pattern: impl Into<String>, error: impl Into<String>) -> Self {
         Self::InvalidRegex {
             pattern: pattern.into(),
@@ -157,6 +164,7 @@ impl ParseError {
     }
 
     /// Create an invalid attribute value error.
+    #[allow(unused)]
     pub fn invalid_attribute_value(
         attribute: impl Into<String>,
         value: impl Into<String>,
@@ -171,6 +179,7 @@ impl ParseError {
     }
 
     /// Create a missing ZodSchema implementation error.
+    #[allow(unused)]
     pub fn missing_zod_schema_impl(type_name: impl Into<String>) -> Self {
         Self::MissingZodSchemaImpl {
             type_name: type_name.into(),
@@ -179,6 +188,7 @@ impl ParseError {
     }
 
     /// Create a generic error with a message.
+    #[allow(unused)]
     pub fn other(message: impl Into<String>) -> Self {
         Self::Other {
             message: message.into(),
@@ -188,6 +198,7 @@ impl ParseError {
     }
 
     /// Add span information to the error.
+    #[allow(unused)]
     pub fn with_span(mut self, span: Span) -> Self {
         match &mut self {
             Self::UnsupportedType { span: s, .. } => *s = Some(span),
@@ -206,6 +217,7 @@ impl ParseError {
     }
 
     /// Add a suggestion to the error.
+    #[allow(unused)]
     pub fn with_suggestion(mut self, suggestion: impl Into<String>) -> Self {
         match &mut self {
             Self::UnsupportedType { suggestions, .. } => suggestions.push(suggestion.into()),
@@ -219,6 +231,7 @@ impl ParseError {
     }
 
     /// Add an explanation for conflicting attributes.
+    #[allow(unused)]
     pub fn with_explanation(mut self, explanation: impl Into<String>) -> Self {
         if let Self::ConflictingAttributes {
             explanation: exp, ..
@@ -230,6 +243,7 @@ impl ParseError {
     }
 
     /// Get the span associated with this error, if any.
+    #[allow(unused)]
     pub fn span(&self) -> Option<Span> {
         match self {
             Self::UnsupportedType { span, .. } => *span,
@@ -247,6 +261,7 @@ impl ParseError {
     }
 
     /// Convert to a syn::Error for proc-macro error reporting.
+    #[allow(unused)]
     pub fn into_syn_error(self) -> syn::Error {
         let span = self.span().unwrap_or_else(Span::call_site);
         let message = self.to_string();
@@ -378,6 +393,7 @@ impl From<darling::Error> for ParseError {
 
 /// Errors that can occur during code generation.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub enum GeneratorError {
     /// Circular dependency detected in schema references.
     CircularDependency {
@@ -415,11 +431,13 @@ pub enum GeneratorError {
 
 impl GeneratorError {
     /// Create a circular dependency error.
+    #[allow(unused)]
     pub fn circular_dependency(cycle: Vec<String>) -> Self {
         Self::CircularDependency { cycle }
     }
 
     /// Create an unknown type reference error.
+    #[allow(unused)]
     pub fn unknown_type_reference(type_name: impl Into<String>) -> Self {
         Self::UnknownTypeReference {
             type_name: type_name.into(),
@@ -428,6 +446,7 @@ impl GeneratorError {
     }
 
     /// Create an unsupported feature error.
+    #[allow(unused)]
     pub fn unsupported_feature(feature: impl Into<String>) -> Self {
         Self::UnsupportedFeature {
             feature: feature.into(),
@@ -436,11 +455,13 @@ impl GeneratorError {
     }
 
     /// Create an IO error.
+    #[allow(unused)]
     pub fn io_error(error: impl Into<String>) -> Self {
         Self::IoError(error.into())
     }
 
     /// Create a generic error with a message.
+    #[allow(unused)]
     pub fn other(message: impl Into<String>) -> Self {
         Self::Other {
             message: message.into(),
@@ -449,6 +470,7 @@ impl GeneratorError {
     }
 
     /// Add schema name context.
+    #[allow(unused)]
     pub fn with_schema(mut self, name: impl Into<String>) -> Self {
         match &mut self {
             Self::UnknownTypeReference {
@@ -461,6 +483,7 @@ impl GeneratorError {
     }
 
     /// Add generator name context.
+    #[allow(unused)]
     pub fn with_generator(mut self, name: impl Into<String>) -> Self {
         if let Self::UnsupportedFeature { generator, .. } = &mut self {
             *generator = Some(name.into());

@@ -198,6 +198,7 @@ fn parse_rename_rule(s: &str) -> Option<RenameRule> {
 }
 
 /// Merge zod attributes with serde attributes, with zod taking precedence.
+#[allow(unused)]
 pub fn merge_container_attrs(
     zod_rename: Option<String>,
     zod_rename_all: Option<RenameRule>,
@@ -219,6 +220,7 @@ pub fn merge_container_attrs(
 }
 
 /// Merge zod field attributes with serde field attributes, with zod taking precedence.
+#[allow(unused)]
 pub fn merge_field_attrs(
     zod_rename: Option<String>,
     zod_skip: bool,

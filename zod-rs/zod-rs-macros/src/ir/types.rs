@@ -34,6 +34,7 @@ impl TypeIR {
     }
 
     /// Create a new TypeIR with nullable flag set.
+    #[allow(unused)]
     pub fn nullable(kind: TypeKind) -> Self {
         Self {
             kind,
@@ -49,6 +50,8 @@ impl TypeIR {
     }
 
     /// Mark this type as nullable.
+    #[allow(unused)]
+    #[allow(clippy::wrong_self_convention)]
     pub fn as_nullable(mut self) -> Self {
         self.nullable = true;
         self
@@ -173,6 +176,7 @@ pub enum TypeKind {
 
 impl TypeKind {
     /// Create a signed integer type with the given bit width.
+    #[allow(unused)]
     pub fn signed_int(bits: u8) -> Self {
         TypeKind::Integer {
             signed: true,
@@ -181,6 +185,7 @@ impl TypeKind {
     }
 
     /// Create an unsigned integer type with the given bit width.
+    #[allow(unused)]
     pub fn unsigned_int(bits: u8) -> Self {
         TypeKind::Integer {
             signed: false,
@@ -189,6 +194,7 @@ impl TypeKind {
     }
 
     /// Create a reference to another type by name.
+    #[allow(unused)]
     pub fn reference(name: impl Into<String>) -> Self {
         TypeKind::Reference {
             name: name.into(),
@@ -197,6 +203,7 @@ impl TypeKind {
     }
 
     /// Create a reference with generic parameters.
+    #[allow(unused)]
     pub fn reference_with_generics(name: impl Into<String>, generics: Vec<TypeIR>) -> Self {
         TypeKind::Reference {
             name: name.into(),
@@ -205,6 +212,7 @@ impl TypeKind {
     }
 
     /// Check if this is a primitive type.
+    #[allow(unused)]
     pub fn is_primitive(&self) -> bool {
         matches!(
             self,
@@ -217,6 +225,7 @@ impl TypeKind {
     }
 
     /// Check if this is a compound type.
+    #[allow(unused)]
     pub fn is_compound(&self) -> bool {
         matches!(
             self,
@@ -229,6 +238,7 @@ impl TypeKind {
     }
 
     /// Check if this is a reference type.
+    #[allow(unused)]
     pub fn is_reference(&self) -> bool {
         matches!(self, TypeKind::Reference { .. })
     }
@@ -268,6 +278,7 @@ impl GenericParam {
     }
 
     /// Set the default type for this parameter.
+    #[allow(unused)]
     pub fn with_default(mut self, default: TypeIR) -> Self {
         self.default = Some(Box::new(default));
         self

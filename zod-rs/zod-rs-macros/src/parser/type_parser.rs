@@ -26,6 +26,7 @@ pub enum ParseError {
     MissingGeneric(String),
 
     #[error("Invalid array length")]
+    #[allow(unused)]
     InvalidArrayLength,
 }
 
@@ -775,6 +776,7 @@ mod proptest_tests {
     use proptest::prelude::*;
 
     /// Strategy for generating arbitrary TypeKind values (primitives only).
+    #[allow(unused)]
     fn arb_primitive_type_kind() -> impl Strategy<Value = TypeKind> {
         prop_oneof![
             Just(TypeKind::String),

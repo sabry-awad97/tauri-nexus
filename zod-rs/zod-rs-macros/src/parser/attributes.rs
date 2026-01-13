@@ -15,9 +15,11 @@ pub struct ContainerAttrs {
     pub ident: Ident,
 
     /// Generic parameters of the type
+    #[allow(unused)]
     pub generics: Generics,
 
     /// Visibility of the type
+    #[allow(unused)]
     pub vis: Visibility,
 
     /// Rename the type in generated schema
@@ -62,11 +64,13 @@ impl ContainerAttrs {
     }
 
     /// Check if this is an internally tagged enum.
+    #[allow(unused)]
     pub fn is_internally_tagged(&self) -> bool {
         self.tag.is_some() && self.content.is_none()
     }
 
     /// Check if this is an adjacently tagged enum.
+    #[allow(unused)]
     pub fn is_adjacently_tagged(&self) -> bool {
         self.tag.is_some() && self.content.is_some()
     }
@@ -88,9 +92,11 @@ pub struct FieldAttrs {
     pub ident: Option<Ident>,
 
     /// Field type
+    #[allow(unused)]
     pub ty: Type,
 
     /// Field visibility
+    #[allow(unused)]
     pub vis: Visibility,
 
     /// Rename this field
@@ -123,6 +129,7 @@ pub struct FieldAttrs {
 
     /// Custom Zod type override
     #[darling(default, rename = "type")]
+    #[allow(unused)]
     pub type_override: Option<String>,
 
     /// Validation: minimum value for numbers
@@ -236,6 +243,7 @@ impl FieldAttrs {
     }
 
     /// Check if this field has any validation rules.
+    #[allow(unused)]
     pub fn has_validation(&self) -> bool {
         self.min.is_some()
             || self.max.is_some()
@@ -391,6 +399,7 @@ impl VariantAttrs {
 
 /// Rename rule for field/variant name transformation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromMeta)]
+#[allow(clippy::enum_variant_names)]
 pub enum RenameRule {
     /// camelCase
     #[darling(rename = "camelCase")]

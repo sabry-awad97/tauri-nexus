@@ -17,16 +17,21 @@ pub mod type_parser;
 pub mod serde_compat;
 
 // Re-export attribute types for convenience
+#[allow(unused)]
 pub use attributes::{ContainerAttrs, FieldAttrs, RenameRule, VariantAttrs};
 
 // Re-export type parser
+#[allow(unused)]
 pub use type_parser::{ParseError, TypeParser};
 
 // Re-export struct parser
+#[allow(unused)]
 pub use struct_parser::{extract_doc_comments, StructParseError, StructParser};
 
 // Re-export field parser
+#[allow(unused)]
 pub use field_parser::{FieldParseError, FieldParser};
 
 // Re-export enum parser
+#[allow(unused)]
 pub use enum_parser::{EnumParseError, EnumParser};

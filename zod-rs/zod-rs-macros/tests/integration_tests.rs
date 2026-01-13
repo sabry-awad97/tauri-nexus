@@ -3,6 +3,8 @@
 //! These tests verify that the macro correctly generates ZodSchema implementations
 //! for various struct and enum definitions.
 
+#![allow(unused)]
+
 use zod_rs::ZodSchema;
 
 // =============================================================================

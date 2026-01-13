@@ -80,6 +80,7 @@ impl SchemaIR {
     }
 
     /// Check if this schema has generic parameters.
+    #[allow(unused)]
     pub fn has_generics(&self) -> bool {
         !self.generics.is_empty()
     }
@@ -142,6 +143,7 @@ impl StructSchema {
     }
 
     /// Set passthrough mode.
+    #[allow(unused)]
     pub fn with_passthrough(mut self, passthrough: bool) -> Self {
         self.passthrough = passthrough;
         self
@@ -257,6 +259,7 @@ impl FieldIR {
     }
 
     /// Add a single validation rule.
+    #[allow(unused)]
     pub fn add_validation(mut self, rule: ValidationRule) -> Self {
         self.validation.push(rule);
         self
@@ -290,6 +293,7 @@ pub struct FieldMetadata {
 
 impl FieldMetadata {
     /// Create metadata with a description.
+    #[allow(unused)]
     pub fn with_description(description: impl Into<String>) -> Self {
         Self {
             description: Some(description.into()),
@@ -299,12 +303,15 @@ impl FieldMetadata {
     }
 
     /// Mark as deprecated.
+    #[allow(unused)]
+    #[allow(clippy::wrong_self_convention)]
     pub fn as_deprecated(mut self) -> Self {
         self.deprecated = true;
         self
     }
 
     /// Add an example value.
+    #[allow(unused)]
     pub fn with_example(mut self, example: impl Into<String>) -> Self {
         self.examples.push(example.into());
         self
@@ -346,6 +353,7 @@ impl EnumSchema {
     }
 
     /// Recalculate is_unit_only based on current variants.
+    #[allow(unused)]
     pub fn update_unit_only(&mut self) {
         self.is_unit_only = self
             .variants
@@ -357,10 +365,11 @@ impl EnumSchema {
 /// Enum tagging strategy.
 ///
 /// Determines how enum variants are represented in the serialized form.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "strategy")]
 pub enum EnumTagging {
     /// External tagging: `{ "VariantName": { ...data } }`
+    #[default]
     External,
 
     /// Internal tagging: `{ "type": "VariantName", ...data }`
@@ -381,19 +390,15 @@ pub enum EnumTagging {
     Untagged,
 }
 
-impl Default for EnumTagging {
-    fn default() -> Self {
-        EnumTagging::External
-    }
-}
-
 impl EnumTagging {
     /// Create internal tagging with the given tag field name.
+    #[allow(unused)]
     pub fn internal(tag: impl Into<String>) -> Self {
         EnumTagging::Internal { tag: tag.into() }
     }
 
     /// Create adjacent tagging with the given field names.
+    #[allow(unused)]
     pub fn adjacent(tag: impl Into<String>, content: impl Into<String>) -> Self {
         EnumTagging::Adjacent {
             tag: tag.into(),

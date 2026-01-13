@@ -26,5 +26,8 @@ pub mod formatter;
 pub mod type_mapper;
 
 // Re-export main types for convenience
+#[allow(unused)]
 pub use emitter::ZodEmitter;
+
+#[allow(unused)]
 pub use type_mapper::ZodTypeMapper;

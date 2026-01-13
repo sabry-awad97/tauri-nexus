@@ -43,6 +43,7 @@ pub struct SchemaMetadata {
 
 impl SchemaMetadata {
     /// Create metadata with a description.
+    #[allow(unused)]
     pub fn with_description(description: impl Into<String>) -> Self {
         Self {
             description: Some(description.into()),
@@ -57,12 +58,15 @@ impl SchemaMetadata {
     }
 
     /// Mark as deprecated.
+    #[allow(unused)]
+    #[allow(clippy::wrong_self_convention)]
     pub fn as_deprecated(mut self) -> Self {
         self.deprecated = true;
         self
     }
 
     /// Mark as deprecated with a message.
+    #[allow(unused)]
     pub fn deprecated_with_message(mut self, message: impl Into<String>) -> Self {
         self.deprecated = true;
         self.deprecation_message = Some(message.into());
@@ -70,42 +74,49 @@ impl SchemaMetadata {
     }
 
     /// Add an example value.
+    #[allow(unused)]
     pub fn with_example(mut self, example: impl Into<String>) -> Self {
         self.examples.push(example.into());
         self
     }
 
     /// Add multiple example values.
+    #[allow(unused)]
     pub fn with_examples(mut self, examples: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.examples.extend(examples.into_iter().map(|e| e.into()));
         self
     }
 
     /// Add a tag.
+    #[allow(unused)]
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tags.push(tag.into());
         self
     }
 
     /// Add multiple tags.
+    #[allow(unused)]
     pub fn with_tags(mut self, tags: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.tags.extend(tags.into_iter().map(|t| t.into()));
         self
     }
 
     /// Set the version when this schema was introduced.
+    #[allow(unused)]
     pub fn since(mut self, version: impl Into<String>) -> Self {
         self.since = Some(version.into());
         self
     }
 
     /// Set the external documentation URL.
+    #[allow(unused)]
     pub fn docs_url(mut self, url: impl Into<String>) -> Self {
         self.docs_url = Some(url.into());
         self
     }
 
     /// Check if this metadata has any content.
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.description.is_none()
             && !self.deprecated
@@ -117,6 +128,7 @@ impl SchemaMetadata {
     }
 
     /// Merge another metadata into this one, preferring non-empty values from other.
+    #[allow(unused)]
     pub fn merge(&mut self, other: &SchemaMetadata) {
         if other.description.is_some() {
             self.description = other.description.clone();

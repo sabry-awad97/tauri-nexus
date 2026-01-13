@@ -52,16 +52,19 @@ pub trait CodeGenerator: Send + Sync {
     ///
     /// This is used to select the generator and should be a short,
     /// lowercase string (e.g., "zod", "json-schema", "openapi").
+    #[allow(unused)]
     fn id(&self) -> &'static str;
 
     /// Returns the human-readable name of this generator.
     ///
     /// This is used for display purposes (e.g., "Zod Schema Generator").
+    #[allow(unused)]
     fn name(&self) -> &'static str;
 
     /// Returns the file extension for generated files.
     ///
     /// This is used when writing output files (e.g., "ts", "json", "yaml").
+    #[allow(unused)]
     fn file_extension(&self) -> &'static str;
 
     /// Generate schema code from IR.
@@ -122,6 +125,7 @@ pub trait CodeGenerator: Send + Sync {
     /// # Arguments
     ///
     /// * `feature` - The feature to check support for
+    #[allow(unused)]
     fn supports_feature(&self, feature: GeneratorFeature) -> bool;
 }
 
@@ -147,6 +151,7 @@ pub struct GeneratorConfig {
     pub line_ending: LineEnding,
 
     /// Custom type mappings (Rust type name -> target schema)
+    #[allow(unused)]
     pub type_overrides: HashMap<String, String>,
 }
 
@@ -165,41 +170,48 @@ impl Default for GeneratorConfig {
 
 impl GeneratorConfig {
     /// Create a new generator config with default settings.
+    #[allow(unused)]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set the output style.
+    #[allow(unused)]
     pub fn with_output_style(mut self, style: OutputStyle) -> Self {
         self.output_style = style;
         self
     }
 
     /// Set whether to generate type inference.
+    #[allow(unused)]
     pub fn with_generate_types(mut self, generate: bool) -> Self {
         self.generate_types = generate;
         self
     }
 
     /// Set whether to generate documentation comments.
+    #[allow(unused)]
     pub fn with_generate_docs(mut self, generate: bool) -> Self {
         self.generate_docs = generate;
         self
     }
 
     /// Set the indentation style.
+    #[allow(unused)]
     pub fn with_indent(mut self, indent: IndentStyle) -> Self {
         self.indent = indent;
         self
     }
 
     /// Set the line ending style.
+    #[allow(unused)]
     pub fn with_line_ending(mut self, line_ending: LineEnding) -> Self {
         self.line_ending = line_ending;
         self
     }
 
     /// Add a custom type override.
+    #[allow(unused)]
     pub fn with_type_override(
         mut self,
         rust_type: impl Into<String>,
@@ -210,11 +222,13 @@ impl GeneratorConfig {
     }
 
     /// Get the indentation string based on current settings.
+    #[allow(unused)]
     pub fn indent_str(&self) -> &str {
         self.indent.as_str()
     }
 
     /// Get the line ending string based on current settings.
+    #[allow(unused)]
     pub fn line_ending_str(&self) -> &str {
         self.line_ending.as_str()
     }
@@ -230,22 +244,27 @@ pub enum OutputStyle {
     ConstExport,
 
     /// Export as function: `export function UserSchema() { return z.object(...) }`
+    #[allow(unused)]
     FunctionExport,
 
     /// No export, just declaration: `const UserSchema = z.object(...)`
+    #[allow(unused)]
     Declaration,
 
     /// Inline (no variable assignment): `z.object(...)`
+    #[allow(unused)]
     Inline,
 }
 
 impl OutputStyle {
     /// Check if this style includes an export keyword.
+    #[allow(unused)]
     pub fn is_exported(&self) -> bool {
         matches!(self, OutputStyle::ConstExport | OutputStyle::FunctionExport)
     }
 
     /// Check if this style uses a function wrapper.
+    #[allow(unused)]
     pub fn is_function(&self) -> bool {
         matches!(self, OutputStyle::FunctionExport)
     }
@@ -259,9 +278,11 @@ pub enum IndentStyle {
     Spaces2,
 
     /// Use 4 spaces for indentation
+    #[allow(unused)]
     Spaces4,
 
     /// Use tabs for indentation
+    #[allow(unused)]
     Tabs,
 }
 
@@ -276,6 +297,7 @@ impl IndentStyle {
     }
 
     /// Create an indentation string for the given depth.
+    #[allow(unused)]
     pub fn indent(&self, depth: usize) -> String {
         self.as_str().repeat(depth)
     }
@@ -289,6 +311,7 @@ pub enum LineEnding {
     Lf,
 
     /// Windows-style line endings (CRLF)
+    #[allow(unused)]
     CrLf,
 }
 
@@ -311,17 +334,21 @@ pub struct GeneratedCode {
     pub code: String,
 
     /// Type name for this schema (e.g., "User")
+    #[allow(unused)]
     pub type_name: String,
 
     /// Schema variable name (e.g., "UserSchema")
+    #[allow(unused)]
     pub schema_name: String,
 
     /// Dependencies on other schemas (by name)
+    #[allow(unused)]
     pub dependencies: Vec<String>,
 }
 
 impl GeneratedCode {
     /// Create a new GeneratedCode instance.
+    #[allow(unused)]
     pub fn new(code: impl Into<String>, type_name: impl Into<String>) -> Self {
         let type_name = type_name.into();
         let schema_name = format!("{}Schema", type_name);
@@ -334,24 +361,28 @@ impl GeneratedCode {
     }
 
     /// Set the schema name.
+    #[allow(unused)]
     pub fn with_schema_name(mut self, name: impl Into<String>) -> Self {
         self.schema_name = name.into();
         self
     }
 
     /// Add dependencies.
+    #[allow(unused)]
     pub fn with_dependencies(mut self, deps: Vec<String>) -> Self {
         self.dependencies = deps;
         self
     }
 
     /// Add a single dependency.
+    #[allow(unused)]
     pub fn add_dependency(mut self, dep: impl Into<String>) -> Self {
         self.dependencies.push(dep.into());
         self
     }
 
     /// Check if this schema has dependencies.
+    #[allow(unused)]
     pub fn has_dependencies(&self) -> bool {
         !self.dependencies.is_empty()
     }
@@ -364,50 +395,65 @@ impl GeneratedCode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GeneratorFeature {
     /// Support for generic type parameters
+    #[allow(unused)]
     Generics,
 
     /// Support for circular/recursive type references
+    #[allow(unused)]
     CircularReferences,
 
     /// Support for discriminated unions (tagged enums)
+    #[allow(unused)]
     DiscriminatedUnions,
 
     /// Support for refinement/custom validation
+    #[allow(unused)]
     Refinements,
 
     /// Support for type transformations
+    #[allow(unused)]
     Transforms,
 
     /// Support for type coercion
+    #[allow(unused)]
     Coercion,
 
     /// Support for lazy evaluation (for recursive types)
+    #[allow(unused)]
     Lazy,
 
     /// Support for strict mode (no extra properties)
+    #[allow(unused)]
     StrictMode,
 
     /// Support for passthrough mode (allow extra properties)
+    #[allow(unused)]
     PassthroughMode,
 
     /// Support for nullable types
+    #[allow(unused)]
     Nullable,
 
     /// Support for optional types
+    #[allow(unused)]
     Optional,
 
     /// Support for default values
+    #[allow(unused)]
     DefaultValues,
 
     /// Support for description/documentation
+    #[allow(unused)]
     Descriptions,
 
     /// Support for deprecation markers
+    #[allow(unused)]
     Deprecation,
 }
 
 impl GeneratorFeature {
     /// Get a human-readable name for this feature.
+    #[allow(unused)]
     pub fn name(&self) -> &'static str {
         match self {
             GeneratorFeature::Generics => "Generics",

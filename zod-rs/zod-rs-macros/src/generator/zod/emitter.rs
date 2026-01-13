@@ -62,6 +62,7 @@ impl ZodEmitter {
     }
 
     /// Create a ZodEmitter with a custom type mapper.
+    #[allow(unused)]
     pub fn with_type_mapper(type_mapper: ZodTypeMapper) -> Self {
         Self { type_mapper }
     }
@@ -820,7 +821,7 @@ mod tests {
     use super::*;
     use crate::ir::{
         EnumSchema, EnumTagging, FieldIR, FieldMetadata, SchemaIR, SchemaKind, StructSchema,
-        TupleStructSchema, TypeIR, TypeKind, ValidationRule, VariantIR, VariantKind,
+        TupleStructSchema, TypeIR, TypeKind, ValidationRule, VariantIR,
     };
 
     fn emitter() -> ZodEmitter {
@@ -1301,8 +1302,7 @@ mod tests {
 mod proptest_tests {
     use super::*;
     use crate::ir::{
-        EnumSchema, FieldIR, FieldMetadata, SchemaIR, SchemaKind, StructSchema, TypeIR, TypeKind,
-        ValidationRule, VariantIR,
+        FieldIR, SchemaIR, SchemaKind, StructSchema, TypeIR, TypeKind, ValidationRule,
     };
     use proptest::prelude::*;
 
@@ -1517,7 +1517,7 @@ mod proptest_tests {
 
     /// Strategy for generating arbitrary TypeIR values.
     fn arb_type_ir() -> impl Strategy<Value = TypeIR> {
-        arb_primitive_type_kind().prop_map(|kind| TypeIR::new(kind))
+        arb_primitive_type_kind().prop_map(TypeIR::new)
     }
 
     /// Strategy for generating arbitrary FieldIR values.
@@ -1537,7 +1537,7 @@ mod proptest_tests {
 
     /// Strategy for generating arbitrary StructSchema values.
     fn arb_struct_schema() -> impl Strategy<Value = StructSchema> {
-        proptest::collection::vec(arb_field_ir(), 0..5).prop_map(|fields| StructSchema::new(fields))
+        proptest::collection::vec(arb_field_ir(), 0..5).prop_map(StructSchema::new)
     }
 
     /// Strategy for generating schema names.
@@ -1545,20 +1545,20 @@ mod proptest_tests {
         "[A-Z][a-zA-Z0-9]{0,15}".prop_map(|s| s)
     }
 
-    /// **Property 13: Generated TypeScript Validity**
-    ///
-    /// *For any* SchemaIR, the generated TypeScript code SHALL be syntactically valid
-    /// (parseable by a TypeScript parser).
-    ///
-    /// This property verifies basic syntactic validity by checking:
-    /// - Balanced parentheses, brackets, and braces
-    /// - Proper string quoting
-    /// - Valid identifier names
-    /// - Proper method chaining syntax
-    ///
-    /// **Validates: Requirements 5.1**
-    ///
-    /// **Feature: zod-schema-macro, Property 13: Generated TypeScript Validity**
+    // **Property 13: Generated TypeScript Validity**
+    //
+    // *For any* SchemaIR, the generated TypeScript code SHALL be syntactically valid
+    // (parseable by a TypeScript parser).
+    //
+    // This property verifies basic syntactic validity by checking:
+    // - Balanced parentheses, brackets, and braces
+    // - Proper string quoting
+    // - Valid identifier names
+    // - Proper method chaining syntax
+    //
+    // **Validates: Requirements 5.1**
+    //
+    // **Feature: zod-schema-macro, Property 13: Generated TypeScript Validity**
     proptest! {
         #[test]
         fn prop_generated_typescript_validity(
