@@ -74,7 +74,7 @@ export const parseEffectError = (
   path: string,
   timeoutMs?: number,
 ): RpcEffectError => {
-  // Handle AbortError
+  // Handle AbortError first (before other Error checks)
   if (error instanceof Error && error.name === "AbortError") {
     if (timeoutMs !== undefined) {
       return makeTimeoutError(path, timeoutMs);
@@ -82,9 +82,37 @@ export const parseEffectError = (
     return makeCancelledError(path);
   }
 
-  // Handle Error instances
-  if (error instanceof Error) {
-    return makeCallError("UNKNOWN", error.message, undefined, error.stack);
+  // Handle Effect's FiberFailure which wraps the cause
+  // FiberFailure has a Symbol property containing the Cause
+  const FiberFailureCauseId = Symbol.for("effect/Runtime/FiberFailure/Cause");
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    FiberFailureCauseId in error
+  ) {
+    // Extract the cause from FiberFailure
+    const cause = (error as Record<symbol, unknown>)[FiberFailureCauseId];
+    // The cause has a structure with failures - try to extract the original error
+    if (cause && typeof cause === "object") {
+      // Try to get the first failure from the cause
+      const failures = extractFailuresFromCause(cause);
+      if (failures.length > 0) {
+        return parseEffectError(failures[0], path, timeoutMs);
+      }
+    }
+  }
+
+  // Handle Effect's UnknownException which wraps the original error
+  // IMPORTANT: Check this BEFORE instanceof Error, because UnknownException extends Error
+  // but we want to unwrap and parse the original error
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "error" in error &&
+    (error as { error: unknown }).error !== undefined
+  ) {
+    // Recursively parse the wrapped error
+    return parseEffectError((error as { error: unknown }).error, path, timeoutMs);
   }
 
   // Handle JSON string errors from backend
@@ -110,9 +138,58 @@ export const parseEffectError = (
     return makeCallError(error.code, error.message, error.details, error.cause);
   }
 
+  // Handle Error instances - check if the message is a JSON string
+  if (error instanceof Error) {
+    // Try to parse the error message as JSON (some backends wrap errors this way)
+    try {
+      const parsed = JSON.parse(error.message);
+      if (isPublicRpcError(parsed)) {
+        return makeCallError(
+          parsed.code,
+          parsed.message,
+          parsed.details,
+          parsed.cause,
+        );
+      }
+    } catch {
+      // Not JSON, use the message as-is
+    }
+    return makeCallError("UNKNOWN", error.message, undefined, error.stack);
+  }
+
   // Fallback
   return makeCallError("UNKNOWN", String(error));
 };
+
+/**
+ * Extract failures from an Effect Cause object.
+ * The Cause structure can be complex (Sequential, Parallel, etc.)
+ */
+function extractFailuresFromCause(cause: unknown): unknown[] {
+  if (!cause || typeof cause !== "object") return [];
+  
+  const c = cause as Record<string, unknown>;
+  
+  // Handle Fail cause - contains the actual error
+  if (c._tag === "Fail") {
+    return [c.error];
+  }
+  
+  // Handle Die cause - contains defect
+  if (c._tag === "Die") {
+    return [c.defect];
+  }
+  
+  // Handle Sequential cause - has left and right
+  if (c._tag === "Sequential" || c._tag === "Parallel") {
+    return [
+      ...extractFailuresFromCause(c.left),
+      ...extractFailuresFromCause(c.right),
+    ];
+  }
+  
+  return [];
+}
 
 /**
  * Type guard for public RpcError.

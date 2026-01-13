@@ -2,10 +2,24 @@
 // @tauri-nexus/rpc-core - TauriLink Implementation
 // =============================================================================
 // Configurable link for Tauri RPC calls with interceptor support.
+// Uses Effect internally for type-safe error handling and composition.
 
-import { invoke } from "@tauri-apps/api/core";
-import type { RpcError, RpcErrorCode } from "../core/types";
-import { createEventIterator } from "../subscription/event-iterator";
+import { Effect, pipe, Layer } from "effect";
+import type { RpcError } from "../core/types";
+import { callEffect, subscribeEffect } from "../internal/effect-call";
+import { toPublicError, parseEffectError } from "../internal/effect-errors";
+import {
+  makeConfigLayer,
+  makeInterceptorLayer,
+  makeLoggerLayer,
+  TauriTransportLayer,
+  type RpcServices,
+} from "../internal/effect-runtime";
+import type {
+  RpcEffectError,
+  RpcInterceptor,
+  InterceptorContext,
+} from "../internal/effect-types";
 import type {
   TauriLinkConfig,
   LinkRequestContext,
@@ -14,84 +28,38 @@ import type {
 } from "./types";
 
 // =============================================================================
-// Helper Functions
+// Path Validation (standalone, no Effect services)
 // =============================================================================
 
-/** Create an RPC error */
-function createRpcError(
-  code: RpcErrorCode | string,
-  message: string,
-  details?: unknown,
-): RpcError {
-  return { code, message, details };
-}
+const PATH_REGEX = /^[a-zA-Z0-9_.]+$/;
 
-/** Check if error is an RPC error */
-function isRpcError(error: unknown): error is RpcError {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    "message" in error &&
-    typeof (error as RpcError).code === "string" &&
-    typeof (error as RpcError).message === "string"
-  );
-}
-
-/** Parse error from backend response */
-function parseError(error: unknown, timeoutMs?: number): RpcError {
-  if (error instanceof Error) {
-    if (error.name === "AbortError") {
-      if (timeoutMs !== undefined) {
-        return createRpcError(
-          "TIMEOUT",
-          `Request timed out after ${timeoutMs}ms`,
-          { timeoutMs },
-        );
-      }
-      return createRpcError("CANCELLED", "Request was cancelled");
-    }
-    return createRpcError("UNKNOWN", error.message);
-  }
-
-  if (typeof error === "string") {
-    try {
-      const parsed = JSON.parse(error);
-      if (isRpcError(parsed)) return parsed;
-      return createRpcError("UNKNOWN", error);
-    } catch {
-      return createRpcError("UNKNOWN", error);
-    }
-  }
-
-  if (isRpcError(error)) return error;
-  return createRpcError("UNKNOWN", String(error));
-}
-
-/** Validate procedure path */
-function validatePath(path: string): void {
+function validatePathSync(path: string): void {
   if (!path) {
-    throw createRpcError("VALIDATION_ERROR", "Procedure path cannot be empty");
+    throw {
+      code: "VALIDATION_ERROR",
+      message: "Procedure path cannot be empty",
+    } as RpcError;
   }
+
   if (path.startsWith(".") || path.endsWith(".")) {
-    throw createRpcError(
-      "VALIDATION_ERROR",
-      "Procedure path cannot start or end with a dot",
-    );
+    throw {
+      code: "VALIDATION_ERROR",
+      message: "Procedure path cannot start or end with a dot",
+    } as RpcError;
   }
+
   if (path.includes("..")) {
-    throw createRpcError(
-      "VALIDATION_ERROR",
-      "Procedure path cannot contain consecutive dots",
-    );
+    throw {
+      code: "VALIDATION_ERROR",
+      message: "Procedure path cannot contain consecutive dots",
+    } as RpcError;
   }
-  for (const ch of path) {
-    if (!/[a-zA-Z0-9_.]/.test(ch)) {
-      throw createRpcError(
-        "VALIDATION_ERROR",
-        `Procedure path contains invalid character: '${ch}'`,
-      );
-    }
+
+  if (!PATH_REGEX.test(path)) {
+    throw {
+      code: "VALIDATION_ERROR",
+      message: "Procedure path contains invalid characters",
+    } as RpcError;
   }
 }
 
@@ -101,6 +69,7 @@ function validatePath(path: string): void {
 
 /**
  * TauriLink - A configurable link for Tauri RPC calls.
+ * Uses Effect internally for robust error handling and composition.
  *
  * @example
  * ```typescript
@@ -118,35 +87,65 @@ function validatePath(path: string): void {
  */
 export class TauriLink<TClientContext = unknown> {
   private config: TauriLinkConfig<TClientContext>;
+  private layer: Layer.Layer<RpcServices>;
 
   constructor(config: TauriLinkConfig<TClientContext> = {}) {
     this.config = config;
+    this.layer = this.buildLayer();
   }
 
-  /** Execute interceptor chain */
-  private async executeInterceptors<T>(
-    ctx: LinkRequestContext<TClientContext>,
-    fn: () => Promise<T>,
+  /**
+   * Build Effect layer from link configuration.
+   */
+  private buildLayer(): Layer.Layer<RpcServices> {
+    // Convert link interceptors to Effect interceptors
+    const effectInterceptors: RpcInterceptor[] = (
+      this.config.interceptors ?? []
+    ).map((interceptor, index) => ({
+      name: `link-interceptor-${index}`,
+      intercept: async <T>(ctx: InterceptorContext, next: () => Promise<T>) => {
+        const linkCtx: LinkRequestContext<TClientContext> = {
+          path: ctx.path,
+          input: ctx.input,
+          type: ctx.type,
+          context: (ctx.meta.clientContext ?? {}) as TClientContext,
+          signal: ctx.signal,
+          meta: ctx.meta,
+        };
+        return interceptor(linkCtx, next);
+      },
+    }));
+
+    return Layer.mergeAll(
+      makeConfigLayer({
+        defaultTimeout: this.config.timeout,
+        subscriptionPaths: new Set(this.config.subscriptionPaths ?? []),
+      }),
+      TauriTransportLayer,
+      makeInterceptorLayer({ interceptors: effectInterceptors }),
+      makeLoggerLayer(),
+    );
+  }
+
+  /**
+   * Run an Effect with this link's layer.
+   */
+  private async runEffect<T>(
+    effect: Effect.Effect<T, RpcEffectError, RpcServices>,
   ): Promise<T> {
-    const interceptors = this.config.interceptors ?? [];
-
-    let next = fn;
-    for (let i = interceptors.length - 1; i >= 0; i--) {
-      const interceptor = interceptors[i];
-      const currentNext = next;
-      next = () => interceptor(ctx, currentNext);
-    }
-
-    return next();
+    const provided = pipe(effect, Effect.provide(this.layer));
+    return Effect.runPromise(provided);
   }
 
-  /** Make an RPC call */
+  /**
+   * Make an RPC call.
+   */
   async call<T>(
     path: string,
     input: unknown,
     options: LinkCallOptions<TClientContext> = {},
   ): Promise<T> {
-    validatePath(path);
+    validatePathSync(path);
 
     const ctx: LinkRequestContext<TClientContext> = {
       path,
@@ -160,45 +159,39 @@ export class TauriLink<TClientContext = unknown> {
     const timeoutMs = options.timeout ?? this.config.timeout;
 
     try {
+      // Lifecycle hook: before request
       await this.config.onRequest?.(ctx);
 
-      const result = await this.executeInterceptors(ctx, async () => {
-        if (timeoutMs) {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const result = await this.runEffect(
+        callEffect<T>(path, input, {
+          signal: options.signal,
+          timeout: timeoutMs,
+          meta: {
+            ...options.meta,
+            clientContext: options.context,
+          },
+        }),
+      );
 
-          try {
-            const result = await invoke<T>("plugin:rpc|rpc_call", {
-              path,
-              input,
-            });
-            clearTimeout(timeoutId);
-            return result;
-          } catch (error) {
-            clearTimeout(timeoutId);
-            throw error;
-          }
-        }
-
-        return invoke<T>("plugin:rpc|rpc_call", { path, input });
-      });
-
+      // Lifecycle hook: after response
       await this.config.onResponse?.(result, ctx);
       return result;
     } catch (error) {
-      const rpcError = parseError(error, timeoutMs);
+      const rpcError = this.convertError(error, timeoutMs);
       await this.config.onError?.(rpcError, ctx);
       throw rpcError;
     }
   }
 
-  /** Subscribe to a streaming procedure */
+  /**
+   * Subscribe to a streaming procedure.
+   */
   async subscribe<T>(
     path: string,
     input: unknown,
     options: LinkSubscribeOptions<TClientContext> = {},
   ): Promise<AsyncIterable<T>> {
-    validatePath(path);
+    validatePathSync(path);
 
     const ctx: LinkRequestContext<TClientContext> = {
       path,
@@ -210,22 +203,83 @@ export class TauriLink<TClientContext = unknown> {
     };
 
     try {
+      // Lifecycle hook: before request
       await this.config.onRequest?.(ctx);
-      return await createEventIterator<T>(path, input, options);
+
+      const iterator = await this.runEffect(
+        subscribeEffect<T>(path, input, {
+          signal: options.signal,
+          lastEventId: options.lastEventId,
+          meta: {
+            ...options.meta,
+            clientContext: options.context,
+          },
+        }),
+      );
+
+      return iterator;
     } catch (error) {
-      const rpcError = parseError(error);
+      const rpcError = this.convertError(error);
       await this.config.onError?.(rpcError, ctx);
       throw rpcError;
     }
   }
 
-  /** Check if path is a subscription */
+  /**
+   * Check if path is a subscription.
+   */
   isSubscription(path: string): boolean {
     return this.config.subscriptionPaths?.includes(path) ?? false;
   }
 
-  /** Get configuration */
+  /**
+   * Get configuration.
+   */
   getConfig(): TauriLinkConfig<TClientContext> {
     return this.config;
+  }
+
+  /**
+   * Convert errors to public RpcError format.
+   */
+  private convertError(error: unknown, timeoutMs?: number): RpcError {
+    // Effect-based errors
+    if (this.isEffectError(error)) {
+      return toPublicError(error);
+    }
+
+    // Already an RpcError
+    if (this.isRpcError(error)) {
+      return error;
+    }
+
+    // Parse unknown errors
+    return toPublicError(parseEffectError(error, "unknown", timeoutMs));
+  }
+
+  /**
+   * Check if error is an Effect-based RPC error.
+   */
+  private isEffectError(error: unknown): error is RpcEffectError {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "_tag" in error &&
+      typeof (error as { _tag: string })._tag === "string"
+    );
+  }
+
+  /**
+   * Check if error is already an RpcError.
+   */
+  private isRpcError(error: unknown): error is RpcError {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      "message" in error &&
+      typeof (error as RpcError).code === "string" &&
+      typeof (error as RpcError).message === "string"
+    );
   }
 }
