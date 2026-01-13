@@ -76,5 +76,17 @@ export {
 // Validation
 export { validatePath } from "./validation";
 
+// Effect-based validation
+export {
+  validatePathEffect,
+  validatePathsEffect,
+  validateAndNormalizePathEffect,
+  isValidPathEffect,
+  validatePathWithRulesEffect,
+  validatePathSync,
+  isValidPathSync,
+  type PathValidationRules,
+} from "./effect-validation";
+
 // Contract builders
 export { query, mutation, subscription } from "./contract";

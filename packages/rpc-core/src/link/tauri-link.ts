@@ -2,11 +2,10 @@
 // @tauri-nexus/rpc-core - TauriLink Implementation
 // =============================================================================
 // Configurable link for Tauri RPC calls with interceptor support.
-// Uses Effect internally for type-safe error handling and composition.
+// Uses Effect throughout for type-safe error handling and composition.
 
 import { Effect, pipe, Layer } from "effect";
-import type { RpcError } from "../core/types";
-import { callEffect, subscribeEffect } from "../internal/effect-call";
+import { callEffect, subscribeEffect, validatePath } from "../internal/effect-call";
 import { toPublicError, parseEffectError } from "../internal/effect-errors";
 import {
   makeConfigLayer,
@@ -28,62 +27,12 @@ import type {
 } from "./types";
 
 // =============================================================================
-// Path Validation (standalone, no Effect services)
-// =============================================================================
-
-const PATH_REGEX = /^[a-zA-Z0-9_.]+$/;
-
-function validatePathSync(path: string): void {
-  if (!path) {
-    throw {
-      code: "VALIDATION_ERROR",
-      message: "Procedure path cannot be empty",
-    } as RpcError;
-  }
-
-  if (path.startsWith(".") || path.endsWith(".")) {
-    throw {
-      code: "VALIDATION_ERROR",
-      message: "Procedure path cannot start or end with a dot",
-    } as RpcError;
-  }
-
-  if (path.includes("..")) {
-    throw {
-      code: "VALIDATION_ERROR",
-      message: "Procedure path cannot contain consecutive dots",
-    } as RpcError;
-  }
-
-  if (!PATH_REGEX.test(path)) {
-    throw {
-      code: "VALIDATION_ERROR",
-      message: "Procedure path contains invalid characters",
-    } as RpcError;
-  }
-}
-
-// =============================================================================
 // TauriLink Class
 // =============================================================================
 
 /**
  * TauriLink - A configurable link for Tauri RPC calls.
- * Uses Effect internally for robust error handling and composition.
- *
- * @example
- * ```typescript
- * const link = new TauriLink<{ token?: string }>({
- *   interceptors: [
- *     async (ctx, next) => {
- *       console.log(`[RPC] ${ctx.path}`);
- *       return next();
- *     },
- *   ],
- * });
- *
- * const client = createClientFromLink<AppContract, { token?: string }>(link);
- * ```
+ * Uses Effect throughout for robust error handling and composition.
  */
 export class TauriLink<TClientContext = unknown> {
   private config: TauriLinkConfig<TClientContext>;
@@ -94,11 +43,7 @@ export class TauriLink<TClientContext = unknown> {
     this.layer = this.buildLayer();
   }
 
-  /**
-   * Build Effect layer from link configuration.
-   */
   private buildLayer(): Layer.Layer<RpcServices> {
-    // Convert link interceptors to Effect interceptors
     const effectInterceptors: RpcInterceptor[] = (
       this.config.interceptors ?? []
     ).map((interceptor, index) => ({
@@ -127,159 +72,153 @@ export class TauriLink<TClientContext = unknown> {
     );
   }
 
-  /**
-   * Run an Effect with this link's layer.
-   */
-  private async runEffect<T>(
+  private provideLayer<T>(
     effect: Effect.Effect<T, RpcEffectError, RpcServices>,
-  ): Promise<T> {
-    const provided = pipe(effect, Effect.provide(this.layer));
-    return Effect.runPromise(provided);
+  ): Effect.Effect<T, RpcEffectError> {
+    return pipe(effect, Effect.provide(this.layer));
   }
 
-  /**
-   * Make an RPC call.
-   */
+  private async runEffect<T>(
+    effect: Effect.Effect<T, RpcEffectError>,
+    path: string,
+    timeoutMs?: number,
+  ): Promise<T> {
+    try {
+      return await Effect.runPromise(effect);
+    } catch (error) {
+      throw toPublicError(parseEffectError(error, path, timeoutMs));
+    }
+  }
+
+  private callWithLifecycle<T>(
+    path: string,
+    input: unknown,
+    options: LinkCallOptions<TClientContext>,
+    link: TauriLink<TClientContext>,
+  ): Effect.Effect<T, RpcEffectError, RpcServices> {
+    const timeoutMs = options.timeout ?? link.config.timeout;
+
+    return Effect.gen(function* () {
+      yield* validatePath(path);
+
+      const ctx: LinkRequestContext<TClientContext> = {
+        path,
+        input,
+        type: "query",
+        context: options.context ?? ({} as TClientContext),
+        signal: options.signal,
+        meta: options.meta ?? {},
+      };
+
+      if (link.config.onRequest) {
+        yield* Effect.promise(() => Promise.resolve(link.config.onRequest!(ctx)));
+      }
+
+      const result = yield* pipe(
+        callEffect<T>(path, input, {
+          signal: options.signal,
+          timeout: timeoutMs,
+          meta: { ...options.meta, clientContext: options.context },
+        }),
+        Effect.tapError((error) =>
+          Effect.promise(() =>
+            Promise.resolve(link.config.onError?.(toPublicError(error), ctx)),
+          ),
+        ),
+      );
+
+      if (link.config.onResponse) {
+        yield* Effect.promise(() => Promise.resolve(link.config.onResponse!(result, ctx)));
+      }
+
+      return result;
+    });
+  }
+
+  private subscribeWithLifecycle<T>(
+    path: string,
+    input: unknown,
+    options: LinkSubscribeOptions<TClientContext>,
+    link: TauriLink<TClientContext>,
+  ): Effect.Effect<AsyncIterable<T>, RpcEffectError, RpcServices> {
+    return Effect.gen(function* () {
+      yield* validatePath(path);
+
+      const ctx: LinkRequestContext<TClientContext> = {
+        path,
+        input,
+        type: "subscription",
+        context: options.context ?? ({} as TClientContext),
+        signal: options.signal,
+        meta: options.meta ?? {},
+      };
+
+      if (link.config.onRequest) {
+        yield* Effect.promise(() => Promise.resolve(link.config.onRequest!(ctx)));
+      }
+
+      const iterator = yield* pipe(
+        subscribeEffect<T>(path, input, {
+          signal: options.signal,
+          lastEventId: options.lastEventId,
+          meta: { ...options.meta, clientContext: options.context },
+        }),
+        Effect.tapError((error) =>
+          Effect.promise(() =>
+            Promise.resolve(link.config.onError?.(toPublicError(error), ctx)),
+          ),
+        ),
+      );
+
+      return iterator;
+    });
+  }
+
   async call<T>(
     path: string,
     input: unknown,
     options: LinkCallOptions<TClientContext> = {},
   ): Promise<T> {
-    validatePathSync(path);
-
-    const ctx: LinkRequestContext<TClientContext> = {
-      path,
-      input,
-      type: "query",
-      context: options.context ?? ({} as TClientContext),
-      signal: options.signal,
-      meta: options.meta ?? {},
-    };
-
     const timeoutMs = options.timeout ?? this.config.timeout;
-
-    try {
-      // Lifecycle hook: before request
-      await this.config.onRequest?.(ctx);
-
-      const result = await this.runEffect(
-        callEffect<T>(path, input, {
-          signal: options.signal,
-          timeout: timeoutMs,
-          meta: {
-            ...options.meta,
-            clientContext: options.context,
-          },
-        }),
-      );
-
-      // Lifecycle hook: after response
-      await this.config.onResponse?.(result, ctx);
-      return result;
-    } catch (error) {
-      const rpcError = this.convertError(error, timeoutMs);
-      await this.config.onError?.(rpcError, ctx);
-      throw rpcError;
-    }
+    const effect = this.provideLayer(
+      this.callWithLifecycle<T>(path, input, options, this),
+    );
+    return this.runEffect(effect, path, timeoutMs);
   }
 
-  /**
-   * Subscribe to a streaming procedure.
-   */
   async subscribe<T>(
     path: string,
     input: unknown,
     options: LinkSubscribeOptions<TClientContext> = {},
   ): Promise<AsyncIterable<T>> {
-    validatePathSync(path);
-
-    const ctx: LinkRequestContext<TClientContext> = {
-      path,
-      input,
-      type: "subscription",
-      context: options.context ?? ({} as TClientContext),
-      signal: options.signal,
-      meta: options.meta ?? {},
-    };
-
-    try {
-      // Lifecycle hook: before request
-      await this.config.onRequest?.(ctx);
-
-      const iterator = await this.runEffect(
-        subscribeEffect<T>(path, input, {
-          signal: options.signal,
-          lastEventId: options.lastEventId,
-          meta: {
-            ...options.meta,
-            clientContext: options.context,
-          },
-        }),
-      );
-
-      return iterator;
-    } catch (error) {
-      const rpcError = this.convertError(error);
-      await this.config.onError?.(rpcError, ctx);
-      throw rpcError;
-    }
+    const effect = this.provideLayer(
+      this.subscribeWithLifecycle<T>(path, input, options, this),
+    );
+    return this.runEffect(effect, path);
   }
 
-  /**
-   * Check if path is a subscription.
-   */
   isSubscription(path: string): boolean {
     return this.config.subscriptionPaths?.includes(path) ?? false;
   }
 
-  /**
-   * Get configuration.
-   */
   getConfig(): TauriLinkConfig<TClientContext> {
     return this.config;
   }
 
-  /**
-   * Convert errors to public RpcError format.
-   */
-  private convertError(error: unknown, timeoutMs?: number): RpcError {
-    // Effect-based errors
-    if (this.isEffectError(error)) {
-      return toPublicError(error);
-    }
-
-    // Already an RpcError
-    if (this.isRpcError(error)) {
-      return error;
-    }
-
-    // Parse unknown errors
-    return toPublicError(parseEffectError(error, "unknown", timeoutMs));
+  getLayer(): Layer.Layer<RpcServices> {
+    return this.layer;
   }
 
-  /**
-   * Check if error is an Effect-based RPC error.
-   */
-  private isEffectError(error: unknown): error is RpcEffectError {
-    return (
-      typeof error === "object" &&
-      error !== null &&
-      "_tag" in error &&
-      typeof (error as { _tag: string })._tag === "string"
-    );
+  withInterceptors(
+    interceptors: TauriLinkConfig<TClientContext>["interceptors"],
+  ): TauriLink<TClientContext> {
+    return new TauriLink({
+      ...this.config,
+      interceptors: [...(this.config.interceptors ?? []), ...(interceptors ?? [])],
+    });
   }
 
-  /**
-   * Check if error is already an RpcError.
-   */
-  private isRpcError(error: unknown): error is RpcError {
-    return (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      "message" in error &&
-      typeof (error as RpcError).code === "string" &&
-      typeof (error as RpcError).message === "string"
-    );
+  withTimeout(timeout: number): TauriLink<TClientContext> {
+    return new TauriLink({ ...this.config, timeout });
   }
 }

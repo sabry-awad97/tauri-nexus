@@ -13,6 +13,11 @@ export {
   TypedBatchBuilder,
   TypedBatchResponseWrapper,
   TypedBatchResponse,
+  // Effect-based batch
+  EffectBatchBuilder,
+  EffectBatchResponseWrapper,
+  executeBatchEffect,
+  createEffectBatch,
 } from "./batch";
 
 // Client factories

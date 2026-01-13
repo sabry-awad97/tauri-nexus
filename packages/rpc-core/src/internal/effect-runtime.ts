@@ -16,7 +16,7 @@ import {
   type RpcLogger,
   type SubscribeTransportOptions,
 } from "./effect-types";
-import { createEventIterator } from "../subscription/event-iterator";
+import { createEventIteratorEffect } from "../subscription/effect-iterator";
 
 // =============================================================================
 // Default Service Implementations
@@ -57,7 +57,7 @@ const tauriTransport: RpcTransport = {
     input: unknown,
     options?: SubscribeTransportOptions,
   ): Promise<AsyncIterable<T>> => {
-    return createEventIterator<T>(path, input, options);
+    return Effect.runPromise(createEventIteratorEffect<T>(path, input, options));
   },
 };
 

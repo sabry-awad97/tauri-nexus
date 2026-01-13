@@ -2,7 +2,9 @@
 // @tauri-nexus/rpc-core - Type-Safe Batch Builder
 // =============================================================================
 // Fluent API for building and executing type-safe batch requests.
+// Consolidated module - TypedBatchBuilder uses Effect internally.
 
+import { Effect } from "effect";
 import type {
   SingleRequest,
   BatchCallOptions,
@@ -14,28 +16,31 @@ import type {
   GetOutputAtPath,
   TypedBatchResult,
 } from "../core/inference";
-import { executeBatch } from "./call";
+import { EffectBatchBuilder } from "./effect-batch";
+import { toPublicError, parseEffectError } from "../internal/effect-errors";
+
+// Re-export Effect-based batch utilities
+export {
+  EffectBatchBuilder,
+  EffectBatchResponseWrapper,
+  executeBatchEffect,
+  createEffectBatch,
+} from "./effect-batch";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-/** Internal type to track batch entries with their output types */
-interface BatchEntry {
-  id: string;
-  path: string;
-  input: unknown;
-}
-
 /** Type map for tracking request IDs to their output types */
 type OutputTypeMap = Record<string, unknown>;
 
 // =============================================================================
-// TypedBatchBuilder
+// TypedBatchBuilder (Promise-based wrapper around EffectBatchBuilder)
 // =============================================================================
 
 /**
  * Type-safe batch builder that infers paths and inputs from a contract.
+ * Uses Effect internally for robust error handling.
  *
  * @example
  * ```typescript
@@ -49,9 +54,13 @@ type OutputTypeMap = Record<string, unknown>;
  */
 export class TypedBatchBuilder<
   TContract,
-  TOutputMap extends OutputTypeMap = Record<string, never>,
+  TOutputMap extends OutputTypeMap = Record<string, never>
 > {
-  private entries: BatchEntry[] = [];
+  private effectBuilder: EffectBatchBuilder<TContract, TOutputMap>;
+
+  constructor() {
+    this.effectBuilder = new EffectBatchBuilder<TContract, TOutputMap>();
+  }
 
   /**
    * Add a type-safe request to the batch.
@@ -59,12 +68,12 @@ export class TypedBatchBuilder<
   add<TId extends string, TPath extends ExtractCallablePaths<TContract>>(
     id: TId,
     path: TPath,
-    input: GetInputAtPath<TContract, TPath>,
+    input: GetInputAtPath<TContract, TPath>
   ): TypedBatchBuilder<
     TContract,
     TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
   > {
-    this.entries.push({ id, path, input });
+    this.effectBuilder.add(id, path, input);
     return this as unknown as TypedBatchBuilder<
       TContract,
       TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
@@ -75,25 +84,21 @@ export class TypedBatchBuilder<
    * Get the current requests in the batch.
    */
   getRequests(): SingleRequest[] {
-    return this.entries.map((e) => ({
-      id: e.id,
-      path: e.path,
-      input: e.input,
-    }));
+    return this.effectBuilder.getRequests();
   }
 
   /**
    * Get the number of requests in the batch.
    */
   size(): number {
-    return this.entries.length;
+    return this.effectBuilder.size();
   }
 
   /**
    * Clear all requests from the batch.
    */
   clear(): TypedBatchBuilder<TContract, Record<string, never>> {
-    this.entries = [];
+    this.effectBuilder.clear();
     return this as unknown as TypedBatchBuilder<
       TContract,
       Record<string, never>
@@ -104,10 +109,26 @@ export class TypedBatchBuilder<
    * Execute the batch and return a typed response.
    */
   async execute(
-    options?: BatchCallOptions,
+    options?: BatchCallOptions
   ): Promise<TypedBatchResponseWrapper<TOutputMap>> {
-    const response = await executeBatch(this.getRequests(), options);
-    return new TypedBatchResponseWrapper<TOutputMap>(response);
+    try {
+      const effectResponse = await Effect.runPromise(
+        this.effectBuilder.executeEffect(options)
+      );
+      // Convert EffectBatchResponseWrapper to TypedBatchResponseWrapper
+      return new TypedBatchResponseWrapper<TOutputMap>({
+        results: effectResponse.results,
+      });
+    } catch (error) {
+      const rpcError = toPublicError(
+        parseEffectError(error, "batch", options?.timeout)
+      );
+      console.warn(
+        `[RPC] Batch request failed: ${rpcError.code} - ${rpcError.message}`,
+        rpcError.details
+      );
+      throw rpcError;
+    }
   }
 }
 
@@ -129,7 +150,7 @@ export class TypedBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
       this.resultMap.set(result.id, result);
       if (result.error) {
         console.warn(
-          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`,
+          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`
         );
       }
     }
@@ -146,7 +167,7 @@ export class TypedBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
    * Get a typed result by request ID.
    */
   getResult<TId extends keyof TOutputMap & string>(
-    id: TId,
+    id: TId
   ): TypedBatchResult<TOutputMap[TId]> {
     const result = this.resultMap.get(id);
     if (!result) {

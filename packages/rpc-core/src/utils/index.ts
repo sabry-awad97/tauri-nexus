@@ -2,30 +2,34 @@
 // @tauri-nexus/rpc-core - Utility Functions
 // =============================================================================
 // Common utilities for retry logic, deduplication, and serialization.
+// This module provides Promise-based wrappers around Effect-based implementations.
 
-import { invoke } from "@tauri-apps/api/core";
 import type { RpcError } from "../core/types";
 
-// =============================================================================
-// Backend Utilities
-// =============================================================================
+// Re-export Effect-based utilities
+export {
+  // Effect-based functions
+  getProceduresEffect,
+  getSubscriptionCountEffect,
+  sleepEffect,
+  calculateBackoffEffect,
+  withRetryEffect,
+  withRetryEffectDetailed,
+  createRetrySchedule,
+  createDedupCache,
+  deduplicationKeyEffect,
+  stableStringifyEffect,
+  withDedupEffect,
+  // Promise-based wrappers
+  getProcedures,
+  getSubscriptionCount,
+  // Types
+  type EffectRetryConfig,
+  defaultEffectRetryConfig,
+} from "./effect-utils";
 
-/**
- * Get list of available procedures from backend.
- */
-export async function getProcedures(): Promise<string[]> {
-  return invoke<string[]>("plugin:rpc|rpc_procedures");
-}
-
-/**
- * Get current subscription count from backend.
- */
-export async function getSubscriptionCount(): Promise<number> {
-  return invoke<number>("plugin:rpc|rpc_subscription_count");
-}
-
 // =============================================================================
-// Timing Utilities
+// Timing Utilities (Promise-based wrappers)
 // =============================================================================
 
 /**
@@ -55,7 +59,7 @@ export function calculateBackoff(
 }
 
 // =============================================================================
-// Retry Logic
+// Retry Logic (Promise-based - uses Effect internally)
 // =============================================================================
 
 /** Retry configuration */
@@ -77,6 +81,7 @@ export const defaultRetryConfig: RetryConfig = {
 
 /**
  * Execute a function with retry logic.
+ * This is a Promise-based wrapper; for Effect-based retry, use withRetryEffect.
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
@@ -110,13 +115,14 @@ export async function withRetry<T>(
 }
 
 // =============================================================================
-// Serialization Utilities
+// Serialization Utilities (Promise-based wrappers)
 // =============================================================================
 
 /**
  * JSON.stringify with sorted keys for consistent output.
  * Ensures objects with the same properties produce identical strings
  * regardless of property insertion order.
+ * For Effect-based version, use stableStringifyEffect.
  */
 export function stableStringify(value: unknown): string {
   if (value === null || value === undefined) {
@@ -146,13 +152,14 @@ export function stableStringify(value: unknown): string {
 
 /**
  * Deduplication key generator with stable object serialization.
+ * For Effect-based version, use deduplicationKeyEffect.
  */
 export function deduplicationKey(path: string, input: unknown): string {
   return `${path}:${stableStringify(input)}`;
 }
 
 // =============================================================================
-// Deduplication
+// Deduplication (Promise-based wrapper)
 // =============================================================================
 
 /** Pending request tracker for deduplication */
@@ -160,6 +167,7 @@ const pendingRequests = new Map<string, Promise<unknown>>();
 
 /**
  * Execute a function with deduplication.
+ * For Effect-based version, use withDedupEffect or createDedupCache.
  */
 export async function withDedup<T>(
   key: string,

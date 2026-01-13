@@ -74,6 +74,11 @@ export const parseEffectError = (
   path: string,
   timeoutMs?: number,
 ): RpcEffectError => {
+  // Handle Effect RPC errors directly - they have a _tag property
+  if (isEffectRpcError(error)) {
+    return error;
+  }
+
   // Handle AbortError first (before other Error checks)
   if (error instanceof Error && error.name === "AbortError") {
     if (timeoutMs !== undefined) {
@@ -159,6 +164,21 @@ export const parseEffectError = (
 
   // Fallback
   return makeCallError("UNKNOWN", String(error));
+};
+
+/**
+ * Check if error is an Effect RPC error type.
+ */
+const isEffectRpcError = (error: unknown): error is RpcEffectError => {
+  if (typeof error !== "object" || error === null) return false;
+  const tag = (error as { _tag?: string })._tag;
+  return (
+    tag === "RpcCallError" ||
+    tag === "RpcTimeoutError" ||
+    tag === "RpcCancelledError" ||
+    tag === "RpcValidationError" ||
+    tag === "RpcNetworkError"
+  );
 };
 
 /**

@@ -63,9 +63,13 @@ export class RpcValidationError extends Data.TaggedError("RpcValidationError")<{
   readonly issues: readonly ValidationIssue[];
 }> {
   toPublic(): PublicRpcError {
+    // Use the first issue's message if available, otherwise generic message
+    const message = this.issues.length > 0
+      ? this.issues[0].message
+      : `Validation failed for '${this.path}'`;
     return {
       code: "VALIDATION_ERROR",
-      message: `Validation failed for '${this.path}'`,
+      message,
       details: { issues: this.issues },
     };
   }

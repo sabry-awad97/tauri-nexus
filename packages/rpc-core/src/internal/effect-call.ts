@@ -14,68 +14,15 @@ import {
 } from "./effect-types";
 import {
   parseEffectError,
-  makeValidationError,
 } from "./effect-errors";
 import type { RpcServices } from "./effect-runtime";
+import { validatePathEffect } from "../core/effect-validation";
 
-// =============================================================================
-// Path Validation
-// =============================================================================
+// Re-export validatePath from the consolidated validation module
+export { validatePathEffect as validatePath } from "../core/effect-validation";
 
-const PATH_REGEX = /^[a-zA-Z0-9_.]+$/;
-
-/**
- * Validate a procedure path.
- */
-export const validatePath = (
-  path: string,
-): Effect.Effect<string, RpcEffectError> => {
-  if (!path) {
-    return Effect.fail(
-      makeValidationError(path, [
-        { path: [], message: "Procedure path cannot be empty", code: "empty" },
-      ]),
-    );
-  }
-
-  if (path.startsWith(".") || path.endsWith(".")) {
-    return Effect.fail(
-      makeValidationError(path, [
-        {
-          path: [],
-          message: "Procedure path cannot start or end with a dot",
-          code: "invalid_format",
-        },
-      ]),
-    );
-  }
-
-  if (path.includes("..")) {
-    return Effect.fail(
-      makeValidationError(path, [
-        {
-          path: [],
-          message: "Procedure path cannot contain consecutive dots",
-          code: "invalid_format",
-        },
-      ]),
-    );
-  }
-
-  if (!PATH_REGEX.test(path)) {
-    return Effect.fail(
-      makeValidationError(path, [
-        {
-          path: [],
-          message: "Procedure path contains invalid characters",
-          code: "invalid_chars",
-        },
-      ]),
-    );
-  }
-
-  return Effect.succeed(path);
-};
+// Internal alias for use within this module
+const validatePath = validatePathEffect;
 
 // =============================================================================
 // Interceptor Execution
@@ -313,59 +260,9 @@ export const batchCallEffect = <T = unknown>(
   });
 
 // =============================================================================
-// Retry Logic
+// Retry Logic - Re-exported from utils for convenience
 // =============================================================================
 
-/**
- * Retry options.
- */
-export interface RetryOptions {
-  readonly maxRetries: number;
-  readonly delay: number;
-  readonly backoff?: "linear" | "exponential";
-  readonly retryOn?: (error: RpcEffectError) => boolean;
-}
-
-/**
- * Wrap a call effect with retry logic.
- */
-export const withRetry = <T>(
-  effect: Effect.Effect<T, RpcEffectError, RpcServices>,
-  options: RetryOptions,
-): Effect.Effect<T, RpcEffectError, RpcServices> => {
-  const { maxRetries, delay, backoff = "linear", retryOn } = options;
-
-  const shouldRetry = (error: RpcEffectError, attempt: number): boolean => {
-    if (attempt >= maxRetries) return false;
-    if (retryOn) return retryOn(error);
-
-    // Default: retry on network/timeout errors, not on validation
-    if (error._tag === "RpcValidationError") return false;
-    if (error._tag === "RpcCancelledError") return false;
-    return true;
-  };
-
-  const getDelay = (attempt: number): number => {
-    if (backoff === "exponential") {
-      return delay * Math.pow(2, attempt);
-    }
-    return delay * (attempt + 1);
-  };
-
-  const loop = (attempt: number): Effect.Effect<T, RpcEffectError, RpcServices> =>
-    pipe(
-      effect,
-      Effect.catchAll((error) => {
-        if (shouldRetry(error, attempt)) {
-          const retryDelay = getDelay(attempt);
-          return pipe(
-            Effect.sleep(Duration.millis(retryDelay)),
-            Effect.flatMap(() => loop(attempt + 1)),
-          );
-        }
-        return Effect.fail(error);
-      }),
-    );
-
-  return loop(0);
-};
+// Re-export retry utilities from the consolidated utils module
+export { withRetryEffect as withRetry } from "../utils/effect-utils";
+export type { EffectRetryConfig as RetryOptions } from "../utils/effect-utils";
