@@ -556,13 +556,13 @@ describe("withDedup()", () => {
     // Both promises should reject with the same error
     let error1: Error | undefined;
     let error2: Error | undefined;
-    
+
     try {
       await promise1;
     } catch (e) {
       error1 = e as Error;
     }
-    
+
     try {
       await promise2;
     } catch (e) {

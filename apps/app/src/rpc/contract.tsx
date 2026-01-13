@@ -102,7 +102,7 @@ export function useCounter(
   input: CounterInput = {
     start: 0,
     maxCount: 0,
-    intervalMs: 0
+    intervalMs: 0,
   },
   options?: SubscriptionHookOptions<CounterEvent>,
 ): SubscriptionResult<CounterEvent> {

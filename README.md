@@ -178,7 +178,7 @@ import { useSubscription } from "@tauri-nexus/rpc-react";
 function App() {
   // Queries with full type inference
   const { data: user } = useQuery(
-    api.user.get.queryOptions({ input: { id: 1 } })
+    api.user.get.queryOptions({ input: { id: 1 } }),
   );
 
   // Mutations
@@ -187,7 +187,7 @@ function App() {
   // Real-time subscriptions
   const { data: notification, isConnected } = useSubscription(
     () => rpc.notifications.stream(),
-    []
+    [],
   );
 
   return <div>{user?.name}</div>;
@@ -489,7 +489,7 @@ const contract = router({
         z.object({
           name: z.string().min(1).max(100),
           email: z.string().email(),
-        })
+        }),
       )
       .output(z.object({ id: z.number(), name: z.string(), email: z.string() }))
       .mutation(),
@@ -540,7 +540,7 @@ function NotificationFeed() {
       reconnectDelay: 1000,
       onEvent: (notification) => console.log("New:", notification),
       onError: (error) => console.error("Error:", error),
-    }
+    },
   );
 
   return (
@@ -564,7 +564,7 @@ function Dashboard() {
         .batch()
         .add("health", "health", undefined)
         .add("users", "user.list", { page: 1 }),
-    { executeOnMount: true }
+    { executeOnMount: true },
   );
 
   if (batch.isLoading) return <Loading />;
@@ -591,7 +591,7 @@ function UserProfile({ userId }: { userId: number }) {
   const queryClient = useQueryClient();
 
   const { data: user } = useQuery(
-    api.user.get.queryOptions({ input: { id: userId } })
+    api.user.get.queryOptions({ input: { id: userId } }),
   );
 
   const updateUser = useMutation({

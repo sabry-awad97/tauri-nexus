@@ -150,7 +150,9 @@ type InferContract<T> = T extends { readonly __contract?: infer C } ? C : T;
  * const user = await orpc.user.get.call({ id: 1 });
  * ```
  */
-export function createTanstackQueryUtils<TClient extends { readonly __contract?: unknown }>(
+export function createTanstackQueryUtils<
+  TClient extends { readonly __contract?: unknown },
+>(
   client: TClient,
   options: CreateTanstackQueryUtilsOptions = {},
 ): TanstackQueryUtils<InferContract<TClient>> {
@@ -302,5 +304,7 @@ export function createTanstackQueryUtils<TClient extends { readonly __contract?:
     return current as (input?: unknown) => Promise<unknown>;
   }
 
-  return createUtils(client, basePath) as TanstackQueryUtils<InferContract<TClient>>;
+  return createUtils(client, basePath) as TanstackQueryUtils<
+    InferContract<TClient>
+  >;
 }

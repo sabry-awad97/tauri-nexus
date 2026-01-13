@@ -70,13 +70,13 @@ import { useSubscription } from "@tauri-nexus/rpc-react";
 
 function UserProfile({ userId }: { userId: number }) {
   const { data: user } = useQuery(
-    api.user.get.queryOptions({ input: { id: userId } })
+    api.user.get.queryOptions({ input: { id: userId } }),
   );
   const createUser = useMutation(api.user.create.mutationOptions());
 
   const { data: notification, isConnected } = useSubscription(
     () => rpc.notifications.stream(),
-    []
+    [],
   );
 
   return <div>{user?.name}</div>;
@@ -119,7 +119,7 @@ function NotificationFeed() {
       onComplete: () => {
         console.log("Subscription completed");
       },
-    }
+    },
   );
 
   return (
@@ -157,7 +157,7 @@ function Dashboard() {
       onError: (error) => {
         console.error("Batch failed:", error);
       },
-    }
+    },
   );
 
   if (batch.isLoading) return <div>Loading...</div>;
@@ -267,7 +267,7 @@ const { data, fetchNextPage, hasNextPage } = useInfiniteQuery(
   api.user.list.infiniteOptions({
     input: { limit: 10 },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-  })
+  }),
 );
 ```
 
@@ -309,7 +309,7 @@ export function useCounter(config: { start?: number; maxCount?: number } = {}) {
   return useSubscription(
     () => rpc.stream.counter(config),
     [config.start, config.maxCount],
-    { autoReconnect: true }
+    { autoReconnect: true },
   );
 }
 

@@ -1,21 +1,43 @@
 // =============================================================================
-// Utility Functions
+// @tauri-nexus/rpc-core - Utility Functions
 // =============================================================================
+// Common utilities for retry logic, deduplication, and serialization.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { RpcError } from "./types";
+import type { RpcError } from "../core/types";
 
-/** Get list of available procedures from backend */
+// =============================================================================
+// Backend Utilities
+// =============================================================================
+
+/**
+ * Get list of available procedures from backend.
+ */
 export async function getProcedures(): Promise<string[]> {
   return invoke<string[]>("plugin:rpc|rpc_procedures");
 }
 
-/** Sleep utility for retry logic */
+/**
+ * Get current subscription count from backend.
+ */
+export async function getSubscriptionCount(): Promise<number> {
+  return invoke<number>("plugin:rpc|rpc_subscription_count");
+}
+
+// =============================================================================
+// Timing Utilities
+// =============================================================================
+
+/**
+ * Sleep utility for retry logic.
+ */
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Calculate exponential backoff with jitter */
+/**
+ * Calculate exponential backoff with jitter.
+ */
 export function calculateBackoff(
   attempt: number,
   baseDelay: number = 1000,
@@ -31,6 +53,10 @@ export function calculateBackoff(
 
   return cappedDelay;
 }
+
+// =============================================================================
+// Retry Logic
+// =============================================================================
 
 /** Retry configuration */
 export interface RetryConfig {
@@ -49,7 +75,9 @@ export const defaultRetryConfig: RetryConfig = {
   jitter: true,
 };
 
-/** Execute a function with retry logic */
+/**
+ * Execute a function with retry logic.
+ */
 export async function withRetry<T>(
   fn: () => Promise<T>,
   config: Partial<RetryConfig> = {},
@@ -80,6 +108,10 @@ export async function withRetry<T>(
 
   throw lastError;
 }
+
+// =============================================================================
+// Serialization Utilities
+// =============================================================================
 
 /**
  * JSON.stringify with sorted keys for consistent output.
@@ -112,15 +144,23 @@ export function stableStringify(value: unknown): string {
   return "{" + pairs.join(",") + "}";
 }
 
-/** Deduplication key generator with stable object serialization */
+/**
+ * Deduplication key generator with stable object serialization.
+ */
 export function deduplicationKey(path: string, input: unknown): string {
   return `${path}:${stableStringify(input)}`;
 }
 
+// =============================================================================
+// Deduplication
+// =============================================================================
+
 /** Pending request tracker for deduplication */
 const pendingRequests = new Map<string, Promise<unknown>>();
 
-/** Execute a function with deduplication */
+/**
+ * Execute a function with deduplication.
+ */
 export async function withDedup<T>(
   key: string,
   fn: () => Promise<T>,
