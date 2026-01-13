@@ -4,7 +4,6 @@
 //! zod attributes can override serde attributes when both are present.
 
 use zod_rs::ZodSchema;
-use zod_rs_macros::ZodSchema;
 
 // =============================================================================
 // Serde rename_all Compatibility Tests

@@ -68,5 +68,10 @@ async-stream.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 
+zod-rs = { path = "../../../zod-rs/zod-rs", features = [
+    "derive",
+    "serde-compat",
+] }
+
 [dev-dependencies]
 proptest.workspace = true

@@ -16,39 +16,59 @@ import {
 } from "@tauri-nexus/rpc-core";
 
 // =============================================================================
-// Zod Schemas (Generated from Rust structs)
+// Zod Schemas (Generated from Rust structs via zod-rs-cli)
 // =============================================================================
 
-/** User entity schema */
-export const UserSchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  email: z.string(),
-  createdAt: z.string(),
-});
-export type User = z.infer<typeof UserSchema>;
+// Re-export all schemas from the generated schemas file
+export {
+  UserSchema,
+  type User,
+  GetUserInputSchema,
+  type GetUserInput,
+  CreateUserInputSchema,
+  type CreateUserInput,
+  UpdateUserInputSchema,
+  type UpdateUserInput,
+  DeleteUserInputSchema,
+  type DeleteUserInput,
+  GreetInputSchema,
+  type GreetInput,
+  HealthResponseSchema,
+  type HealthResponse,
+  CounterInputSchema,
+  type CounterInput,
+  CounterEventSchema,
+  type CounterEvent,
+  ChatRoomInputSchema,
+  type ChatRoomInput,
+  ChatMessageSchema,
+  type ChatMessage,
+  SendMessageInputSchema,
+  type SendMessageInput,
+  StockInputSchema,
+  type StockInput,
+  StockPriceSchema,
+  type StockPrice,
+} from "./schemas";
 
-/** Create user input schema */
-export const CreateUserInputSchema = z.object({
-  name: z.string(),
-  email: z.string(),
-});
-export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;
+// Import schemas for use in contract definition
+import {
+  UserSchema,
+  CreateUserInputSchema,
+  UpdateUserInputSchema,
+  HealthResponseSchema,
+  CounterInputSchema,
+  CounterEventSchema,
+  ChatRoomInputSchema,
+  ChatMessageSchema,
+  SendMessageInputSchema,
+  StockInputSchema,
+  StockPriceSchema,
+} from "./schemas";
 
-/** Update user input schema */
-export const UpdateUserInputSchema = z.object({
-  id: z.number(),
-  name: z.string().optional(),
-  email: z.string().optional(),
-});
-export type UpdateUserInput = z.infer<typeof UpdateUserInputSchema>;
-
-/** Health response schema */
-export const HealthResponseSchema = z.object({
-  status: z.string(),
-  version: z.string(),
-});
-export type HealthResponse = z.infer<typeof HealthResponseSchema>;
+// =============================================================================
+// Additional Schemas (Not in Rust types)
+// =============================================================================
 
 /** Success response schema */
 export const SuccessResponseSchema = z.object({
@@ -56,64 +76,6 @@ export const SuccessResponseSchema = z.object({
   message: z.string().optional(),
 });
 export type SuccessResponse = z.infer<typeof SuccessResponseSchema>;
-
-// =============================================================================
-// Subscription Schemas (Generated from Rust structs)
-// =============================================================================
-
-/** Counter input schema */
-export const CounterInputSchema = z.object({
-  start: z.number().optional(),
-  maxCount: z.number().optional(),
-  intervalMs: z.number().optional(),
-});
-export type CounterInput = z.infer<typeof CounterInputSchema>;
-
-/** Counter event schema */
-export const CounterEventSchema = z.object({
-  count: z.number(),
-  timestamp: z.string(),
-});
-export type CounterEvent = z.infer<typeof CounterEventSchema>;
-
-/** Chat room input schema */
-export const ChatRoomInputSchema = z.object({
-  roomId: z.string(),
-});
-export type ChatRoomInput = z.infer<typeof ChatRoomInputSchema>;
-
-/** Chat message schema */
-export const ChatMessageSchema = z.object({
-  id: z.string(),
-  roomId: z.string(),
-  userId: z.string(),
-  text: z.string(),
-  timestamp: z.string(),
-});
-export type ChatMessage = z.infer<typeof ChatMessageSchema>;
-
-/** Send message input schema */
-export const SendMessageInputSchema = z.object({
-  roomId: z.string(),
-  text: z.string(),
-});
-export type SendMessageInput = z.infer<typeof SendMessageInputSchema>;
-
-/** Stock input schema */
-export const StockInputSchema = z.object({
-  symbols: z.array(z.string()),
-});
-export type StockInput = z.infer<typeof StockInputSchema>;
-
-/** Stock price schema */
-export const StockPriceSchema = z.object({
-  symbol: z.string(),
-  price: z.number(),
-  change: z.number(),
-  changePercent: z.number(),
-  timestamp: z.string(),
-});
-export type StockPrice = z.infer<typeof StockPriceSchema>;
 
 /** Chat history input schema */
 export const ChatHistoryInputSchema = z.object({

@@ -4,7 +4,6 @@
 //! for various struct and enum definitions.
 
 use zod_rs::ZodSchema;
-use zod_rs_macros::ZodSchema;
 
 // =============================================================================
 // Basic Struct Tests

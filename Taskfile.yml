@@ -1,0 +1,123 @@
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+  ZOD_RS_CLI: zod-rs/target/release/zod-rs
+  APP_RPC_TYPES: apps/app/src-tauri/src/rpc
+  APP_GENERATED: apps/app/src/generated
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # =============================================================================
+  # Build Tasks
+  # =============================================================================
+
+  build:zod-cli:
+    desc: Build the zod-rs CLI tool
+    dir: zod-rs/zod-rs-cli
+    cmds:
+      - cargo build --release
+    sources:
+      - zod-rs/zod-rs-cli/src/**/*.rs
+      - zod-rs/zod-rs-macros/src/**/*.rs
+      - zod-rs/zod-rs/src/**/*.rs
+    generates:
+      - "{{.ZOD_RS_CLI}}{{exeExt}}"
+
+  build:app:
+    desc: Build the Tauri app
+    dir: apps/app/src-tauri
+    cmds:
+      - cargo build
+
+  # =============================================================================
+  # Code Generation Tasks
+  # =============================================================================
+
+  generate:schemas:
+    desc: Generate TypeScript Zod schemas from Rust types
+    deps:
+      - build:zod-cli
+    cmds:
+      - "{{.ZOD_RS_CLI}} generate --input {{.APP_RPC_TYPES}} --output {{.APP_GENERATED}}"
+    sources:
+      - "{{.APP_RPC_TYPES}}/**/*.rs"
+    generates:
+      - "{{.APP_GENERATED}}/schemas.ts"
+
+  generate:
+    desc: Run all code generation tasks
+    cmds:
+      - task: generate:schemas
+
+  # =============================================================================
+  # Development Tasks
+  # =============================================================================
+
+  dev:app:
+    desc: Run the Tauri app in development mode
+    dir: apps/app
+    cmds:
+      - bun run tauri dev
+
+  dev:
+    desc: Start development (generate + run)
+    cmds:
+      - task: generate
+      - task: dev:app
+
+  # =============================================================================
+  # Test Tasks
+  # =============================================================================
+
+  test:zod-rs:
+    desc: Run zod-rs tests
+    dir: zod-rs
+    cmds:
+      - cargo test --all
+
+  test:app:
+    desc: Run app tests
+    dir: apps/app
+    cmds:
+      - bun test
+
+  test:
+    desc: Run all tests
+    cmds:
+      - task: test:zod-rs
+      - task: test:app
+
+  # =============================================================================
+  # Utility Tasks
+  # =============================================================================
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - cmd: rm -rf zod-rs/target
+        platforms: [linux, darwin]
+      - cmd: if exist zod-rs\target rmdir /s /q zod-rs\target
+        platforms: [windows]
+
+  check:
+    desc: Run cargo check on all Rust code
+    cmds:
+      - cargo check --workspace
+
+  fmt:
+    desc: Format all code
+    cmds:
+      - cargo fmt --all
+      - bun run prettier --write .
+
+  lint:
+    desc: Lint all code
+    cmds:
+      - cargo clippy --workspace
+      - bun run eslint .

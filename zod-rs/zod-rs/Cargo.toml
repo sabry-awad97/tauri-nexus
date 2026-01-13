@@ -12,15 +12,18 @@ keywords = ["zod", "typescript", "schema", "codegen", "derive"]
 categories = ["development-tools", "web-programming"]
 
 [features]
-default = ["std", "serde-compat"]
+default = ["std", "serde-compat", "derive"]
 
 # Core features
 std = []
 serde-compat = ["dep:serde"]
 
+# Derive macro
+derive = ["dep:zod-rs-macros"]
+
 # Optional type support
-chrono = ["dep:chrono"]
-uuid = ["dep:uuid"]
+chrono = ["dep:chrono", "zod-rs-macros?/chrono"]
+uuid = ["dep:uuid", "zod-rs-macros?/uuid"]
 
 # Framework integrations (optional)
 tauri = ["dep:serde", "dep:serde_json"]

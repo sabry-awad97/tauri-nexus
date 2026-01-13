@@ -30,6 +30,9 @@ pub struct GeneratedSchema {
     /// TypeScript type name.
     pub type_name: String,
 
+    /// Generated Zod schema code.
+    pub schema_code: String,
+
     /// Dependencies on other schemas.
     pub dependencies: Vec<String>,
 }
@@ -83,13 +86,13 @@ impl SchemaGenerator {
         let dependencies = self.extract_dependencies(&parsed_type.derive_input);
 
         // Generate the Zod schema code using the derive input
-        // We'll use a simplified approach here since we can't directly call the macro
-        let _schema_code = self.generate_schema_code(&parsed_type.derive_input);
+        let schema_code = self.generate_schema_code(&parsed_type.derive_input);
 
         Ok(GeneratedSchema {
             name,
             schema_name,
             type_name,
+            schema_code,
             dependencies,
         })
     }
@@ -474,9 +477,7 @@ impl SchemaGenerator {
 
     /// Generate the schema body (placeholder - would use actual IR).
     fn generate_schema_body(&self, schema: &GeneratedSchema) -> String {
-        // This is a placeholder - in a full implementation,
-        // we would store the generated code in GeneratedSchema
-        format!("z.object({{ /* {} */ }})", schema.name)
+        schema.schema_code.clone()
     }
 
     /// Generate output for empty input.

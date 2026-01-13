@@ -4,7 +4,6 @@
 //! Run `cargo insta review` to review and accept snapshot changes.
 
 use zod_rs::ZodSchema;
-use zod_rs_macros::ZodSchema;
 
 // =============================================================================
 // Basic Struct Snapshots

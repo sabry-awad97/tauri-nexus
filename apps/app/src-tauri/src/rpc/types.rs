@@ -3,17 +3,19 @@
 //! These types are mirrored in TypeScript at: src/generated/types.ts
 
 use serde::{Deserialize, Serialize};
+use zod_rs::ZodSchema;
 
 // =============================================================================
 // User Types
 // =============================================================================
 
 /// User entity
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
     pub id: u32,
     pub name: String,
+    #[zod(email)]
     pub email: String,
     pub created_at: String,
 }
@@ -30,30 +32,32 @@ impl User {
 }
 
 /// Input for getting a user by ID
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 pub struct GetUserInput {
     pub id: u32,
 }
 
 /// Input for creating a user
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 pub struct CreateUserInput {
     pub name: String,
+    #[zod(email)]
     pub email: String,
 }
 
 /// Input for updating a user
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 pub struct UpdateUserInput {
     pub id: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[zod(email)]
     pub email: Option<String>,
 }
 
 /// Input for deleting a user
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 pub struct DeleteUserInput {
     pub id: u32,
 }
@@ -63,13 +67,13 @@ pub struct DeleteUserInput {
 // =============================================================================
 
 /// Input for greeting
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 pub struct GreetInput {
     pub name: String,
 }
 
 /// Health check response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
@@ -80,7 +84,7 @@ pub struct HealthResponse {
 // =============================================================================
 
 /// Input for counter subscription
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CounterInput {
     /// Starting value
@@ -102,7 +106,7 @@ fn default_interval() -> u64 {
 }
 
 /// Counter event data
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CounterEvent {
     pub count: i32,
@@ -110,14 +114,14 @@ pub struct CounterEvent {
 }
 
 /// Input for chat room subscription
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatRoomInput {
     pub room_id: String,
 }
 
 /// Chat message event
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
     pub id: String,
@@ -128,7 +132,7 @@ pub struct ChatMessage {
 }
 
 /// Input for sending a chat message
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessageInput {
     pub room_id: String,
@@ -136,13 +140,14 @@ pub struct SendMessageInput {
 }
 
 /// Input for stock price subscription
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 pub struct StockInput {
+    #[zod(nonempty)]
     pub symbols: Vec<String>,
 }
 
 /// Stock price event
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ZodSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StockPrice {
     pub symbol: String,

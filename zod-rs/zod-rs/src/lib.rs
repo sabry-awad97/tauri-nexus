@@ -289,5 +289,5 @@ pub use traits::ZodSchema;
 pub use types::{SchemaMetadata, TypeSchema};
 
 // Re-export derive macro when available
-#[cfg(feature = "zod-rs-macros")]
+#[cfg(feature = "derive")]
 pub use zod_rs_macros::ZodSchema;
