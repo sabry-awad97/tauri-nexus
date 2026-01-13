@@ -1,0 +1,19 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "AllPrimitives::zod_schema()"
+---
+z.object({
+
+  string_field: z.string(),
+  bool_field: z.boolean(),
+  i8_field: z.number().int(),
+  i16_field: z.number().int(),
+  i32_field: z.number().int(),
+  i64_field: z.number().int(),
+  u8_field: z.number().int().nonnegative(),
+  u16_field: z.number().int().nonnegative(),
+  u32_field: z.number().int().nonnegative(),
+  u64_field: z.number().int().nonnegative(),
+  f32_field: z.number(),
+  f64_field: z.number()
+})

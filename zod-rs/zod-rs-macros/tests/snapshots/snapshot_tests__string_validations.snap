@@ -1,0 +1,12 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "StringValidations::zod_schema()"
+---
+z.object({
+
+  email: z.string().email(),
+  website: z.string().url(),
+  id: z.string().uuid(),
+  country_code: z.string().regex(/^[A-Z]{2,3}$/)),
+  description: z.string().min(1).max(255)
+})

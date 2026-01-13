@@ -1,0 +1,5 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "Status::zod_schema()"
+---
+z.enum(["Pending", "Active", "Suspended", "Deleted"])

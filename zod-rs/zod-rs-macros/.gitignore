@@ -1,0 +1,7 @@
+# Insta snapshot testing - pending snapshots (not yet reviewed/accepted)
+# These are created when running tests and snapshots change
+# Use `cargo insta review` to accept or reject them
+*.snap.new
+
+# Insta pending snapshot directory
+.pending-snapshots/

@@ -1,0 +1,11 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "UserProfile::zod_schema()"
+---
+z.object({
+
+  firstName: z.string(),
+  lastName: z.string(),
+  emailAddress: z.string(),
+  phoneNumber: z.string().optional()
+})

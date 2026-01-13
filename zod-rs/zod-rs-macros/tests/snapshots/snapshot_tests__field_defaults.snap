@@ -1,0 +1,10 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "Settings::zod_schema()"
+---
+z.object({
+
+  language: z.string().default("en"),
+  notifications: z.boolean().default(true),
+  page_size: z.number().int().nonnegative().default(10)
+})

@@ -60,10 +60,10 @@ impl SchemaRegistry {
         let mut temp_visited = std::collections::HashSet::new();
 
         for name in self.schemas.keys() {
-            if !visited.contains(name) {
-                if !self.visit(name, &mut visited, &mut temp_visited, &mut result) {
-                    return None; // Cycle detected
-                }
+            if !visited.contains(name)
+                && !self.visit(name, &mut visited, &mut temp_visited, &mut result)
+            {
+                return None; // Cycle detected
             }
         }
 

@@ -1,0 +1,10 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "Company::zod_schema()"
+---
+z.object({
+
+  name: z.string(),
+  address: AddressSchema,
+  employees: z.array(z.string())
+})

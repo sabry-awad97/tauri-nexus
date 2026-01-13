@@ -1,0 +1,5 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "Empty::zod_schema()"
+---
+z.object({})

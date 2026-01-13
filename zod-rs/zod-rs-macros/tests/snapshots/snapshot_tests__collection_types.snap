@@ -1,0 +1,10 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "DataContainer::zod_schema()"
+---
+z.object({
+
+  items: z.array(z.string()),
+  tags: z.array(z.string()),
+  counts: z.array(z.number().int().nonnegative())
+})

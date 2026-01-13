@@ -23,7 +23,7 @@ chrono = ["dep:chrono"]
 uuid = ["dep:uuid"]
 
 # Framework integrations (optional)
-tauri = []
+tauri = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 serde = { workspace = true, optional = true }

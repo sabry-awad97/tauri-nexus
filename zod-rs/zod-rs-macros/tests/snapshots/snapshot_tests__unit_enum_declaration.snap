@@ -1,0 +1,7 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+assertion_line: 176
+expression: "Status::ts_declaration()"
+---
+export const StatusSchema = z.enum(["Pending", "Active", "Suspended", "Deleted"]);
+export type Status = z.infer<typeof StatusSchema>;

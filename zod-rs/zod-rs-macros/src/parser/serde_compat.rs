@@ -121,8 +121,10 @@ impl SerdeFieldAttrs {
     }
 
     /// Check if this field should be skipped entirely.
+    /// For schema generation, we skip if the field is skipped for serialization OR deserialization,
+    /// since the schema represents the data contract.
     pub fn should_skip(&self) -> bool {
-        self.skip || (self.skip_serializing && self.skip_deserializing)
+        self.skip || self.skip_serializing || self.skip_deserializing
     }
 }
 
@@ -261,11 +263,14 @@ mod tests {
 
         attrs.skip = false;
         attrs.skip_serializing = true;
+        assert!(attrs.should_skip()); // skip_serializing alone triggers skip
+
+        attrs.skip_serializing = false;
         attrs.skip_deserializing = true;
-        assert!(attrs.should_skip());
+        assert!(attrs.should_skip()); // skip_deserializing alone triggers skip
 
         attrs.skip_deserializing = false;
-        assert!(!attrs.should_skip());
+        assert!(!attrs.should_skip()); // neither set, should not skip
     }
 
     #[test]

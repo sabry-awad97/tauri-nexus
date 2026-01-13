@@ -74,10 +74,17 @@ impl EnumParser {
         #[cfg(not(feature = "serde-compat"))]
         let tagging = Self::determine_tagging_no_serde(&container_attrs);
 
+        // Merge rename_all: zod takes precedence over serde
+        #[cfg(feature = "serde-compat")]
+        let effective_rename_all = container_attrs.rename_all.or(serde_attrs.rename_all);
+
+        #[cfg(not(feature = "serde-compat"))]
+        let effective_rename_all = container_attrs.rename_all;
+
         // Parse all variants
         let variants = Self::parse_variants(
             &data_enum.variants,
-            container_attrs.rename_all,
+            effective_rename_all,
             #[cfg(feature = "serde-compat")]
             &serde_attrs,
         )?;

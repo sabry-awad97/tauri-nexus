@@ -18,6 +18,9 @@ use crate::ir::{
 use crate::parser::attributes::{ContainerAttrs, FieldAttrs, RenameRule};
 use crate::parser::type_parser::{ParseError, TypeParser};
 
+#[cfg(feature = "serde-compat")]
+use crate::parser::serde_compat::{SerdeContainerAttrs, SerdeFieldAttrs};
+
 /// Error type for struct parsing failures.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum StructParseError {
@@ -49,6 +52,19 @@ impl StructParser {
         let container_attrs = ContainerAttrs::from_derive_input(input)
             .map_err(|e| StructParseError::ContainerAttrs(e.to_string()))?;
 
+        // Parse serde container attributes if feature is enabled
+        #[cfg(feature = "serde-compat")]
+        let serde_container_attrs = SerdeContainerAttrs::from_attrs(&input.attrs);
+
+        // Merge rename_all: zod takes precedence over serde
+        #[cfg(feature = "serde-compat")]
+        let effective_rename_all = container_attrs
+            .rename_all
+            .or(serde_container_attrs.rename_all);
+
+        #[cfg(not(feature = "serde-compat"))]
+        let effective_rename_all = container_attrs.rename_all;
+
         // Ensure we have a struct
         let data_struct = match &input.data {
             Data::Struct(s) => s,
@@ -59,7 +75,7 @@ impl StructParser {
         // Parse based on struct kind
         let kind = match &data_struct.fields {
             Fields::Named(fields) => {
-                let field_irs = Self::parse_named_fields(fields, container_attrs.rename_all)?;
+                let field_irs = Self::parse_named_fields(fields, effective_rename_all)?;
                 SchemaKind::Struct(StructSchema::new(field_irs).with_strict(container_attrs.strict))
             }
             Fields::Unnamed(fields) => {
@@ -113,8 +129,19 @@ impl StructParser {
             let field_attrs = FieldAttrs::from_field(field)
                 .map_err(|e| StructParseError::FieldAttrs(e.to_string()))?;
 
-            // Skip fields marked with #[zod(skip)]
-            if field_attrs.skip {
+            // Parse serde field attributes if feature is enabled
+            #[cfg(feature = "serde-compat")]
+            let serde_field_attrs = SerdeFieldAttrs::from_attrs(&field.attrs);
+
+            // Merge skip: zod takes precedence, but serde skip also applies
+            #[cfg(feature = "serde-compat")]
+            let should_skip = field_attrs.skip || serde_field_attrs.should_skip();
+
+            #[cfg(not(feature = "serde-compat"))]
+            let should_skip = field_attrs.skip;
+
+            // Skip fields marked with #[zod(skip)] or #[serde(skip)]
+            if should_skip {
                 continue;
             }
 
@@ -126,6 +153,17 @@ impl StructParser {
                 .to_string();
 
             // Get schema name (apply rename rules)
+            // Priority: zod rename > serde rename > rename_all rule > original name
+            #[cfg(feature = "serde-compat")]
+            let schema_name = if field_attrs.rename.is_some() {
+                field_attrs.schema_name(rename_all)
+            } else if let Some(ref serde_rename) = serde_field_attrs.rename {
+                serde_rename.clone()
+            } else {
+                field_attrs.schema_name(rename_all)
+            };
+
+            #[cfg(not(feature = "serde-compat"))]
             let schema_name = field_attrs.schema_name(rename_all);
 
             // Parse field type
@@ -147,12 +185,26 @@ impl StructParser {
             // Get validation rules from attributes
             let validation = field_attrs.to_validation_rules();
 
+            // Merge flatten: zod takes precedence, but serde flatten also applies
+            #[cfg(feature = "serde-compat")]
+            let is_flatten = field_attrs.flatten || serde_field_attrs.flatten;
+
+            #[cfg(not(feature = "serde-compat"))]
+            let is_flatten = field_attrs.flatten;
+
+            // Merge optional: zod takes precedence, but serde default makes field optional
+            #[cfg(feature = "serde-compat")]
+            let is_optional = field_attrs.optional || serde_field_attrs.default;
+
+            #[cfg(not(feature = "serde-compat"))]
+            let is_optional = field_attrs.optional;
+
             // Build the field IR
             let field_ir = FieldIR::new(&rust_name, ty)
                 .with_schema_name(schema_name)
-                .with_optional(field_attrs.optional)
+                .with_optional(is_optional)
                 .with_nullable(field_attrs.nullable)
-                .with_flatten(field_attrs.flatten)
+                .with_flatten(is_flatten)
                 .with_validation(validation)
                 .with_metadata(field_metadata);
 

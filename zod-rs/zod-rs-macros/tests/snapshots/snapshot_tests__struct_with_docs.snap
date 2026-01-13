@@ -1,0 +1,9 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "AppConfig::zod_schema()"
+---
+z.object({
+
+  name: z.string().describe("The application name"),
+  version: z.string().describe("The version number")
+}).describe("A configuration object for the application")

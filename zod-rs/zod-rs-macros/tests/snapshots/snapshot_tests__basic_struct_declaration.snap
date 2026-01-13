@@ -1,0 +1,12 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+assertion_line: 24
+expression: "User::ts_declaration()"
+---
+export const UserSchema = z.object({
+
+  name: z.string(),
+  age: z.number().int().nonnegative(),
+  active: z.boolean()
+});
+export type User = z.infer<typeof UserSchema>;

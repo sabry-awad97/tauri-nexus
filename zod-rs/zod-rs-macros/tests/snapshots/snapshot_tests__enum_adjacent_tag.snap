@@ -1,0 +1,9 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "Event::zod_schema()"
+---
+z.discriminatedUnion("event", [
+  z.object({ event: z.literal("UserCreated"), payload: z.object({ user_id: z.string(), email: z.string() }) }),
+  z.object({ event: z.literal("UserDeleted"), payload: z.object({ user_id: z.string() }) }),
+  z.object({ event: z.literal("OrderPlaced"), payload: z.object({ order_id: z.string(), total: z.number() }) })
+])

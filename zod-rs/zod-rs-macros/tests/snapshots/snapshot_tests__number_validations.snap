@@ -1,0 +1,11 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "NumberValidations::zod_schema()"
+---
+z.object({
+
+  positive_num: z.number().int().positive(),
+  integer: z.number().int(),
+  percentage: z.number().min(0).max(100),
+  at_least_one: z.number().int().nonnegative().min(1)
+})

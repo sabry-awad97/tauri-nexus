@@ -1,0 +1,9 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "StrictConfig::zod_schema()"
+---
+z.object({
+
+  host: z.string(),
+  port: z.number().int().nonnegative()
+}).strict()

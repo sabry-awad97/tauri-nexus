@@ -1,0 +1,11 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "Registration::zod_schema()"
+---
+z.object({
+
+  username: z.string().min(3).max(50),
+  email: z.string().email(),
+  password: z.string().min(8),
+  age: z.number().int().nonnegative().min(18).max(120)
+})

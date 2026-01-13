@@ -1,0 +1,9 @@
+---
+source: zod-rs-macros/tests/snapshot_tests.rs
+expression: "Message::zod_schema()"
+---
+z.discriminatedUnion("type", [
+  z.object({ type: z.literal("Text"), content: z.string() }),
+  z.object({ type: z.literal("Image"), url: z.string(), alt: z.string().optional() }),
+  z.object({ type: z.literal("Video"), url: z.string(), duration: z.number().int().nonnegative() })
+])
