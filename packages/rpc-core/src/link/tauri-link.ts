@@ -5,7 +5,11 @@
 // Uses Effect throughout for type-safe error handling and composition.
 
 import { Effect, pipe, Layer } from "effect";
-import { callEffect, subscribeEffect, validatePath } from "../internal/effect-call";
+import {
+  callEffect,
+  subscribeEffect,
+  validatePath,
+} from "../internal/effect-call";
 import { toPublicError, parseEffectError } from "../internal/effect-errors";
 import {
   makeConfigLayer,
@@ -111,7 +115,9 @@ export class TauriLink<TClientContext = unknown> {
       };
 
       if (link.config.onRequest) {
-        yield* Effect.promise(() => Promise.resolve(link.config.onRequest!(ctx)));
+        yield* Effect.promise(() =>
+          Promise.resolve(link.config.onRequest!(ctx)),
+        );
       }
 
       const result = yield* pipe(
@@ -128,7 +134,9 @@ export class TauriLink<TClientContext = unknown> {
       );
 
       if (link.config.onResponse) {
-        yield* Effect.promise(() => Promise.resolve(link.config.onResponse!(result, ctx)));
+        yield* Effect.promise(() =>
+          Promise.resolve(link.config.onResponse!(result, ctx)),
+        );
       }
 
       return result;
@@ -154,7 +162,9 @@ export class TauriLink<TClientContext = unknown> {
       };
 
       if (link.config.onRequest) {
-        yield* Effect.promise(() => Promise.resolve(link.config.onRequest!(ctx)));
+        yield* Effect.promise(() =>
+          Promise.resolve(link.config.onRequest!(ctx)),
+        );
       }
 
       const iterator = yield* pipe(
@@ -214,7 +224,10 @@ export class TauriLink<TClientContext = unknown> {
   ): TauriLink<TClientContext> {
     return new TauriLink({
       ...this.config,
-      interceptors: [...(this.config.interceptors ?? []), ...(interceptors ?? [])],
+      interceptors: [
+        ...(this.config.interceptors ?? []),
+        ...(interceptors ?? []),
+      ],
     });
   }
 

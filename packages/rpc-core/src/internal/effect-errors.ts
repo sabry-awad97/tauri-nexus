@@ -27,8 +27,7 @@ export const makeCallError = (
   message: string,
   details?: unknown,
   cause?: string,
-): RpcCallError =>
-  new RpcCallError({ code, message, details, cause });
+): RpcCallError => new RpcCallError({ code, message, details, cause });
 
 /**
  * Create a timeout error.
@@ -117,7 +116,11 @@ export const parseEffectError = (
     (error as { error: unknown }).error !== undefined
   ) {
     // Recursively parse the wrapped error
-    return parseEffectError((error as { error: unknown }).error, path, timeoutMs);
+    return parseEffectError(
+      (error as { error: unknown }).error,
+      path,
+      timeoutMs,
+    );
   }
 
   // Handle JSON string errors from backend
@@ -187,19 +190,19 @@ const isEffectRpcError = (error: unknown): error is RpcEffectError => {
  */
 function extractFailuresFromCause(cause: unknown): unknown[] {
   if (!cause || typeof cause !== "object") return [];
-  
+
   const c = cause as Record<string, unknown>;
-  
+
   // Handle Fail cause - contains the actual error
   if (c._tag === "Fail") {
     return [c.error];
   }
-  
+
   // Handle Die cause - contains defect
   if (c._tag === "Die") {
     return [c.defect];
   }
-  
+
   // Handle Sequential cause - has left and right
   if (c._tag === "Sequential" || c._tag === "Parallel") {
     return [
@@ -207,7 +210,7 @@ function extractFailuresFromCause(cause: unknown): unknown[] {
       ...extractFailuresFromCause(c.right),
     ];
   }
-  
+
   return [];
 }
 
@@ -261,7 +264,12 @@ export const fromPublicError = (
         (error.details as { issues?: ValidationIssue[] })?.issues ?? [],
       );
     default:
-      return makeCallError(error.code, error.message, error.details, error.cause);
+      return makeCallError(
+        error.code,
+        error.message,
+        error.details,
+        error.cause,
+      );
   }
 };
 

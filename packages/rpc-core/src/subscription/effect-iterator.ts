@@ -13,10 +13,7 @@ import type {
   SubscriptionOptions,
   SubscribeRequest,
 } from "../core/types";
-import {
-  makeCallError,
-  makeNetworkError,
-} from "../internal/effect-errors";
+import { makeCallError, makeNetworkError } from "../internal/effect-errors";
 import type { RpcEffectError } from "../internal/effect-types";
 
 // =============================================================================
@@ -69,7 +66,7 @@ function extractError(error: unknown): RpcError {
       return failure.value as RpcError;
     }
   }
-  
+
   // Check if it's a FiberFailure with a cause property
   if (error && typeof error === "object" && "cause" in error) {
     const fiberFailure = error as { cause: Cause.Cause<unknown> };
@@ -78,12 +75,17 @@ function extractError(error: unknown): RpcError {
       return failure.value as RpcError;
     }
   }
-  
+
   // If it's already an RpcError, return it
-  if (error && typeof error === "object" && "code" in error && "message" in error) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    "message" in error
+  ) {
     return error as RpcError;
   }
-  
+
   // Try to parse JSON from the error message (FiberFailure wraps errors as JSON strings)
   if (error instanceof Error) {
     const message = error.message;
@@ -99,7 +101,7 @@ function extractError(error: unknown): RpcError {
       }
     }
   }
-  
+
   // Fallback
   return {
     code: "UNKNOWN",
@@ -192,7 +194,11 @@ const reconnectEffect = <T>(
   eventQueue: Queue.Queue<QueueItem<T>>,
 ): Effect.Effect<boolean, RpcEffectError> =>
   Effect.gen(function* () {
-    const { autoReconnect = false, maxReconnects = 5, reconnectDelay = 1000 } = options;
+    const {
+      autoReconnect = false,
+      maxReconnects = 5,
+      reconnectDelay = 1000,
+    } = options;
 
     if (!autoReconnect) {
       return false;
@@ -203,7 +209,7 @@ const reconnectEffect = <T>(
     if (state.reconnectAttempts >= maxReconnects) {
       // Mark as completed and send error events to all pending consumers
       yield* Ref.update(stateRef, (s) => ({ ...s, completed: true }));
-      
+
       // Send error events to reject all pending consumers
       const errorEvent: SubscriptionEvent<T> = {
         type: "error",
@@ -213,13 +219,13 @@ const reconnectEffect = <T>(
           details: { attempts: state.reconnectAttempts, maxReconnects, path },
         },
       };
-      
+
       // Send error to all pending consumers
       const sentinelsToSend = Math.max(1, state.pendingConsumers + 1);
       for (let i = 0; i < sentinelsToSend; i++) {
         yield* Queue.offer(eventQueue, errorEvent);
       }
-      
+
       yield* Effect.fail(
         makeCallError(
           "MAX_RECONNECTS_EXCEEDED",
@@ -237,7 +243,8 @@ const reconnectEffect = <T>(
     }));
 
     const currentState = yield* Ref.get(stateRef);
-    const delay = reconnectDelay * Math.pow(2, currentState.reconnectAttempts - 1);
+    const delay =
+      reconnectDelay * Math.pow(2, currentState.reconnectAttempts - 1);
     const jitteredDelay = delay * (0.5 + Math.random() * 0.5);
 
     yield* Effect.sleep(Duration.millis(jitteredDelay));
@@ -253,8 +260,12 @@ const reconnectEffect = <T>(
     // Try to reconnect
     yield* pipe(
       connectEffect(stateRef, path, input, eventQueue),
-      Effect.tap(() => Ref.update(stateRef, (s) => ({ ...s, reconnectAttempts: 0 }))),
-      Effect.catchAll(() => reconnectEffect(stateRef, path, input, options, eventQueue)),
+      Effect.tap(() =>
+        Ref.update(stateRef, (s) => ({ ...s, reconnectAttempts: 0 })),
+      ),
+      Effect.catchAll(() =>
+        reconnectEffect(stateRef, path, input, options, eventQueue),
+      ),
     );
 
     return true;
@@ -313,7 +324,10 @@ export const createEventIteratorEffect = <T>(
                   const state = yield* Ref.get(stateRef);
 
                   if (state.completed) {
-                    return { done: true, value: undefined } as IteratorResult<T>;
+                    return {
+                      done: true,
+                      value: undefined,
+                    } as IteratorResult<T>;
                   }
 
                   // Increment pending consumers count before waiting
@@ -333,7 +347,10 @@ export const createEventIteratorEffect = <T>(
 
                   // Check for shutdown sentinel
                   if (item === SHUTDOWN_SENTINEL) {
-                    return { done: true, value: undefined } as IteratorResult<T>;
+                    return {
+                      done: true,
+                      value: undefined,
+                    } as IteratorResult<T>;
                   }
 
                   const event = item as SubscriptionEvent<T>;
@@ -352,11 +369,20 @@ export const createEventIteratorEffect = <T>(
 
                     case "error": {
                       const error = event.payload as RpcError;
-                      yield* Ref.update(stateRef, (s) => ({ ...s, completed: true }));
+                      yield* Ref.update(stateRef, (s) => ({
+                        ...s,
+                        completed: true,
+                      }));
 
                       if (options.autoReconnect) {
                         const reconnected = yield* pipe(
-                          reconnectEffect(stateRef, path, input, options, eventQueue),
+                          reconnectEffect(
+                            stateRef,
+                            path,
+                            input,
+                            options,
+                            eventQueue,
+                          ),
                           Effect.catchAll(() => Effect.succeed(false)),
                         );
                         if (reconnected) {
@@ -368,12 +394,21 @@ export const createEventIteratorEffect = <T>(
                     }
 
                     case "completed": {
-                      yield* Ref.update(stateRef, (s) => ({ ...s, completed: true }));
-                      return { done: true, value: undefined } as IteratorResult<T>;
+                      yield* Ref.update(stateRef, (s) => ({
+                        ...s,
+                        completed: true,
+                      }));
+                      return {
+                        done: true,
+                        value: undefined,
+                      } as IteratorResult<T>;
                     }
 
                     default:
-                      return { done: true, value: undefined } as IteratorResult<T>;
+                      return {
+                        done: true,
+                        value: undefined,
+                      } as IteratorResult<T>;
                   }
                 }),
               );
@@ -393,21 +428,6 @@ export const createEventIteratorEffect = <T>(
 
     return iterator;
   });
-
-// =============================================================================
-// Promise-Based Wrapper (for backwards compatibility)
-// =============================================================================
-
-/**
- * Create an async event iterator (Promise-based wrapper).
- */
-export async function createEventIterator<T>(
-  path: string,
-  input: unknown = null,
-  options: SubscriptionOptions = {},
-): Promise<EventIterator<T>> {
-  return Effect.runPromise(createEventIteratorEffect<T>(path, input, options));
-}
 
 // =============================================================================
 // Consumer Utility

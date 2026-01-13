@@ -1,5 +1,5 @@
 // =============================================================================
-// @tauri-nexus/rpc-core - Client Factory
+// @tauri-nexus/rpc-core - Client Factory (Public Promise API)
 // =============================================================================
 // Factory functions for creating type-safe RPC clients.
 
@@ -9,7 +9,7 @@ import {
   configureRpc,
   isSubscriptionPath,
   type RpcClientConfig,
-} from "./config";
+} from "../client/config";
 import { call, subscribe } from "./call";
 import { TypedBatchBuilder } from "./batch";
 
@@ -21,11 +21,7 @@ import { TypedBatchBuilder } from "./batch";
  * Extended client type that includes the batch() method.
  */
 export type RpcClient<T> = RouterClient<T> & {
-  /** Brand to carry contract type for inference */
   readonly __contract?: T;
-  /**
-   * Create a type-safe batch builder for executing multiple requests.
-   */
   batch(): TypedBatchBuilder<T, Record<string, never>>;
 };
 
@@ -33,10 +29,8 @@ export type RpcClient<T> = RouterClient<T> & {
 // Client Proxy
 // =============================================================================
 
-/** Symbol to identify the client proxy */
 const CLIENT_PROXY = Symbol("rpc-client-proxy");
 
-/** Create a proxy that builds paths and calls the appropriate function */
 function createClientProxy<T>(pathParts: string[]): RpcClient<T> {
   const handler = function (
     inputOrOptions?: unknown,
@@ -104,13 +98,6 @@ export function createClient<T>(config?: RpcClientConfig): RpcClient<T> {
 
 /**
  * Create a client with explicit subscription paths.
- *
- * @example
- * ```typescript
- * const rpc = createClientWithSubscriptions<MyContract>({
- *   subscriptionPaths: ['stream.counter', 'stream.chat'],
- * });
- * ```
  */
 export function createClientWithSubscriptions<T>(
   config: RpcClientConfig & { subscriptionPaths: string[] },

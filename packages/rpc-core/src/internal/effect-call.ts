@@ -12,11 +12,10 @@ import {
   type RpcEffectError,
   type InterceptorContext,
 } from "./effect-types";
-import {
-  parseEffectError,
-} from "./effect-errors";
+import { parseEffectError } from "./effect-errors";
 import type { RpcServices } from "./effect-runtime";
 import { validatePathEffect } from "../core/effect-validation";
+import type { EventIterator } from "../core/types";
 
 // Re-export validatePath from the consolidated validation module
 export { validatePathEffect as validatePath } from "../core/effect-validation";
@@ -165,7 +164,7 @@ export const subscribeEffect = <T>(
   path: string,
   input: unknown,
   options: SubscribeEffectOptions = {},
-): Effect.Effect<AsyncIterable<T>, RpcEffectError, RpcServices> =>
+): Effect.Effect<EventIterator<T>, RpcEffectError, RpcServices> =>
   Effect.gen(function* () {
     // Validate path
     yield* validatePath(path);
@@ -243,8 +242,7 @@ export const batchCallEffect = <T = unknown>(
             Effect.succeed<BatchResultItem<T>>({
               id: req.id,
               error: {
-                code:
-                  "code" in error ? String(error.code) : "UNKNOWN",
+                code: "code" in error ? String(error.code) : "UNKNOWN",
                 message:
                   "message" in error ? String(error.message) : "Unknown error",
                 details: "details" in error ? error.details : undefined,

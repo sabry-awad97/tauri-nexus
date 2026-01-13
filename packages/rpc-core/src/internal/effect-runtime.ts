@@ -3,7 +3,7 @@
 // =============================================================================
 // Manages the Effect runtime and provides service layers for RPC operations.
 
-import { Effect, Layer, Runtime, Scope, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { invoke } from "@tauri-apps/api/core";
 import {
   RpcConfigService,
@@ -17,6 +17,7 @@ import {
   type SubscribeTransportOptions,
 } from "./effect-types";
 import { createEventIteratorEffect } from "../subscription/effect-iterator";
+import { EventIterator } from "../core";
 
 // =============================================================================
 // Default Service Implementations
@@ -56,8 +57,10 @@ const tauriTransport: RpcTransport = {
     path: string,
     input: unknown,
     options?: SubscribeTransportOptions,
-  ): Promise<AsyncIterable<T>> => {
-    return Effect.runPromise(createEventIteratorEffect<T>(path, input, options));
+  ): Promise<EventIterator<T>> => {
+    return Effect.runPromise(
+      createEventIteratorEffect<T>(path, input, options),
+    );
   },
 };
 
@@ -180,7 +183,7 @@ export const initializeRuntime = (
 ): ManagedRuntime.ManagedRuntime<RpcServices, never> => {
   if (globalRuntime) {
     // Dispose existing runtime
-    Effect.runPromise(globalRuntime.dispose());
+    globalRuntime.dispose();
   }
   globalRuntime = ManagedRuntime.make(layer);
   return globalRuntime;
@@ -191,7 +194,7 @@ export const initializeRuntime = (
  */
 export const disposeRuntime = async (): Promise<void> => {
   if (globalRuntime) {
-    await Effect.runPromise(globalRuntime.dispose());
+    await globalRuntime.dispose();
     globalRuntime = null;
   }
 };

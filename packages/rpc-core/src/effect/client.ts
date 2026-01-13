@@ -75,11 +75,7 @@ function createClientProxy<T>(
       );
     } catch (error) {
       // Convert Effect errors to public format
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "_tag" in error
-      ) {
+      if (typeof error === "object" && error !== null && "_tag" in error) {
         throw toPublicError(error as Parameters<typeof toPublicError>[0]);
       }
       throw error;
@@ -110,17 +106,9 @@ function createClientProxy<T>(
             );
           }
 
-          return await link.runCall(
-            fullPath,
-            args[0],
-            args[1] as CallOptions,
-          );
+          return await link.runCall(fullPath, args[0], args[1] as CallOptions);
         } catch (error) {
-          if (
-            typeof error === "object" &&
-            error !== null &&
-            "_tag" in error
-          ) {
+          if (typeof error === "object" && error !== null && "_tag" in error) {
             throw toPublicError(error as Parameters<typeof toPublicError>[0]);
           }
           throw error;

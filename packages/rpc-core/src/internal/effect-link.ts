@@ -211,9 +211,7 @@ export class EffectLink<TContext = unknown> {
 /**
  * Create a logging interceptor.
  */
-export const createLoggingInterceptor = (
-  prefix = "[RPC]",
-): RpcInterceptor => ({
+export const createLoggingInterceptor = (prefix = "[RPC]"): RpcInterceptor => ({
   name: "logging",
   intercept: async (ctx, next) => {
     const start = Date.now();
@@ -223,10 +221,7 @@ export const createLoggingInterceptor = (
       console.log(`${prefix} ← ${ctx.path} (${Date.now() - start}ms)`, result);
       return result;
     } catch (error) {
-      console.error(
-        `${prefix} ✗ ${ctx.path} (${Date.now() - start}ms)`,
-        error,
-      );
+      console.error(`${prefix} ✗ ${ctx.path} (${Date.now() - start}ms)`, error);
       throw error;
     }
   },
@@ -314,9 +309,12 @@ const isRetryableError = (error: unknown): boolean => {
   if (typeof error === "object" && error !== null && "code" in error) {
     const code = (error as { code: string }).code;
     // Don't retry validation or auth errors
-    return !["VALIDATION_ERROR", "UNAUTHORIZED", "FORBIDDEN", "CANCELLED"].includes(
-      code,
-    );
+    return ![
+      "VALIDATION_ERROR",
+      "UNAUTHORIZED",
+      "FORBIDDEN",
+      "CANCELLED",
+    ].includes(code);
   }
   return true;
 };

@@ -3,7 +3,10 @@
 // =============================================================================
 // Pre-built interceptors for common use cases.
 
-import type { RpcInterceptor, InterceptorContext } from "../internal/effect-types";
+import type {
+  RpcInterceptor,
+  InterceptorContext,
+} from "../internal/effect-types";
 
 // =============================================================================
 // Types
@@ -105,12 +108,7 @@ export function loggingInterceptor(
 export function retryInterceptor(
   options: RetryInterceptorOptions = {},
 ): RpcInterceptor {
-  const {
-    maxRetries = 3,
-    delay = 1000,
-    backoff = "linear",
-    retryOn,
-  } = options;
+  const { maxRetries = 3, delay = 1000, backoff = "linear", retryOn } = options;
 
   const shouldRetry = (error: unknown): boolean => {
     if (retryOn) return retryOn(error);

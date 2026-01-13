@@ -1,28 +1,20 @@
 // =============================================================================
-// @tauri-nexus/rpc-core - Client Module
+// @tauri-nexus/rpc-core - Client Module (Internal)
 // =============================================================================
+// Exports Effect-based APIs only. Promise wrappers are in public/.
 
 // Configuration
-export { configureRpc, getConfig, type RpcClientConfig } from "./config";
-
-// Core call functions
-export { call, subscribe } from "./call";
-
-// Batch operations
 export {
-  TypedBatchBuilder,
-  TypedBatchResponseWrapper,
-  TypedBatchResponse,
-  // Effect-based batch
+  configureRpc,
+  getConfig,
+  isSubscriptionPath,
+  type RpcClientConfig,
+} from "./config";
+
+// Batch operations (Effect-based)
+export {
   EffectBatchBuilder,
   EffectBatchResponseWrapper,
   executeBatchEffect,
   createEffectBatch,
 } from "./batch";
-
-// Client factories
-export {
-  createClient,
-  createClientWithSubscriptions,
-  type RpcClient,
-} from "./factory";

@@ -15,7 +15,10 @@ import type { RpcEffectError } from "../internal/effect-types";
 /**
  * Get list of available procedures from backend.
  */
-export const getProceduresEffect = (): Effect.Effect<string[], RpcEffectError> =>
+export const getProceduresEffect = (): Effect.Effect<
+  string[],
+  RpcEffectError
+> =>
   Effect.tryPromise({
     try: () => invoke<string[]>("plugin:rpc|rpc_procedures"),
     catch: (error) => makeNetworkError("rpc_procedures", error),
@@ -24,7 +27,10 @@ export const getProceduresEffect = (): Effect.Effect<string[], RpcEffectError> =
 /**
  * Get current subscription count from backend.
  */
-export const getSubscriptionCountEffect = (): Effect.Effect<number, RpcEffectError> =>
+export const getSubscriptionCountEffect = (): Effect.Effect<
+  number,
+  RpcEffectError
+> =>
   Effect.tryPromise({
     try: () => invoke<number>("plugin:rpc|rpc_subscription_count"),
     catch: (error) => makeNetworkError("rpc_subscription_count", error),
@@ -113,11 +119,14 @@ export const createRetrySchedule = (
   const {
     maxRetries,
     baseDelay,
-    maxDelay,
+    maxDelay: _maxDelay,
     retryableCodes,
     jitter,
     backoff,
-  } = { ...defaultEffectRetryConfig, ...config };
+  } = {
+    ...defaultEffectRetryConfig,
+    ...config,
+  };
 
   // Base schedule with backoff
   const baseSchedule =
@@ -207,7 +216,11 @@ export const createDedupCache = <A>(): Effect.Effect<{
           return yield* Effect.tryPromise({
             try: () => existing.value,
             catch: (error) =>
-              makeCallError("DEDUP_ERROR", "Deduplicated request failed", error),
+              makeCallError(
+                "DEDUP_ERROR",
+                "Deduplicated request failed",
+                error,
+              ),
           });
         }
 

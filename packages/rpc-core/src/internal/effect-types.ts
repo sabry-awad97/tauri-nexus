@@ -5,7 +5,11 @@
 // handling and dependency injection through Effect's service pattern.
 
 import { Context, Data } from "effect";
-import type { ProcedureType, RpcError as PublicRpcError } from "../core/types";
+import type {
+  ProcedureType,
+  RpcError as PublicRpcError,
+  EventIterator,
+} from "../core/types";
 
 // =============================================================================
 // Effect Error Types
@@ -64,9 +68,10 @@ export class RpcValidationError extends Data.TaggedError("RpcValidationError")<{
 }> {
   toPublic(): PublicRpcError {
     // Use the first issue's message if available, otherwise generic message
-    const message = this.issues.length > 0
-      ? this.issues[0].message
-      : `Validation failed for '${this.path}'`;
+    const message =
+      this.issues.length > 0
+        ? this.issues[0].message
+        : `Validation failed for '${this.path}'`;
     return {
       code: "VALIDATION_ERROR",
       message,
@@ -132,7 +137,7 @@ export interface RpcTransport {
     path: string,
     input: unknown,
     options?: SubscribeTransportOptions,
-  ) => Promise<AsyncIterable<T>>;
+  ) => Promise<EventIterator<T>>;
 }
 
 export interface SubscribeTransportOptions {

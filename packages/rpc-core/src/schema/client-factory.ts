@@ -8,8 +8,8 @@ import type { LinkRouterClient } from "../link/client-factory";
 import {
   createClientWithSubscriptions,
   type RpcClient,
-  type RpcClientConfig,
-} from "../client";
+} from "../public/factory";
+import { type RpcClientConfig } from "../client/config";
 import type {
   SchemaContract,
   SchemaContractToContract,

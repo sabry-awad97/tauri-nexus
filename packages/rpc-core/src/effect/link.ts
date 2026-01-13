@@ -161,11 +161,7 @@ export class EffectRpcLink {
    * Convert internal errors to public format.
    */
   private convertError(error: unknown): RpcError {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "_tag" in error
-    ) {
+    if (typeof error === "object" && error !== null && "_tag" in error) {
       return toPublicError(error as Parameters<typeof toPublicError>[0]);
     }
 

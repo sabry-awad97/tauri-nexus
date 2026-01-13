@@ -86,10 +86,7 @@ export const validatePathsEffect = (
     const allIssues: Array<{ path: string; issues: ValidationIssue[] }> = [];
 
     for (const path of paths) {
-      const result = yield* pipe(
-        validatePathEffect(path),
-        Effect.either,
-      );
+      const result = yield* pipe(validatePathEffect(path), Effect.either);
 
       if (result._tag === "Left") {
         const error = result.left;
@@ -100,11 +97,12 @@ export const validatePathsEffect = (
     }
 
     if (allIssues.length > 0) {
-      const combinedIssues: ValidationIssue[] = allIssues.flatMap(({ path, issues }) =>
-        issues.map((issue) => ({
-          ...issue,
-          message: `[${path}] ${issue.message}`,
-        })),
+      const combinedIssues: ValidationIssue[] = allIssues.flatMap(
+        ({ path, issues }) =>
+          issues.map((issue) => ({
+            ...issue,
+            message: `[${path}] ${issue.message}`,
+          })),
       );
       return yield* Effect.fail(makeValidationError("batch", combinedIssues));
     }
@@ -169,14 +167,20 @@ export const validatePathWithRulesEffect = (
 
     // Check segment count
     const segments = path.split(".");
-    if (rules.minSegments !== undefined && segments.length < rules.minSegments) {
+    if (
+      rules.minSegments !== undefined &&
+      segments.length < rules.minSegments
+    ) {
       issues.push({
         path: [],
         message: `Path must have at least ${rules.minSegments} segments`,
         code: "min_segments",
       });
     }
-    if (rules.maxSegments !== undefined && segments.length > rules.maxSegments) {
+    if (
+      rules.maxSegments !== undefined &&
+      segments.length > rules.maxSegments
+    ) {
       issues.push({
         path: [],
         message: `Path cannot have more than ${rules.maxSegments} segments`,
@@ -227,13 +231,8 @@ export const validatePathWithRulesEffect = (
  * Validate path synchronously, throwing on error.
  */
 export const validatePathSync = (path: string): string => {
-  const result = Effect.runSync(
-    pipe(
-      validatePathEffect(path),
-      Effect.either,
-    ),
-  );
-  
+  const result = Effect.runSync(pipe(validatePathEffect(path), Effect.either));
+
   if (result._tag === "Left") {
     const error = result.left;
     if (error._tag === "RpcValidationError") {
@@ -241,7 +240,7 @@ export const validatePathSync = (path: string): string => {
     }
     throw new Error(String(error));
   }
-  
+
   return result.right;
 };
 

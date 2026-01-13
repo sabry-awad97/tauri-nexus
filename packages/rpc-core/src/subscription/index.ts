@@ -1,13 +1,10 @@
 // =============================================================================
-// @tauri-nexus/rpc-core - Subscription Module
+// @tauri-nexus/rpc-core - Subscription Module (Internal)
 // =============================================================================
+// Exports Effect-based APIs only. Promise wrappers are in public/.
 
-// Promise-based exports (backwards compatible)
 export {
-  createEventIterator,
+  createEventIteratorEffect,
   consumeEventIterator,
   type ConsumeOptions,
 } from "./effect-iterator";
-
-// Effect-based exports
-export { createEventIteratorEffect } from "./effect-iterator";
