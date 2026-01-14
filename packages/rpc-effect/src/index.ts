@@ -35,6 +35,7 @@ export {
   RpcTransportService,
   RpcInterceptorService,
   RpcLoggerService,
+  consoleLogger,
 } from "./types";
 
 // =============================================================================
@@ -123,7 +124,6 @@ export {
   makeLoggerLayer,
   makeRpcLayer,
   makeDebugLayer,
-  consoleLogger,
   getRuntime,
   initializeRuntime,
   disposeRuntime,

@@ -9,6 +9,7 @@ import {
   RpcTransportService,
   RpcInterceptorService,
   RpcLoggerService,
+  consoleLogger,
   type RpcConfig,
   type RpcTransport,
   type RpcInterceptorChain,
@@ -16,55 +17,39 @@ import {
 } from "./types";
 
 // =============================================================================
-// Default Service Implementations
+// Layer Factories (Convenience wrappers)
 // =============================================================================
 
-const defaultConfig: RpcConfig = {
-  defaultTimeout: undefined,
-  subscriptionPaths: new Set(),
-  validateInput: false,
-  validateOutput: false,
-};
-
+/**
+ * Create a config layer with custom settings.
+ * @deprecated Use RpcConfigService.layer() instead
+ */
 export const makeConfigLayer = (config: Partial<RpcConfig> = {}) =>
-  Layer.succeed(RpcConfigService, {
-    ...defaultConfig,
-    ...config,
-    subscriptionPaths: new Set([
-      ...defaultConfig.subscriptionPaths,
-      ...(config.subscriptionPaths ?? []),
-    ]),
-  });
+  RpcConfigService.layer(config);
 
 /**
  * Create a custom transport layer.
+ * @deprecated Use RpcTransportService.layer() instead
  */
 export const makeTransportLayer = (transport: RpcTransport) =>
-  Layer.succeed(RpcTransportService, transport);
+  RpcTransportService.layer(transport);
 
-const defaultInterceptorChain: RpcInterceptorChain = {
-  interceptors: [],
-};
-
+/**
+ * Create an interceptor layer.
+ * @deprecated Use RpcInterceptorService.layer() instead
+ */
 export const makeInterceptorLayer = (chain: RpcInterceptorChain) =>
-  Layer.succeed(RpcInterceptorService, chain);
+  RpcInterceptorService.layer(chain);
 
-const noopLogger: RpcLogger = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-};
+/**
+ * Create a logger layer.
+ * @deprecated Use RpcLoggerService.layer() or RpcLoggerService.Default instead
+ */
+export const makeLoggerLayer = (logger?: RpcLogger) =>
+  logger ? RpcLoggerService.layer(logger) : RpcLoggerService.Default;
 
-export const consoleLogger: RpcLogger = {
-  debug: (msg, data) => console.debug(`[RPC] ${msg}`, data ?? ""),
-  info: (msg, data) => console.info(`[RPC] ${msg}`, data ?? ""),
-  warn: (msg, data) => console.warn(`[RPC] ${msg}`, data ?? ""),
-  error: (msg, data) => console.error(`[RPC] ${msg}`, data ?? ""),
-};
-
-export const makeLoggerLayer = (logger: RpcLogger = noopLogger) =>
-  Layer.succeed(RpcLoggerService, logger);
+// Re-export consoleLogger for backward compatibility
+export { consoleLogger };
 
 // =============================================================================
 // Combined Layers
@@ -81,16 +66,17 @@ export type RpcServices =
 
 /**
  * Create a layer stack with custom transport.
+ * Uses default config, no interceptors, and no logging.
  */
 export const makeRpcLayer = (
   transport: RpcTransport,
-  config?: Partial<RpcConfig>,
+  config?: Partial<RpcConfig>
 ) =>
   Layer.mergeAll(
-    makeConfigLayer(config),
-    makeTransportLayer(transport),
-    makeInterceptorLayer(defaultInterceptorChain),
-    makeLoggerLayer(noopLogger),
+    RpcConfigService.layer(config),
+    RpcTransportService.layer(transport),
+    RpcInterceptorService.Default,
+    RpcLoggerService.Default
   );
 
 /**
@@ -98,13 +84,13 @@ export const makeRpcLayer = (
  */
 export const makeDebugLayer = (
   transport: RpcTransport,
-  config?: Partial<RpcConfig>,
+  config?: Partial<RpcConfig>
 ) =>
   Layer.mergeAll(
-    makeConfigLayer(config),
-    makeTransportLayer(transport),
-    makeInterceptorLayer(defaultInterceptorChain),
-    makeLoggerLayer(consoleLogger),
+    RpcConfigService.layer(config),
+    RpcTransportService.layer(transport),
+    RpcInterceptorService.Default,
+    RpcLoggerService.Console
   );
 
 // =============================================================================
@@ -115,7 +101,7 @@ let globalRuntime: ManagedRuntime.ManagedRuntime<RpcServices, never> | null =
   null;
 
 export const getRuntime = (
-  layer?: Layer.Layer<RpcServices>,
+  layer?: Layer.Layer<RpcServices>
 ): ManagedRuntime.ManagedRuntime<RpcServices, never> => {
   if (!globalRuntime && layer) {
     globalRuntime = ManagedRuntime.make(layer);
@@ -127,7 +113,7 @@ export const getRuntime = (
 };
 
 export const initializeRuntime = (
-  layer: Layer.Layer<RpcServices>,
+  layer: Layer.Layer<RpcServices>
 ): ManagedRuntime.ManagedRuntime<RpcServices, never> => {
   if (globalRuntime) {
     globalRuntime.dispose();
@@ -148,7 +134,7 @@ export const disposeRuntime = async (): Promise<void> => {
 // =============================================================================
 
 export const runEffect = async <A, E>(
-  effect: Effect.Effect<A, E, RpcServices>,
+  effect: Effect.Effect<A, E, RpcServices>
 ): Promise<A> => {
   const runtime = getRuntime();
   return runtime.runPromise(effect);
