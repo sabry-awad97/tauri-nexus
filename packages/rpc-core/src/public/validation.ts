@@ -1,29 +1,28 @@
 // =============================================================================
-// @tauri-nexus/rpc-core - Validation (Public Promise API)
+// @tauri-nexus/rpc-core - Path Validation (Public API)
 // =============================================================================
-// Promise-based wrappers for path validation.
+// Simple path validation without Effect dependencies.
 
-import { Effect, pipe } from "effect";
-import { validatePathEffect } from "../core/validation";
+import { validatePathPure, isValidPathPure } from "@tauri-nexus/rpc-effect";
 import { createError } from "../core/errors";
+
+// =============================================================================
+// Public Validation Functions
+// =============================================================================
 
 /**
  * Validate procedure path format.
- * Matches the Rust `validate_path` function in plugin.rs.
+ * Throws RpcError if validation fails.
  *
  * Valid paths: "health", "user.get", "api.v1.users.list"
  * Invalid: "", ".path", "path.", "path..name", "path/name"
  */
 export function validatePath(path: string): void {
-  const result = Effect.runSync(pipe(validatePathEffect(path), Effect.either));
+  const result = validatePathPure(path);
 
-  if (result._tag === "Left") {
-    const error = result.left;
-    if (error._tag === "RpcValidationError") {
-      const message = error.issues[0]?.message ?? "Validation error";
-      throw createError("VALIDATION_ERROR", message);
-    }
-    throw createError("VALIDATION_ERROR", String(error));
+  if (!result.valid) {
+    const message = result.issues.map((i) => i.message).join("; ");
+    throw createError("VALIDATION_ERROR", message);
   }
 }
 
@@ -31,6 +30,13 @@ export function validatePath(path: string): void {
  * Check if a path is valid without throwing.
  */
 export function isValidPath(path: string): boolean {
-  const result = Effect.runSync(pipe(validatePathEffect(path), Effect.either));
-  return result._tag === "Right";
+  return isValidPathPure(path);
+}
+
+/**
+ * Validate and return the path, throwing if invalid.
+ */
+export function validateAndReturnPath(path: string): string {
+  validatePath(path);
+  return path;
 }

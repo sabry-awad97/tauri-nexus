@@ -1,7 +1,7 @@
 // =============================================================================
 // @tauri-nexus/rpc-core - Batch Builder (Public Promise API)
 // =============================================================================
-// Promise-based wrappers for batch operations.
+// Promise-based batch operations with type-safe results.
 
 import { Effect } from "effect";
 import type {
@@ -22,11 +22,10 @@ import { toPublicError, parseEffectError } from "../internal";
 // Types
 // =============================================================================
 
-/** Type map for tracking request IDs to their output types */
 type OutputTypeMap = Record<string, unknown>;
 
 // =============================================================================
-// TypedBatchBuilder (Promise-based wrapper)
+// TypedBatchBuilder
 // =============================================================================
 
 /**
@@ -44,9 +43,9 @@ type OutputTypeMap = Record<string, unknown>;
  */
 export class TypedBatchBuilder<
   TContract,
-  TOutputMap extends OutputTypeMap = Record<string, never>,
+  TOutputMap extends OutputTypeMap = Record<string, never>
 > {
-  private effectBuilder: EffectBatchBuilder<TContract, TOutputMap>;
+  private readonly effectBuilder: EffectBatchBuilder<TContract, TOutputMap>;
 
   constructor() {
     this.effectBuilder = new EffectBatchBuilder<TContract, TOutputMap>();
@@ -58,7 +57,7 @@ export class TypedBatchBuilder<
   add<TId extends string, TPath extends ExtractCallablePaths<TContract>>(
     id: TId,
     path: TPath,
-    input: GetInputAtPath<TContract, TPath>,
+    input: GetInputAtPath<TContract, TPath>
   ): TypedBatchBuilder<
     TContract,
     TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
@@ -99,20 +98,20 @@ export class TypedBatchBuilder<
    * Execute the batch and return a typed response.
    */
   async execute(
-    options?: BatchCallOptions,
+    options?: BatchCallOptions
   ): Promise<TypedBatchResponse<TOutputMap>> {
     try {
       const response = await Effect.runPromise(
-        executeBatchEffect(this.getRequests(), options),
+        executeBatchEffect(this.getRequests(), options)
       );
       return new TypedBatchResponse<TOutputMap>(response);
     } catch (error) {
       const rpcError = toPublicError(
-        parseEffectError(error, "batch", options?.timeout),
+        parseEffectError(error, "batch", options?.timeout)
       );
       console.warn(
         `[RPC] Batch request failed: ${rpcError.code} - ${rpcError.message}`,
-        rpcError.details,
+        rpcError.details
       );
       throw rpcError;
     }
@@ -120,15 +119,15 @@ export class TypedBatchBuilder<
 }
 
 // =============================================================================
-// TypedBatchResponseWrapper
+// TypedBatchResponse
 // =============================================================================
 
 /**
- * Type-safe batch response with helper methods to get typed results.
+ * Type-safe batch response with helper methods.
  */
 export class TypedBatchResponse<TOutputMap extends OutputTypeMap> {
-  private resultMap: Map<string, TypedBatchResult<unknown>>;
-  private orderedResults: TypedBatchResult<unknown>[];
+  private readonly resultMap: Map<string, TypedBatchResult<unknown>>;
+  private readonly orderedResults: TypedBatchResult<unknown>[];
 
   constructor(response: BatchResponse<unknown>) {
     this.orderedResults = response.results as TypedBatchResult<unknown>[];
@@ -137,7 +136,7 @@ export class TypedBatchResponse<TOutputMap extends OutputTypeMap> {
       this.resultMap.set(result.id, result);
       if (result.error) {
         console.warn(
-          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`,
+          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`
         );
       }
     }
@@ -154,7 +153,7 @@ export class TypedBatchResponse<TOutputMap extends OutputTypeMap> {
    * Get a typed result by request ID.
    */
   getResult<TId extends keyof TOutputMap & string>(
-    id: TId,
+    id: TId
   ): TypedBatchResult<TOutputMap[TId]> {
     const result = this.resultMap.get(id);
     if (!result) {

@@ -2,8 +2,9 @@
 // @tauri-nexus/rpc-core - Subscription Module
 // =============================================================================
 // Event iterator implementation for Tauri subscriptions.
+// Uses subscription primitives from rpc-effect for state management.
 
-import { Effect, pipe, Ref, Queue, Duration, Cause } from "effect";
+import { Effect, Ref, Queue } from "effect";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
@@ -14,91 +15,40 @@ import type {
   SubscribeRequest,
 } from "../core/types";
 import {
-  makeCallError,
+  // Types
+  type SubscriptionEvent,
+  type SubscriptionState,
+  type ReconnectConfig,
+  type QueueItem,
+  SHUTDOWN_SENTINEL,
+  // State management
+  makeEventQueue,
+  markCompleted,
+  updateLastEventId,
+  incrementConsumers,
+  decrementConsumers,
+  resetForReconnect,
+  resetReconnectAttempts,
+  // Queue operations
+  sendShutdownSentinels,
+  // Reconnection
+  prepareReconnect,
+  waitForReconnect,
+  maxReconnectsExceededError,
+  // Utilities
+  generateSubscriptionId,
+  extractSubscriptionError,
+  // Errors
   makeNetworkError,
   type RpcEffectError,
 } from "@tauri-nexus/rpc-effect";
 
 // =============================================================================
-// Types
+// Internal State Type (extends base with Tauri-specific fields)
 // =============================================================================
 
-interface SubscriptionEvent<T> {
-  type: "data" | "error" | "completed";
-  payload?: Event<T> | RpcError;
-}
-
-interface SubscriptionState {
-  id: string;
-  reconnectAttempts: number;
-  lastEventId?: string;
-  completed: boolean;
+interface TauriSubscriptionState extends SubscriptionState {
   unlisten: UnlistenFn | null;
-  pendingConsumers: number;
-}
-
-const SHUTDOWN_SENTINEL = Symbol("SHUTDOWN");
-type QueueItem<T> = SubscriptionEvent<T> | typeof SHUTDOWN_SENTINEL;
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-const generateSubscriptionId = Effect.sync(() => {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-});
-
-function extractError(error: unknown): RpcError {
-  if (error && typeof error === "object" && "_tag" in error) {
-    const cause = error as Cause.Cause<unknown>;
-    const failure = Cause.failureOption(cause);
-    if (failure._tag === "Some") {
-      return failure.value as RpcError;
-    }
-  }
-
-  if (error && typeof error === "object" && "cause" in error) {
-    const fiberFailure = error as { cause: Cause.Cause<unknown> };
-    const failure = Cause.failureOption(fiberFailure.cause);
-    if (failure._tag === "Some") {
-      return failure.value as RpcError;
-    }
-  }
-
-  if (
-    error &&
-    typeof error === "object" &&
-    "code" in error &&
-    "message" in error
-  ) {
-    return error as RpcError;
-  }
-
-  if (error instanceof Error) {
-    const message = error.message;
-    if (message.startsWith("{") && message.includes('"code"')) {
-      try {
-        const parsed = JSON.parse(message);
-        if (parsed && typeof parsed === "object" && "code" in parsed) {
-          return parsed as RpcError;
-        }
-      } catch {
-        // Not valid JSON
-      }
-    }
-  }
-
-  return {
-    code: "UNKNOWN",
-    message: String(error),
-  };
 }
 
 // =============================================================================
@@ -106,10 +56,10 @@ function extractError(error: unknown): RpcError {
 // =============================================================================
 
 const connectEffect = <T>(
-  stateRef: Ref.Ref<SubscriptionState>,
+  stateRef: Ref.Ref<TauriSubscriptionState>,
   path: string,
   input: unknown,
-  eventQueue: Queue.Queue<QueueItem<T>>,
+  eventQueue: Queue.Queue<QueueItem<T>>
 ): Effect.Effect<void, RpcEffectError> =>
   Effect.gen(function* () {
     const state = yield* Ref.get(stateRef);
@@ -142,8 +92,8 @@ const connectEffect = <T>(
   });
 
 const disconnectEffect = <T>(
-  stateRef: Ref.Ref<SubscriptionState>,
-  eventQueue: Queue.Queue<QueueItem<T>>,
+  stateRef: Ref.Ref<TauriSubscriptionState>,
+  eventQueue: Queue.Queue<QueueItem<T>>
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     const state = yield* Ref.get(stateRef);
@@ -153,51 +103,42 @@ const disconnectEffect = <T>(
       yield* Ref.update(stateRef, (s) => ({ ...s, unlisten: null }));
     }
 
-    yield* Ref.update(stateRef, (s) => ({ ...s, completed: true }));
+    yield* markCompleted(stateRef);
 
     const sentinelsToSend = Math.max(1, state.pendingConsumers + 1);
-    for (let i = 0; i < sentinelsToSend; i++) {
-      yield* Queue.offer(eventQueue, SHUTDOWN_SENTINEL);
-    }
+    yield* sendShutdownSentinels(eventQueue, sentinelsToSend - 1);
 
-    yield* pipe(
-      Effect.tryPromise(() =>
-        invoke("plugin:rpc|rpc_unsubscribe", { id: `sub_${state.id}` }),
-      ),
-      Effect.catchAll(() => Effect.void),
-    );
+    yield* Effect.tryPromise(() =>
+      invoke("plugin:rpc|rpc_unsubscribe", { id: `sub_${state.id}` })
+    ).pipe(Effect.catchAll(() => Effect.void));
   });
 
 const reconnectEffect = <T>(
-  stateRef: Ref.Ref<SubscriptionState>,
+  stateRef: Ref.Ref<TauriSubscriptionState>,
   path: string,
   input: unknown,
-  options: SubscriptionOptions,
-  eventQueue: Queue.Queue<QueueItem<T>>,
+  config: ReconnectConfig,
+  eventQueue: Queue.Queue<QueueItem<T>>
 ): Effect.Effect<boolean, RpcEffectError> =>
   Effect.gen(function* () {
-    const {
-      autoReconnect = false,
-      maxReconnects = 5,
-      reconnectDelay = 1000,
-    } = options;
-
-    if (!autoReconnect) {
+    if (!config.autoReconnect) {
       return false;
     }
 
     const state = yield* Ref.get(stateRef);
 
-    if (state.reconnectAttempts >= maxReconnects) {
-      yield* Ref.update(stateRef, (s) => ({ ...s, completed: true }));
+    if (state.reconnectAttempts >= config.maxReconnects) {
+      yield* markCompleted(stateRef);
 
       const errorEvent: SubscriptionEvent<T> = {
         type: "error",
-        payload: {
-          code: "MAX_RECONNECTS_EXCEEDED",
-          message: `Maximum reconnection attempts (${maxReconnects}) exceeded`,
-          details: { attempts: state.reconnectAttempts, maxReconnects, path },
-        },
+        payload: extractSubscriptionError(
+          maxReconnectsExceededError(
+            path,
+            state.reconnectAttempts,
+            config.maxReconnects
+          )
+        ),
       };
 
       const sentinelsToSend = Math.max(1, state.pendingConsumers + 1);
@@ -206,42 +147,27 @@ const reconnectEffect = <T>(
       }
 
       yield* Effect.fail(
-        makeCallError(
-          "MAX_RECONNECTS_EXCEEDED",
-          `Maximum reconnection attempts (${maxReconnects}) exceeded`,
-          { attempts: state.reconnectAttempts, maxReconnects, path },
-        ),
+        maxReconnectsExceededError(
+          path,
+          state.reconnectAttempts,
+          config.maxReconnects
+        )
       );
       return false;
     }
 
-    yield* Ref.update(stateRef, (s) => ({
-      ...s,
-      reconnectAttempts: s.reconnectAttempts + 1,
-    }));
-
-    const currentState = yield* Ref.get(stateRef);
-    const delay =
-      reconnectDelay * Math.pow(2, currentState.reconnectAttempts - 1);
-    const jitteredDelay = delay * (0.5 + Math.random() * 0.5);
-
-    yield* Effect.sleep(Duration.millis(jitteredDelay));
+    const delay = yield* prepareReconnect(stateRef, config);
+    yield* waitForReconnect(delay);
 
     const newId = yield* generateSubscriptionId;
-    yield* Ref.update(stateRef, (s) => ({
-      ...s,
-      id: newId,
-      completed: false,
-    }));
+    yield* resetForReconnect(stateRef, newId);
+    yield* Ref.update(stateRef, (s) => ({ ...s, unlisten: null }));
 
-    yield* pipe(
-      connectEffect(stateRef, path, input, eventQueue),
-      Effect.tap(() =>
-        Ref.update(stateRef, (s) => ({ ...s, reconnectAttempts: 0 })),
-      ),
+    yield* connectEffect(stateRef, path, input, eventQueue).pipe(
+      Effect.tap(() => resetReconnectAttempts(stateRef)),
       Effect.catchAll(() =>
-        reconnectEffect(stateRef, path, input, options, eventQueue),
-      ),
+        reconnectEffect(stateRef, path, input, config, eventQueue)
+      )
     );
 
     return true;
@@ -254,21 +180,21 @@ const reconnectEffect = <T>(
 const createEventIteratorEffect = <T>(
   path: string,
   input: unknown = null,
-  options: SubscriptionOptions = {},
+  options: SubscriptionOptions = {}
 ): Effect.Effect<EventIterator<T>, RpcEffectError> =>
   Effect.gen(function* () {
     const subscriptionId = yield* generateSubscriptionId;
 
-    const stateRef = yield* Ref.make<SubscriptionState>({
+    const stateRef = yield* Ref.make<TauriSubscriptionState>({
       id: subscriptionId,
       reconnectAttempts: 0,
       lastEventId: options.lastEventId,
       completed: false,
-      unlisten: null,
       pendingConsumers: 0,
+      unlisten: null,
     });
 
-    const eventQueue = yield* Queue.unbounded<QueueItem<T>>();
+    const eventQueue = yield* makeEventQueue<T>();
 
     yield* connectEffect(stateRef, path, input, eventQueue);
 
@@ -277,6 +203,12 @@ const createEventIteratorEffect = <T>(
         Effect.runPromise(disconnectEffect(stateRef, eventQueue));
       });
     }
+
+    const reconnectConfig: ReconnectConfig = {
+      autoReconnect: options.autoReconnect ?? false,
+      maxReconnects: options.maxReconnects ?? 5,
+      reconnectDelay: options.reconnectDelay ?? 1000,
+    };
 
     const iterator: EventIterator<T> = {
       async return(): Promise<void> {
@@ -298,17 +230,9 @@ const createEventIteratorEffect = <T>(
                     } as IteratorResult<T>;
                   }
 
-                  yield* Ref.update(stateRef, (s) => ({
-                    ...s,
-                    pendingConsumers: s.pendingConsumers + 1,
-                  }));
-
+                  yield* incrementConsumers(stateRef);
                   const item = yield* Queue.take(eventQueue);
-
-                  yield* Ref.update(stateRef, (s) => ({
-                    ...s,
-                    pendingConsumers: Math.max(0, s.pendingConsumers - 1),
-                  }));
+                  yield* decrementConsumers(stateRef);
 
                   if (item === SHUTDOWN_SENTINEL) {
                     return {
@@ -323,32 +247,24 @@ const createEventIteratorEffect = <T>(
                     case "data": {
                       const eventData = event.payload as Event<T>;
                       if (eventData.id) {
-                        yield* Ref.update(stateRef, (s) => ({
-                          ...s,
-                          lastEventId: eventData.id,
-                        }));
+                        yield* updateLastEventId(stateRef, eventData.id);
                       }
                       return { done: false, value: eventData.data };
                     }
 
                     case "error": {
                       const error = event.payload as RpcError;
-                      yield* Ref.update(stateRef, (s) => ({
-                        ...s,
-                        completed: true,
-                      }));
+                      yield* markCompleted(stateRef);
 
-                      if (options.autoReconnect) {
-                        const reconnected = yield* pipe(
-                          reconnectEffect(
-                            stateRef,
-                            path,
-                            input,
-                            options,
-                            eventQueue,
-                          ),
-                          Effect.catchAll(() => Effect.succeed(false)),
-                        );
+                      if (reconnectConfig.autoReconnect) {
+                        const reconnected = yield* reconnectEffect(
+                          stateRef,
+                          path,
+                          input,
+                          reconnectConfig,
+                          eventQueue
+                        ).pipe(Effect.catchAll(() => Effect.succeed(false)));
+
                         if (reconnected) {
                           return yield* Effect.fail(error);
                         }
@@ -357,10 +273,7 @@ const createEventIteratorEffect = <T>(
                     }
 
                     case "completed": {
-                      yield* Ref.update(stateRef, (s) => ({
-                        ...s,
-                        completed: true,
-                      }));
+                      yield* markCompleted(stateRef);
                       return {
                         done: true,
                         value: undefined,
@@ -373,10 +286,10 @@ const createEventIteratorEffect = <T>(
                         value: undefined,
                       } as IteratorResult<T>;
                   }
-                }),
+                })
               );
             } catch (error) {
-              throw extractError(error);
+              throw extractSubscriptionError(error);
             }
           },
 
@@ -401,11 +314,14 @@ const createEventIteratorEffect = <T>(
 export async function createEventIterator<T>(
   path: string,
   input: unknown = null,
-  options: SubscriptionOptions = {},
+  options: SubscriptionOptions = {}
 ): Promise<EventIterator<T>> {
   return Effect.runPromise(createEventIteratorEffect<T>(path, input, options));
 }
 
+/**
+ * Options for consuming an event iterator.
+ */
 export interface ConsumeOptions<T> {
   onEvent?: (event: T) => void;
   onError?: (error: RpcError) => void;
@@ -415,10 +331,11 @@ export interface ConsumeOptions<T> {
 
 /**
  * Consume an event iterator with lifecycle callbacks.
+ * Returns a cancel function.
  */
 export function consumeEventIterator<T>(
   iteratorPromise: Promise<EventIterator<T>>,
-  options: ConsumeOptions<T>,
+  options: ConsumeOptions<T>
 ): () => Promise<void> {
   let cancelled = false;
   let iterator: EventIterator<T> | null = null;

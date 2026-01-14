@@ -1,7 +1,7 @@
 // =============================================================================
 // @tauri-nexus/rpc-core - Internal Bridge to rpc-effect
 // =============================================================================
-// Re-exports from rpc-effect with Tauri-specific transport.
+// Re-exports from rpc-effect with Tauri-specific transport layer.
 
 import { Layer } from "effect";
 import { invoke } from "@tauri-apps/api/core";
@@ -10,11 +10,17 @@ import {
   makeTransportLayer,
   makeInterceptorLayer,
   makeLoggerLayer,
+  matchError,
   type RpcConfig,
   type RpcTransport,
-  type EventIterator,
+  type RpcEffectError,
+  RpcCallError,
+  RpcTimeoutError,
+  RpcCancelledError,
+  RpcValidationError,
 } from "@tauri-nexus/rpc-effect";
 import { createEventIterator } from "../subscription";
+import type { RpcError } from "../core/types";
 
 // =============================================================================
 // Tauri Transport
@@ -27,8 +33,8 @@ const tauriTransport: RpcTransport = {
   subscribe: async <T>(
     path: string,
     input: unknown,
-    options?: { lastEventId?: string; signal?: AbortSignal },
-  ): Promise<EventIterator<T>> => {
+    options?: { lastEventId?: string; signal?: AbortSignal }
+  ) => {
     return createEventIterator<T>(path, input, options);
   },
 };
@@ -44,7 +50,7 @@ export const makeDefaultLayer = (config?: Partial<RpcConfig>) =>
     makeConfigLayer(config),
     TauriTransportLayer,
     makeInterceptorLayer({ interceptors: [] }),
-    makeLoggerLayer(),
+    makeLoggerLayer()
   );
 
 export const makeDebugLayer = (config?: Partial<RpcConfig>) =>
@@ -57,7 +63,7 @@ export const makeDebugLayer = (config?: Partial<RpcConfig>) =>
       info: (msg, data) => console.info(`[RPC] ${msg}`, data ?? ""),
       warn: (msg, data) => console.warn(`[RPC] ${msg}`, data ?? ""),
       error: (msg, data) => console.error(`[RPC] ${msg}`, data ?? ""),
-    }),
+    })
   );
 
 // =============================================================================
@@ -135,16 +141,6 @@ export {
 // Error Conversion to Public Format
 // =============================================================================
 
-import type { RpcError } from "../core/types";
-import {
-  type RpcEffectError,
-  matchError,
-  RpcCallError,
-  RpcTimeoutError,
-  RpcCancelledError,
-  RpcValidationError,
-} from "@tauri-nexus/rpc-effect";
-
 /**
  * Convert Effect error to public RpcError format.
  */
@@ -190,7 +186,7 @@ export const toPublicError = (error: RpcEffectError): RpcError =>
  */
 export const fromPublicError = (
   error: RpcError,
-  path: string,
+  path: string
 ): RpcEffectError => {
   switch (error.code) {
     case "TIMEOUT":

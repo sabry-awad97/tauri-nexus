@@ -1,7 +1,7 @@
 // =============================================================================
-// @tauri-nexus/rpc-core - Effect-Based Batch Builder
+// @tauri-nexus/rpc-core - Batch Builder
 // =============================================================================
-// Fluent API for building and executing type-safe batch requests using Effect.
+// Fluent API for building and executing type-safe batch requests.
 
 import { Effect, pipe } from "effect";
 import { invoke } from "@tauri-apps/api/core";
@@ -29,29 +29,23 @@ import { toPublicError } from "../internal";
 // Types
 // =============================================================================
 
-/** Internal type to track batch entries with their output types */
 interface BatchEntry {
   id: string;
   path: string;
   input: unknown;
 }
 
-/** Type map for tracking request IDs to their output types */
 type OutputTypeMap = Record<string, unknown>;
 
 // =============================================================================
-// Effect-Based Batch Execution
+// Batch Execution Effect
 // =============================================================================
 
-/**
- * Execute batch requests using Effect.
- */
 export const executeBatchEffect = <T = unknown>(
   requests: readonly SingleRequest[],
-  options?: BatchCallOptions,
+  options?: BatchCallOptions
 ): Effect.Effect<BatchResponse<T>, RpcEffectError> =>
   Effect.gen(function* () {
-    // Validate all paths
     for (const req of requests) {
       yield* validatePath(req.path);
     }
@@ -64,7 +58,6 @@ export const executeBatchEffect = <T = unknown>(
     const batchRequest: BatchRequest = { requests: normalizedRequests };
     const timeoutMs = options?.timeout;
 
-    // Execute with optional timeout
     const executeInvoke = Effect.tryPromise({
       try: () =>
         invoke<BatchResponse<T>>("plugin:rpc|rpc_call_batch", {
@@ -76,17 +69,13 @@ export const executeBatchEffect = <T = unknown>(
     if (timeoutMs) {
       return yield* pipe(
         Effect.acquireUseRelease(
-          // Acquire: set up timeout
           Effect.sync(() => {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-            return { timeoutId, controller };
+            const timeoutId = setTimeout(() => {}, timeoutMs);
+            return timeoutId;
           }),
-          // Use: execute the invoke
           () => executeInvoke,
-          // Release: clear timeout
-          ({ timeoutId }) => Effect.sync(() => clearTimeout(timeoutId)),
-        ),
+          (timeoutId) => Effect.sync(() => clearTimeout(timeoutId))
+        )
       );
     }
 
@@ -97,19 +86,16 @@ export const executeBatchEffect = <T = unknown>(
 // EffectBatchBuilder
 // =============================================================================
 
-/**
- * Type-safe batch builder that uses Effect for execution.
- */
 export class EffectBatchBuilder<
   TContract,
-  TOutputMap extends OutputTypeMap = Record<string, never>,
+  TOutputMap extends OutputTypeMap = Record<string, never>
 > {
   private entries: BatchEntry[] = [];
 
   add<TId extends string, TPath extends ExtractCallablePaths<TContract>>(
     id: TId,
     path: TPath,
-    input: GetInputAtPath<TContract, TPath>,
+    input: GetInputAtPath<TContract, TPath>
   ): EffectBatchBuilder<
     TContract,
     TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
@@ -142,28 +128,28 @@ export class EffectBatchBuilder<
   }
 
   executeEffect(
-    options?: BatchCallOptions,
+    options?: BatchCallOptions
   ): Effect.Effect<EffectBatchResponseWrapper<TOutputMap>, RpcEffectError> {
     return pipe(
       executeBatchEffect(this.getRequests(), options),
       Effect.map(
-        (response) => new EffectBatchResponseWrapper<TOutputMap>(response),
-      ),
+        (response) => new EffectBatchResponseWrapper<TOutputMap>(response)
+      )
     );
   }
 
   async execute(
-    options?: BatchCallOptions,
+    options?: BatchCallOptions
   ): Promise<EffectBatchResponseWrapper<TOutputMap>> {
     try {
       return await Effect.runPromise(this.executeEffect(options));
     } catch (error) {
       const rpcError = toPublicError(
-        parseEffectError(error, "batch", options?.timeout),
+        parseEffectError(error, "batch", options?.timeout)
       );
       console.warn(
         `[RPC] Batch request failed: ${rpcError.code} - ${rpcError.message}`,
-        rpcError.details,
+        rpcError.details
       );
       throw rpcError;
     }
@@ -175,7 +161,7 @@ export class EffectBatchBuilder<
         for (const entry of this.entries) {
           yield* validatePath(entry.path);
         }
-      }.bind(this),
+      }.bind(this)
     );
   }
 
@@ -189,8 +175,8 @@ export class EffectBatchBuilder<
 // =============================================================================
 
 export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
-  private resultMap: Map<string, TypedBatchResult<unknown>>;
-  private orderedResults: TypedBatchResult<unknown>[];
+  private readonly resultMap: Map<string, TypedBatchResult<unknown>>;
+  private readonly orderedResults: TypedBatchResult<unknown>[];
 
   constructor(response: BatchResponse<unknown>) {
     this.orderedResults = response.results as TypedBatchResult<unknown>[];
@@ -199,7 +185,7 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
       this.resultMap.set(result.id, result);
       if (result.error) {
         console.warn(
-          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`,
+          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`
         );
       }
     }
@@ -210,14 +196,14 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
   }
 
   getResultEffect<TId extends keyof TOutputMap & string>(
-    id: TId,
+    id: TId
   ): Effect.Effect<TOutputMap[TId], RpcEffectError> {
     return Effect.gen(
       function* (this: EffectBatchResponseWrapper<TOutputMap>) {
         const result = this.resultMap.get(id);
         if (!result) {
           return yield* Effect.fail(
-            makeCallError("NOT_FOUND", `No result found for id: ${id}`),
+            makeCallError("NOT_FOUND", `No result found for id: ${id}`)
           );
         }
         if (result.error) {
@@ -225,17 +211,17 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
             makeCallError(
               result.error.code,
               result.error.message,
-              result.error.details,
-            ),
+              result.error.details
+            )
           );
         }
         return result.data as TOutputMap[TId];
-      }.bind(this),
+      }.bind(this)
     );
   }
 
   getResult<TId extends keyof TOutputMap & string>(
-    id: TId,
+    id: TId
   ): TypedBatchResult<TOutputMap[TId]> {
     const result = this.resultMap.get(id);
     if (!result) {
@@ -263,56 +249,6 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
 
   getFailed(): TypedBatchResult<unknown>[] {
     return this.orderedResults.filter((r) => r.error);
-  }
-
-  getSuccessfulEffect(): Effect.Effect<TypedBatchResult<unknown>[]> {
-    return Effect.succeed(this.getSuccessful());
-  }
-
-  getFailedEffect(): Effect.Effect<TypedBatchResult<unknown>[]> {
-    return Effect.succeed(this.getFailed());
-  }
-
-  processAllEffect<U>(
-    fn: (data: unknown, id: string) => U,
-  ): Effect.Effect<U[], RpcEffectError> {
-    return Effect.gen(
-      function* (this: EffectBatchResponseWrapper<TOutputMap>) {
-        const results: U[] = [];
-        for (const result of this.orderedResults) {
-          if (result.error) {
-            return yield* Effect.fail(
-              makeCallError(
-                result.error.code,
-                result.error.message,
-                result.error.details,
-              ),
-            );
-          }
-          results.push(fn(result.data, result.id));
-        }
-        return results;
-      }.bind(this),
-    );
-  }
-
-  processAllCollectingErrorsEffect<U>(
-    fn: (data: unknown, id: string) => U,
-  ): Effect.Effect<{ successes: U[]; errors: TypedBatchResult<unknown>[] }> {
-    return Effect.sync(() => {
-      const successes: U[] = [];
-      const errors: TypedBatchResult<unknown>[] = [];
-
-      for (const result of this.orderedResults) {
-        if (result.error) {
-          errors.push(result);
-        } else {
-          successes.push(fn(result.data, result.id));
-        }
-      }
-
-      return { successes, errors };
-    });
   }
 
   get successCount(): number {

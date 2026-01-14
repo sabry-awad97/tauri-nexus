@@ -1,37 +1,52 @@
 // =============================================================================
 // @tauri-nexus/rpc-core - Utilities
 // =============================================================================
-// Re-exports utilities from rpc-effect with Promise wrappers.
+// Pure utility functions without Effect dependencies.
 
-import { Effect } from "effect";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  sleep as sleepEffect,
-  calculateBackoff as calculateBackoffEffect,
-  stableStringify,
-  type RetryConfig,
-} from "@tauri-nexus/rpc-effect";
+import { stableStringify as stableStringifyImpl } from "@tauri-nexus/rpc-effect";
 
 // =============================================================================
 // Timing Utilities
 // =============================================================================
 
+/**
+ * Sleep for a specified duration.
+ */
 export const sleep = (ms: number): Promise<void> =>
-  Effect.runPromise(sleepEffect(ms));
+  new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Calculate exponential backoff with optional jitter.
+ */
 export const calculateBackoff = (
   attempt: number,
   baseDelay: number = 1000,
   maxDelay: number = 30000,
-  jitter: boolean = true,
-): number =>
-  Effect.runSync(calculateBackoffEffect(attempt, baseDelay, maxDelay, jitter));
+  jitter: boolean = true
+): number => {
+  const exponentialDelay = baseDelay * Math.pow(2, attempt);
+  const cappedDelay = Math.min(exponentialDelay, maxDelay);
+
+  if (jitter) {
+    return cappedDelay * (0.5 + Math.random() * 0.5);
+  }
+
+  return cappedDelay;
+};
 
 // =============================================================================
 // Retry Logic
 // =============================================================================
 
-export { type RetryConfig } from "@tauri-nexus/rpc-effect";
+export interface RetryConfig {
+  readonly maxRetries: number;
+  readonly baseDelay: number;
+  readonly maxDelay: number;
+  readonly retryableCodes: readonly string[];
+  readonly jitter: boolean;
+  readonly backoff: "linear" | "exponential";
+}
 
 export const defaultRetryConfig: RetryConfig = {
   maxRetries: 3,
@@ -42,18 +57,20 @@ export const defaultRetryConfig: RetryConfig = {
   backoff: "exponential",
 };
 
+/**
+ * Execute a function with retry logic.
+ */
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  config: Partial<RetryConfig> = {},
+  config: Partial<RetryConfig> = {}
 ): Promise<T> {
   const {
     maxRetries = 3,
     baseDelay = 1000,
+    maxDelay = 30000,
     retryableCodes = ["INTERNAL_ERROR", "TIMEOUT"],
-  } = {
-    ...defaultRetryConfig,
-    ...config,
-  };
+    jitter = true,
+  } = { ...defaultRetryConfig, ...config };
 
   let lastError: unknown;
 
@@ -73,7 +90,7 @@ export async function withRetry<T>(
         throw error;
       }
 
-      const delay = calculateBackoff(attempt, baseDelay);
+      const delay = calculateBackoff(attempt, baseDelay, maxDelay, jitter);
       await sleep(delay);
     }
   }
@@ -85,8 +102,14 @@ export async function withRetry<T>(
 // Serialization
 // =============================================================================
 
-export { stableStringify };
+/**
+ * JSON.stringify with sorted keys for consistent output.
+ */
+export const stableStringify = stableStringifyImpl;
 
+/**
+ * Generate a deduplication key from path and input.
+ */
 export const deduplicationKey = (path: string, input: unknown): string =>
   `${path}:${stableStringify(input)}`;
 
@@ -96,9 +119,13 @@ export const deduplicationKey = (path: string, input: unknown): string =>
 
 const pendingRequests = new Map<string, Promise<unknown>>();
 
+/**
+ * Execute a function with deduplication.
+ * Concurrent calls with the same key will share the same Promise.
+ */
 export async function withDedup<T>(
   key: string,
-  fn: () => Promise<T>,
+  fn: () => Promise<T>
 ): Promise<T> {
   const existing = pendingRequests.get(key);
   if (existing) {
@@ -117,8 +144,14 @@ export async function withDedup<T>(
 // Backend Utilities
 // =============================================================================
 
+/**
+ * Get list of available procedures from backend.
+ */
 export const getProcedures = (): Promise<string[]> =>
   invoke<string[]>("plugin:rpc|rpc_procedures");
 
+/**
+ * Get current subscription count from backend.
+ */
 export const getSubscriptionCount = (): Promise<number> =>
   invoke<number>("plugin:rpc|rpc_subscription_count");

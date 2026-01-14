@@ -65,6 +65,12 @@ export {
 // =============================================================================
 
 export {
+  // Pure functions (no Effect)
+  validatePathPure,
+  isValidPathPure,
+  validatePathOrThrow,
+  type PathValidationResult,
+  // Effect-based
   validatePath,
   validatePaths,
   validateAndNormalizePath,
@@ -171,3 +177,47 @@ export {
   type EffectClientConfig,
   type EffectClient,
 } from "./client";
+
+// =============================================================================
+// Subscription Primitives
+// =============================================================================
+
+export {
+  // Types
+  type SubscriptionEventType,
+  type SubscriptionEvent,
+  type SubscriptionError,
+  type SubscriptionState,
+  type ReconnectConfig,
+  type QueueItem,
+  SHUTDOWN_SENTINEL,
+  // Configuration
+  defaultReconnectConfig,
+  // State Management
+  createSubscriptionState,
+  makeSubscriptionStateRef,
+  makeEventQueue,
+  markCompleted,
+  updateLastEventId,
+  incrementConsumers,
+  decrementConsumers,
+  resetForReconnect,
+  incrementReconnectAttempts,
+  resetReconnectAttempts,
+  // Queue Operations
+  offerEvent,
+  sendShutdownSentinels,
+  takeFromQueue,
+  // Reconnection Logic
+  calculateReconnectDelay,
+  shouldReconnect,
+  prepareReconnect,
+  waitForReconnect,
+  maxReconnectsExceededError,
+  // Event Processing
+  processDataEvent,
+  processErrorEvent,
+  // Utilities
+  generateSubscriptionId,
+  extractSubscriptionError,
+} from "./subscription";

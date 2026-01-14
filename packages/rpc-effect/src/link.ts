@@ -5,7 +5,6 @@
 
 import { Effect, Layer, pipe } from "effect";
 import {
-  RpcConfigService,
   type RpcConfig,
   type RpcInterceptor,
   type RpcEffectError,
@@ -254,7 +253,7 @@ export const createRetryInterceptor = (options: {
 
   return {
     name: "retry",
-    intercept: async (ctx, next) => {
+    intercept: async (_ctx, next) => {
       let lastError: unknown;
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {

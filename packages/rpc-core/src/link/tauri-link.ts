@@ -2,7 +2,6 @@
 // @tauri-nexus/rpc-core - TauriLink Implementation
 // =============================================================================
 // Configurable link for Tauri RPC calls with interceptor support.
-// Uses Effect throughout for type-safe error handling and composition.
 
 import { Effect, pipe, Layer } from "effect";
 import {
@@ -33,16 +32,20 @@ import type {
 
 /**
  * TauriLink - A configurable link for Tauri RPC calls.
- * Uses Effect throughout for robust error handling and composition.
+ * Provides interceptor support and lifecycle hooks.
  */
 export class TauriLink<TClientContext = unknown> {
-  private config: TauriLinkConfig<TClientContext>;
-  private layer: Layer.Layer<RpcServices>;
+  private readonly config: TauriLinkConfig<TClientContext>;
+  private readonly layer: Layer.Layer<RpcServices>;
 
   constructor(config: TauriLinkConfig<TClientContext> = {}) {
     this.config = config;
     this.layer = this.buildLayer();
   }
+
+  // ===========================================================================
+  // Private Methods
+  // ===========================================================================
 
   private buildLayer(): Layer.Layer<RpcServices> {
     const effectInterceptors: RpcInterceptor[] = (
@@ -69,12 +72,12 @@ export class TauriLink<TClientContext = unknown> {
       }),
       TauriTransportLayer,
       makeInterceptorLayer({ interceptors: effectInterceptors }),
-      makeLoggerLayer(),
+      makeLoggerLayer()
     );
   }
 
   private provideLayer<T>(
-    effect: Effect.Effect<T, RpcEffectError, RpcServices>,
+    effect: Effect.Effect<T, RpcEffectError, RpcServices>
   ): Effect.Effect<T, RpcEffectError> {
     return pipe(effect, Effect.provide(this.layer));
   }
@@ -82,7 +85,7 @@ export class TauriLink<TClientContext = unknown> {
   private async runEffect<T>(
     effect: Effect.Effect<T, RpcEffectError>,
     path: string,
-    timeoutMs?: number,
+    timeoutMs?: number
   ): Promise<T> {
     try {
       return await Effect.runPromise(effect);
@@ -91,29 +94,36 @@ export class TauriLink<TClientContext = unknown> {
     }
   }
 
+  private createRequestContext(
+    path: string,
+    input: unknown,
+    type: "query" | "mutation" | "subscription",
+    options: LinkCallOptions<TClientContext>
+  ): LinkRequestContext<TClientContext> {
+    return {
+      path,
+      input,
+      type,
+      context: options.context ?? ({} as TClientContext),
+      signal: options.signal,
+      meta: options.meta ?? {},
+    };
+  }
+
   private callWithLifecycle<T>(
     path: string,
     input: unknown,
-    options: LinkCallOptions<TClientContext>,
-    link: TauriLink<TClientContext>,
+    options: LinkCallOptions<TClientContext>
   ): Effect.Effect<T, RpcEffectError, RpcServices> {
-    const timeoutMs = options.timeout ?? link.config.timeout;
+    const timeoutMs = options.timeout ?? this.config.timeout;
+    const ctx = this.createRequestContext(path, input, "query", options);
 
-    return Effect.gen(function* () {
+    return Effect.gen(this, function* () {
       yield* validatePath(path);
 
-      const ctx: LinkRequestContext<TClientContext> = {
-        path,
-        input,
-        type: "query",
-        context: options.context ?? ({} as TClientContext),
-        signal: options.signal,
-        meta: options.meta ?? {},
-      };
-
-      if (link.config.onRequest) {
+      if (this.config.onRequest) {
         yield* Effect.promise(() =>
-          Promise.resolve(link.config.onRequest!(ctx)),
+          Promise.resolve(this.config.onRequest!(ctx))
         );
       }
 
@@ -125,14 +135,14 @@ export class TauriLink<TClientContext = unknown> {
         }),
         Effect.tapError((error) =>
           Effect.promise(() =>
-            Promise.resolve(link.config.onError?.(toPublicError(error), ctx)),
-          ),
-        ),
+            Promise.resolve(this.config.onError?.(toPublicError(error), ctx))
+          )
+        )
       );
 
-      if (link.config.onResponse) {
+      if (this.config.onResponse) {
         yield* Effect.promise(() =>
-          Promise.resolve(link.config.onResponse!(result, ctx)),
+          Promise.resolve(this.config.onResponse!(result, ctx))
         );
       }
 
@@ -143,24 +153,16 @@ export class TauriLink<TClientContext = unknown> {
   private subscribeWithLifecycle<T>(
     path: string,
     input: unknown,
-    options: LinkSubscribeOptions<TClientContext>,
-    link: TauriLink<TClientContext>,
+    options: LinkSubscribeOptions<TClientContext>
   ): Effect.Effect<AsyncIterable<T>, RpcEffectError, RpcServices> {
-    return Effect.gen(function* () {
+    const ctx = this.createRequestContext(path, input, "subscription", options);
+
+    return Effect.gen(this, function* () {
       yield* validatePath(path);
 
-      const ctx: LinkRequestContext<TClientContext> = {
-        path,
-        input,
-        type: "subscription",
-        context: options.context ?? ({} as TClientContext),
-        signal: options.signal,
-        meta: options.meta ?? {},
-      };
-
-      if (link.config.onRequest) {
+      if (this.config.onRequest) {
         yield* Effect.promise(() =>
-          Promise.resolve(link.config.onRequest!(ctx)),
+          Promise.resolve(this.config.onRequest!(ctx))
         );
       }
 
@@ -172,52 +174,74 @@ export class TauriLink<TClientContext = unknown> {
         }),
         Effect.tapError((error) =>
           Effect.promise(() =>
-            Promise.resolve(link.config.onError?.(toPublicError(error), ctx)),
-          ),
-        ),
+            Promise.resolve(this.config.onError?.(toPublicError(error), ctx))
+          )
+        )
       );
 
       return iterator;
     });
   }
 
+  // ===========================================================================
+  // Public API
+  // ===========================================================================
+
+  /**
+   * Make an RPC call.
+   */
   async call<T>(
     path: string,
     input: unknown,
-    options: LinkCallOptions<TClientContext> = {},
+    options: LinkCallOptions<TClientContext> = {}
   ): Promise<T> {
     const timeoutMs = options.timeout ?? this.config.timeout;
     const effect = this.provideLayer(
-      this.callWithLifecycle<T>(path, input, options, this),
+      this.callWithLifecycle<T>(path, input, options)
     );
     return this.runEffect(effect, path, timeoutMs);
   }
 
+  /**
+   * Subscribe to a streaming procedure.
+   */
   async subscribe<T>(
     path: string,
     input: unknown,
-    options: LinkSubscribeOptions<TClientContext> = {},
+    options: LinkSubscribeOptions<TClientContext> = {}
   ): Promise<AsyncIterable<T>> {
     const effect = this.provideLayer(
-      this.subscribeWithLifecycle<T>(path, input, options, this),
+      this.subscribeWithLifecycle<T>(path, input, options)
     );
     return this.runEffect(effect, path);
   }
 
+  /**
+   * Check if a path is a subscription.
+   */
   isSubscription(path: string): boolean {
     return this.config.subscriptionPaths?.includes(path) ?? false;
   }
 
+  /**
+   * Get the current configuration.
+   */
   getConfig(): TauriLinkConfig<TClientContext> {
     return this.config;
   }
 
+  /**
+   * Get the Effect layer for advanced usage.
+   */
   getLayer(): Layer.Layer<RpcServices> {
     return this.layer;
   }
 
+  /**
+   * Create a new link with additional interceptors.
+   */
   withInterceptors(
-    interceptors: TauriLinkConfig<TClientContext>["interceptors"],
+    interceptors: TauriLinkConfig<TClientContext>["interceptors"]
   ): TauriLink<TClientContext> {
     return new TauriLink({
       ...this.config,
@@ -228,6 +252,9 @@ export class TauriLink<TClientContext = unknown> {
     });
   }
 
+  /**
+   * Create a new link with a different timeout.
+   */
   withTimeout(timeout: number): TauriLink<TClientContext> {
     return new TauriLink({ ...this.config, timeout });
   }
