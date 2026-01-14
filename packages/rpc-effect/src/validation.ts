@@ -1,7 +1,7 @@
 // =============================================================================
 // @tauri-nexus/rpc-effect - Path Validation
 // =============================================================================
-// Path validation utilities with both pure functions and Effect wrappers.
+// Effect-based path validation utilities.
 
 import { Effect, pipe } from "effect";
 import type { RpcEffectError, ValidationIssue } from "./types";
@@ -14,21 +14,27 @@ import { makeValidationError } from "./errors";
 const PATH_REGEX = /^[a-zA-Z0-9_.]+$/;
 
 // =============================================================================
-// Pure Validation Functions (No Effect)
+// Types
 // =============================================================================
 
-/**
- * Validation result for pure functions.
- */
 export interface PathValidationResult {
   readonly valid: boolean;
   readonly issues: readonly ValidationIssue[];
 }
 
-/**
- * Validate procedure path format (pure function).
- * Returns validation result without throwing.
- */
+export interface PathValidationRules {
+  readonly allowEmpty?: boolean;
+  readonly maxLength?: number;
+  readonly minSegments?: number;
+  readonly maxSegments?: number;
+  readonly allowedPrefixes?: readonly string[];
+  readonly disallowedPrefixes?: readonly string[];
+}
+
+// =============================================================================
+// Pure Functions
+// =============================================================================
+
 export const validatePathPure = (path: string): PathValidationResult => {
   const issues: ValidationIssue[] = [];
 
@@ -72,15 +78,9 @@ export const validatePathPure = (path: string): PathValidationResult => {
   return { valid: issues.length === 0, issues };
 };
 
-/**
- * Check if a path is valid (pure function).
- */
 export const isValidPathPure = (path: string): boolean =>
   validatePathPure(path).valid;
 
-/**
- * Validate path and throw if invalid (pure function).
- */
 export const validatePathOrThrow = (path: string): string => {
   const result = validatePathPure(path);
   if (!result.valid) {
@@ -94,26 +94,17 @@ export const validatePathOrThrow = (path: string): string => {
 // Effect-Based Validation
 // =============================================================================
 
-/**
- * Validate procedure path format using Effect.
- * Returns the validated path on success, or fails with RpcValidationError.
- */
 export const validatePath = (
   path: string
 ): Effect.Effect<string, RpcEffectError> =>
   Effect.gen(function* () {
     const result = validatePathPure(path);
-
     if (!result.valid) {
       return yield* Effect.fail(makeValidationError(path, result.issues));
     }
-
     return path;
   });
 
-/**
- * Validate multiple paths, collecting all errors.
- */
 export const validatePaths = (
   paths: readonly string[]
 ): Effect.Effect<readonly string[], RpcEffectError> =>
@@ -122,7 +113,6 @@ export const validatePaths = (
 
     for (const path of paths) {
       const result = yield* pipe(validatePath(path), Effect.either);
-
       if (result._tag === "Left") {
         const error = result.left;
         if (error._tag === "RpcValidationError") {
@@ -145,9 +135,6 @@ export const validatePaths = (
     return paths;
   });
 
-/**
- * Validate path and transform it (e.g., normalize).
- */
 export const validateAndNormalizePath = (
   path: string
 ): Effect.Effect<string, RpcEffectError> =>
@@ -156,27 +143,12 @@ export const validateAndNormalizePath = (
     Effect.map((validPath) => validPath.toLowerCase())
   );
 
-/**
- * Check if a path is valid without throwing.
- */
 export const isValidPath = (path: string): Effect.Effect<boolean> =>
   pipe(
     validatePath(path),
     Effect.map(() => true),
     Effect.catchAll(() => Effect.succeed(false))
   );
-
-/**
- * Validate path with custom rules.
- */
-export interface PathValidationRules {
-  readonly allowEmpty?: boolean;
-  readonly maxLength?: number;
-  readonly minSegments?: number;
-  readonly maxSegments?: number;
-  readonly allowedPrefixes?: readonly string[];
-  readonly disallowedPrefixes?: readonly string[];
-}
 
 export const validatePathWithRules = (
   path: string,
