@@ -13,7 +13,7 @@ import {
   type InterceptorContext,
   type EventIterator,
 } from "./types";
-import { parseEffectError } from "./errors";
+import { toEffectError } from "./errors";
 import { validatePath } from "./validation";
 import type { RpcServices } from "./runtime";
 
@@ -37,7 +37,7 @@ const executeWithInterceptors = <T>(
 
     return yield* Effect.tryPromise({
       try: () => next(),
-      catch: (error) => parseEffectError(error, ctx.path),
+      catch: (error) => toEffectError(error, ctx.path),
     });
   });
 
@@ -117,7 +117,7 @@ export const callWithTimeout = <T>(
     Effect.timeoutFail({
       duration: Duration.millis(timeoutMs),
       onTimeout: () =>
-        parseEffectError(
+        toEffectError(
           new DOMException("Timeout", "AbortError"),
           path,
           timeoutMs
@@ -157,7 +157,7 @@ export const subscribe = <T>(
           lastEventId: options.lastEventId,
           signal: options.signal,
         }),
-      catch: (error) => parseEffectError(error, path),
+      catch: (error) => toEffectError(error, path),
     });
 
     return iterator;
@@ -220,7 +220,7 @@ export const batchCall = <T = unknown>(
 
     const response = yield* Effect.tryPromise({
       try: () => transport.callBatch<T>(requests),
-      catch: (error) => parseEffectError(error, "batch"),
+      catch: (error) => toEffectError(error, "batch"),
     });
 
     return response as BatchResponse<T>;

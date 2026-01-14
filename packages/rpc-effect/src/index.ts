@@ -42,15 +42,20 @@ export {
 // =============================================================================
 
 export {
+  // Error constructors
   makeCallError,
   makeTimeoutError,
   makeCancelledError,
   makeValidationError,
   makeNetworkError,
-  parseEffectError,
+  // Error conversion
+  toEffectError,
+  isEffectRpcError,
+  // Effect utilities
   failWithCallError,
   failWithTimeout,
   failWithValidation,
+  // Type guards
   isRpcCallError,
   isRpcTimeoutError,
   isRpcCancelledError,
@@ -58,6 +63,8 @@ export {
   isRpcNetworkError,
   hasCode,
   matchError,
+  // Backward compatibility
+  parseEffectError,
 } from "./errors";
 
 // =============================================================================

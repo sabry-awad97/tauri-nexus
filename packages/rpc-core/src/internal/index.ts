@@ -113,7 +113,8 @@ export {
   makeCancelledError,
   makeValidationError,
   makeNetworkError,
-  parseEffectError,
+  toEffectError,
+  isEffectRpcError,
   isRpcCallError,
   isRpcTimeoutError,
   isRpcCancelledError,
@@ -153,6 +154,9 @@ export {
   EffectLink,
   type EffectLinkConfig,
 } from "@tauri-nexus/rpc-effect";
+
+// Export parseEffectError from local errors module (comprehensive parsing)
+export { parseEffectError } from "../core/errors";
 
 // =============================================================================
 // Error Conversion to Public Format

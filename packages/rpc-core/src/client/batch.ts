@@ -20,10 +20,9 @@ import type {
 import {
   validatePath,
   makeCallError,
-  parseEffectError,
   type RpcEffectError,
 } from "@tauri-nexus/rpc-effect";
-import { toPublicError } from "../internal";
+import { toPublicError, parseEffectError } from "../internal";
 
 // =============================================================================
 // Types
