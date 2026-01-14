@@ -13,9 +13,51 @@ import {
   type InterceptorContext,
   type EventIterator,
 } from "./types";
-import { fromTransportError } from "./errors";
+import {
+  makeCallError,
+  makeTimeoutError,
+  makeCancelledError,
+  isEffectRpcError,
+} from "./errors";
 import { validatePath } from "./validation";
 import type { RpcServices } from "./runtime";
+
+// =============================================================================
+// Default Error Converter
+// =============================================================================
+
+/**
+ * Default error converter for when transport doesn't provide one.
+ * Handles basic cases: Effect errors, AbortError, Error, string.
+ */
+const defaultParseError = (
+  error: unknown,
+  path: string,
+  timeoutMs?: number
+): RpcEffectError => {
+  // Passthrough Effect errors
+  if (isEffectRpcError(error)) return error;
+
+  // AbortError → Timeout or Cancelled
+  if (error instanceof Error && error.name === "AbortError") {
+    return timeoutMs !== undefined
+      ? makeTimeoutError(path, timeoutMs)
+      : makeCancelledError(path);
+  }
+
+  // Standard Error
+  if (error instanceof Error) {
+    return makeCallError("UNKNOWN", error.message, undefined, error.stack);
+  }
+
+  // String error
+  if (typeof error === "string") {
+    return makeCallError("UNKNOWN", error);
+  }
+
+  // Fallback
+  return makeCallError("UNKNOWN", String(error));
+};
 
 // =============================================================================
 // Interceptor Execution
@@ -23,7 +65,12 @@ import type { RpcServices } from "./runtime";
 
 const executeWithInterceptors = <T>(
   ctx: InterceptorContext,
-  operation: () => Promise<T>
+  operation: () => Promise<T>,
+  parseError: (
+    error: unknown,
+    path: string,
+    timeoutMs?: number
+  ) => RpcEffectError
 ): Effect.Effect<T, RpcEffectError, RpcInterceptorService> =>
   Effect.gen(function* () {
     const { interceptors } = yield* RpcInterceptorService;
@@ -37,7 +84,7 @@ const executeWithInterceptors = <T>(
 
     return yield* Effect.tryPromise({
       try: () => next(),
-      catch: (error) => fromTransportError(error, ctx.path),
+      catch: (error) => parseError(error, ctx.path),
     });
   });
 
@@ -79,23 +126,27 @@ export const call = <T>(
     logger.debug(`Calling ${path}`, { input, timeout: timeoutMs });
     const startTime = Date.now();
 
-    const result = yield* executeWithInterceptors<T>(ctx, async () => {
-      if (timeoutMs) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const result = yield* executeWithInterceptors<T>(
+      ctx,
+      async () => {
+        if (timeoutMs) {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-        try {
-          const result = await transport.call<T>(path, input);
-          clearTimeout(timeoutId);
-          return result;
-        } catch (error) {
-          clearTimeout(timeoutId);
-          throw error;
+          try {
+            const result = await transport.call<T>(path, input);
+            clearTimeout(timeoutId);
+            return result;
+          } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+          }
         }
-      }
 
-      return transport.call<T>(path, input);
-    });
+        return transport.call<T>(path, input);
+      },
+      transport.parseError ?? defaultParseError
+    );
 
     const durationMs = Date.now() - startTime;
     logger.debug(`Completed ${path} in ${durationMs}ms`, { result });
@@ -116,12 +167,7 @@ export const callWithTimeout = <T>(
     call<T>(path, input, { ...options, timeout: timeoutMs }),
     Effect.timeoutFail({
       duration: Duration.millis(timeoutMs),
-      onTimeout: () =>
-        fromTransportError(
-          new DOMException("Timeout", "AbortError"),
-          path,
-          timeoutMs
-        ),
+      onTimeout: () => makeTimeoutError(path, timeoutMs),
     })
   );
 
@@ -157,7 +203,8 @@ export const subscribe = <T>(
           lastEventId: options.lastEventId,
           signal: options.signal,
         }),
-      catch: (error) => fromTransportError(error, path),
+      catch: (error) =>
+        (transport.parseError ?? defaultParseError)(error, path),
     });
 
     return iterator;
@@ -220,7 +267,8 @@ export const batchCall = <T = unknown>(
 
     const response = yield* Effect.tryPromise({
       try: () => transport.callBatch<T>(requests),
-      catch: (error) => fromTransportError(error, "batch"),
+      catch: (error) =>
+        (transport.parseError ?? defaultParseError)(error, "batch"),
     });
 
     return response as BatchResponse<T>;

@@ -57,6 +57,7 @@ export {
   isRpcNetworkError,
   hasCode,
   // Pattern Matching
+  type ErrorHandlers,
   matchError,
   // Effect Combinators
   failWithCallError,
@@ -64,8 +65,6 @@ export {
   failWithValidation,
   failWithNetwork,
   failWithCancelled,
-  // Error Conversion
-  fromTransportError,
 } from "./errors";
 
 // =============================================================================

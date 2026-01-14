@@ -114,6 +114,15 @@ export interface RpcTransport {
     input: unknown,
     options?: SubscribeTransportOptions
   ) => Promise<EventIterator<T>>;
+  /**
+   * Convert transport errors to Effect RPC errors.
+   * If not provided, a default converter will be used.
+   */
+  readonly parseError?: (
+    error: unknown,
+    path: string,
+    timeoutMs?: number
+  ) => RpcEffectError;
 }
 
 export interface SubscribeTransportOptions {

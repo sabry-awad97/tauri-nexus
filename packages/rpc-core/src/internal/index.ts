@@ -20,6 +20,7 @@ import {
   RpcValidationError,
 } from "@tauri-nexus/rpc-effect";
 import { createEventIterator } from "../subscription";
+import { fromTransportError } from "../core/errors";
 import type { RpcError } from "../core/types";
 
 // =============================================================================
@@ -54,6 +55,7 @@ const tauriTransport: RpcTransport = {
   ) => {
     return createEventIterator<T>(path, input, options);
   },
+  parseError: fromTransportError,
 };
 
 export const TauriTransportLayer = makeTransportLayer(tauriTransport);
@@ -96,6 +98,7 @@ export {
   type RpcTransport,
   type RpcServices,
   type ValidationIssue,
+  type ErrorHandlers,
   // Error classes
   RpcCallError,
   RpcTimeoutError,
@@ -113,8 +116,6 @@ export {
   makeCancelledError,
   makeValidationError,
   makeNetworkError,
-  // Error conversion
-  fromTransportError,
   // Type guards
   isEffectRpcError,
   isRpcCallError,
@@ -164,8 +165,15 @@ export {
   type EffectLinkConfig,
 } from "@tauri-nexus/rpc-effect";
 
-// Export parseEffectError from local errors module (comprehensive parsing)
-export { parseEffectError } from "../core/errors";
+// Export error utilities from local errors module
+export {
+  type RpcErrorShape,
+  isRpcErrorShape,
+  parseJsonError,
+  makeCallErrorFromShape,
+  parseEffectError,
+  fromTransportError,
+} from "../core/errors";
 
 // =============================================================================
 // Error Conversion to Public Format

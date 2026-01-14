@@ -3,14 +3,12 @@
 // =============================================================================
 
 import { describe, it, expect } from "vitest";
-import * as fc from "fast-check";
 import {
   makeCallError,
   makeTimeoutError,
   makeCancelledError,
   makeValidationError,
   makeNetworkError,
-  fromTransportError,
   isEffectRpcError,
   isRpcCallError,
   isRpcTimeoutError,
@@ -76,76 +74,6 @@ describe("Error Constructors", () => {
     expect(error._tag).toBe("RpcNetworkError");
     expect(error.path).toBe("user.get");
     expect(error.originalError).toBe(originalError);
-  });
-});
-
-describe("fromTransportError", () => {
-  it("should handle RPC error shape objects", () => {
-    const rpcError = { code: "NOT_FOUND", message: "User not found" };
-    const error = fromTransportError(rpcError, "user.get");
-    expect(error._tag).toBe("RpcCallError");
-    expect((error as RpcCallError).code).toBe("NOT_FOUND");
-  });
-
-  it("should parse JSON string errors", () => {
-    const jsonError = JSON.stringify({
-      code: "NOT_FOUND",
-      message: "User not found",
-    });
-    const error = fromTransportError(jsonError, "user.get");
-    expect(error._tag).toBe("RpcCallError");
-    expect((error as RpcCallError).code).toBe("NOT_FOUND");
-    expect((error as RpcCallError).message).toBe("User not found");
-  });
-
-  it("should handle plain string errors", () => {
-    const error = fromTransportError("Connection failed", "user.get");
-    expect(error._tag).toBe("RpcCallError");
-    expect((error as RpcCallError).code).toBe("UNKNOWN");
-    expect((error as RpcCallError).message).toBe("Connection failed");
-  });
-
-  it("should handle Error objects", () => {
-    const error = fromTransportError(new Error("Network error"), "user.get");
-    expect(error._tag).toBe("RpcCallError");
-    expect((error as RpcCallError).message).toBe("Network error");
-  });
-
-  it("should parse Error with JSON message", () => {
-    const jsonMessage = JSON.stringify({
-      code: "FORBIDDEN",
-      message: "Access denied",
-    });
-    const error = fromTransportError(new Error(jsonMessage), "user.get");
-    expect(error._tag).toBe("RpcCallError");
-    expect((error as RpcCallError).code).toBe("FORBIDDEN");
-    expect((error as RpcCallError).message).toBe("Access denied");
-  });
-
-  it("should handle AbortError as timeout when timeoutMs provided", () => {
-    const abortError = new DOMException("Aborted", "AbortError");
-    const error = fromTransportError(abortError, "user.get", 5000);
-    expect(error._tag).toBe("RpcTimeoutError");
-    expect((error as RpcTimeoutError).timeoutMs).toBe(5000);
-  });
-
-  it("should handle AbortError as cancelled when no timeoutMs", () => {
-    const abortError = new DOMException("Aborted", "AbortError");
-    const error = fromTransportError(abortError, "user.get");
-    expect(error._tag).toBe("RpcCancelledError");
-  });
-
-  it("should pass through existing Effect errors", () => {
-    const original = makeCallError("CUSTOM", "Custom error");
-    const error = fromTransportError(original, "user.get");
-    expect(error).toBe(original);
-  });
-
-  it("should handle unknown values", () => {
-    const error = fromTransportError(12345, "user.get");
-    expect(error._tag).toBe("RpcCallError");
-    expect((error as RpcCallError).code).toBe("UNKNOWN");
-    expect((error as RpcCallError).message).toBe("12345");
   });
 });
 
@@ -328,18 +256,6 @@ describe("Effect Combinators", () => {
 });
 
 describe("Property-Based Tests", () => {
-  it("property: fromTransportError always returns RpcEffectError", () => {
-    fc.assert(
-      fc.property(fc.anything(), fc.string(), (error, path) => {
-        const result = fromTransportError(error, path);
-        expect(result._tag).toMatch(
-          /^Rpc(Call|Timeout|Cancelled|Validation|Network)Error$/
-        );
-      }),
-      { numRuns: 100 }
-    );
-  });
-
   it("property: type guards are mutually exclusive", () => {
     const errors = [
       makeCallError("TEST", "Test"),

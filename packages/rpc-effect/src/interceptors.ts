@@ -30,19 +30,24 @@ export interface AuthInterceptorOptions extends InterceptorOptions {
 // Helpers (Internal)
 // =============================================================================
 
-const sleep = (ms: number): Promise<void> =>
+const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Error codes that should NOT be retried */
+const NON_RETRYABLE_CODES = [
+  "VALIDATION_ERROR",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "CANCELLED",
+  "BAD_REQUEST",
+] as const;
 
 const defaultShouldRetry = (error: unknown): boolean => {
   if (typeof error === "object" && error !== null && "code" in error) {
     const code = (error as { code: string }).code;
-    return ![
-      "VALIDATION_ERROR",
-      "UNAUTHORIZED",
-      "FORBIDDEN",
-      "CANCELLED",
-      "BAD_REQUEST",
-    ].includes(code);
+    return !NON_RETRYABLE_CODES.includes(
+      code as (typeof NON_RETRYABLE_CODES)[number]
+    );
   }
   return true;
 };
@@ -109,7 +114,7 @@ export function retryInterceptor(
             throw error;
           }
 
-          await sleep(getDelay(attempt));
+          await wait(getDelay(attempt));
         }
       }
 

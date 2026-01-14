@@ -13,6 +13,43 @@ import {
 } from "@tauri-nexus/rpc-effect";
 
 // =============================================================================
+// Error Shape Detection
+// =============================================================================
+
+/** Standard RPC error shape from transport/backend */
+export interface RpcErrorShape {
+  readonly code: string;
+  readonly message: string;
+  readonly details?: unknown;
+  readonly cause?: string;
+}
+
+/** Type guard for RPC error shape */
+export const isRpcErrorShape = (value: unknown): value is RpcErrorShape =>
+  typeof value === "object" &&
+  value !== null &&
+  "code" in value &&
+  "message" in value &&
+  typeof (value as RpcErrorShape).code === "string" &&
+  typeof (value as RpcErrorShape).message === "string";
+
+/** Parse JSON string to RPC error shape (returns null on failure) */
+export const parseJsonError = (str: string): RpcErrorShape | null => {
+  try {
+    const parsed = JSON.parse(str);
+    return isRpcErrorShape(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Create an RPC call error from error shape */
+export const makeCallErrorFromShape = (
+  shape: RpcErrorShape
+): ReturnType<typeof makeCallError> =>
+  makeCallError(shape.code, shape.message, shape.details, shape.cause);
+
+// =============================================================================
 // Error Type Guards
 // =============================================================================
 
@@ -104,21 +141,6 @@ export function parseError(error: unknown, timeoutMs?: number): RpcError {
 // Effect Error Parsing (comprehensive)
 // =============================================================================
 
-interface RpcErrorShape {
-  code: string;
-  message: string;
-  details?: unknown;
-  cause?: string;
-}
-
-const isRpcErrorShape = (error: unknown): error is RpcErrorShape =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  "message" in error &&
-  typeof (error as RpcErrorShape).code === "string" &&
-  typeof (error as RpcErrorShape).message === "string";
-
 /**
  * Extract failures from Effect's Cause structure.
  */
@@ -161,10 +183,9 @@ export const parseEffectError = (
 
   // AbortError handling
   if (error instanceof Error && error.name === "AbortError") {
-    if (timeoutMs !== undefined) {
-      return makeTimeoutError(path, timeoutMs);
-    }
-    return makeCancelledError(path);
+    return timeoutMs !== undefined
+      ? makeTimeoutError(path, timeoutMs)
+      : makeCancelledError(path);
   }
 
   // Handle Effect FiberFailure
@@ -199,43 +220,72 @@ export const parseEffectError = (
 
   // Handle JSON string errors
   if (typeof error === "string") {
-    try {
-      const parsed = JSON.parse(error);
-      if (isRpcErrorShape(parsed)) {
-        return makeCallError(
-          parsed.code,
-          parsed.message,
-          parsed.details,
-          parsed.cause
-        );
-      }
-      return makeCallError("UNKNOWN", error);
-    } catch {
-      return makeCallError("UNKNOWN", error);
-    }
+    const parsed = parseJsonError(error);
+    return parsed
+      ? makeCallErrorFromShape(parsed)
+      : makeCallError("UNKNOWN", error);
   }
 
   // Handle RPC error shape objects
   if (isRpcErrorShape(error)) {
-    return makeCallError(error.code, error.message, error.details, error.cause);
+    return makeCallErrorFromShape(error);
   }
 
   // Handle Error objects with JSON message
   if (error instanceof Error) {
-    try {
-      const parsed = JSON.parse(error.message);
-      if (isRpcErrorShape(parsed)) {
-        return makeCallError(
-          parsed.code,
-          parsed.message,
-          parsed.details,
-          parsed.cause
-        );
-      }
-    } catch {
-      // Not JSON
-    }
-    return makeCallError("UNKNOWN", error.message, undefined, error.stack);
+    const parsed = parseJsonError(error.message);
+    return parsed
+      ? makeCallErrorFromShape(parsed)
+      : makeCallError("UNKNOWN", error.message, undefined, error.stack);
+  }
+
+  // Fallback
+  return makeCallError("UNKNOWN", String(error));
+};
+
+// =============================================================================
+// Transport Error Conversion
+// =============================================================================
+
+/**
+ * Convert a transport error to an Effect RPC error.
+ * This is the standard error converter for Tauri transport.
+ * Handles: Effect errors (passthrough), AbortError, RPC shape, JSON strings, Error, string.
+ */
+export const fromTransportError = (
+  error: unknown,
+  path: string,
+  timeoutMs?: number
+): RpcEffectError => {
+  // Passthrough Effect errors
+  if (isEffectRpcError(error)) return error;
+
+  // AbortError → Timeout or Cancelled
+  if (error instanceof Error && error.name === "AbortError") {
+    return timeoutMs !== undefined
+      ? makeTimeoutError(path, timeoutMs)
+      : makeCancelledError(path);
+  }
+
+  // RPC error shape from transport
+  if (isRpcErrorShape(error)) {
+    return makeCallErrorFromShape(error);
+  }
+
+  // JSON string error (common from Tauri)
+  if (typeof error === "string") {
+    const parsed = parseJsonError(error);
+    return parsed
+      ? makeCallErrorFromShape(parsed)
+      : makeCallError("UNKNOWN", error);
+  }
+
+  // Standard Error (may have JSON message)
+  if (error instanceof Error) {
+    const parsed = parseJsonError(error.message);
+    return parsed
+      ? makeCallErrorFromShape(parsed)
+      : makeCallError("UNKNOWN", error.message, undefined, error.stack);
   }
 
   // Fallback

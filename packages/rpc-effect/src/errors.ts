@@ -1,8 +1,8 @@
 // =============================================================================
 // @tauri-nexus/rpc-effect - Effect Error Utilities
 // =============================================================================
-// Pure Effect error constructors, type guards, and pattern matching.
-// No parsing logic - that belongs in the transport layer (rpc-core).
+// Pure Effect error constructors, type guards, pattern matching, and combinators.
+// No parsing logic - that belongs in the transport layer.
 
 import { Effect, Match } from "effect";
 import {
@@ -55,17 +55,22 @@ export const makeNetworkError = (
 // Type Guards
 // =============================================================================
 
+/** RPC error tags for type checking */
+const RPC_ERROR_TAGS = [
+  "RpcCallError",
+  "RpcTimeoutError",
+  "RpcCancelledError",
+  "RpcValidationError",
+  "RpcNetworkError",
+] as const;
+
+type RpcErrorTag = (typeof RPC_ERROR_TAGS)[number];
+
 /** Check if a value is an Effect RPC error */
 export const isEffectRpcError = (error: unknown): error is RpcEffectError => {
   if (typeof error !== "object" || error === null) return false;
   const tag = (error as { _tag?: string })._tag;
-  return (
-    tag === "RpcCallError" ||
-    tag === "RpcTimeoutError" ||
-    tag === "RpcCancelledError" ||
-    tag === "RpcValidationError" ||
-    tag === "RpcNetworkError"
-  );
+  return RPC_ERROR_TAGS.includes(tag as RpcErrorTag);
 };
 
 /** Check if error is an RpcCallError */
@@ -104,16 +109,19 @@ export const hasCode = (error: RpcEffectError, code: string): boolean =>
 // Pattern Matching
 // =============================================================================
 
+/** Error handler functions for pattern matching */
+export interface ErrorHandlers<A> {
+  readonly onCallError: (e: RpcCallError) => A;
+  readonly onTimeoutError: (e: RpcTimeoutError) => A;
+  readonly onCancelledError: (e: RpcCancelledError) => A;
+  readonly onValidationError: (e: RpcValidationError) => A;
+  readonly onNetworkError: (e: RpcNetworkError) => A;
+}
+
 /** Match on RPC error types using Effect's Match */
 export const matchError = <A>(
   error: RpcEffectError,
-  handlers: {
-    onCallError: (e: RpcCallError) => A;
-    onTimeoutError: (e: RpcTimeoutError) => A;
-    onCancelledError: (e: RpcCancelledError) => A;
-    onValidationError: (e: RpcValidationError) => A;
-    onNetworkError: (e: RpcNetworkError) => A;
-  }
+  handlers: ErrorHandlers<A>
 ): A =>
   Match.value(error).pipe(
     Match.tag("RpcCallError", handlers.onCallError),
@@ -163,89 +171,3 @@ export const failWithCancelled = (
   reason?: string
 ): Effect.Effect<never, RpcCancelledError> =>
   Effect.fail(makeCancelledError(path, reason));
-
-// =============================================================================
-// Error Conversion (for transport layer)
-// =============================================================================
-
-/** RPC error shape from transport */
-interface RpcErrorShape {
-  code: string;
-  message: string;
-  details?: unknown;
-  cause?: string;
-}
-
-const isRpcErrorShape = (error: unknown): error is RpcErrorShape =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  "message" in error &&
-  typeof (error as RpcErrorShape).code === "string" &&
-  typeof (error as RpcErrorShape).message === "string";
-
-/** Try to parse a JSON string into an RPC error shape */
-const tryParseJsonError = (str: string): RpcErrorShape | null => {
-  try {
-    const parsed = JSON.parse(str);
-    return isRpcErrorShape(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-};
-
-/**
- * Convert a transport error to an Effect RPC error.
- * Handles: Effect errors (passthrough), AbortError, RPC shape, JSON strings, Error, string.
- */
-export const fromTransportError = (
-  error: unknown,
-  path: string,
-  timeoutMs?: number
-): RpcEffectError => {
-  // Passthrough Effect errors
-  if (isEffectRpcError(error)) return error;
-
-  // AbortError → Timeout or Cancelled
-  if (error instanceof Error && error.name === "AbortError") {
-    return timeoutMs !== undefined
-      ? makeTimeoutError(path, timeoutMs)
-      : makeCancelledError(path);
-  }
-
-  // RPC error shape from transport
-  if (isRpcErrorShape(error)) {
-    return makeCallError(error.code, error.message, error.details, error.cause);
-  }
-
-  // JSON string error (common from Tauri)
-  if (typeof error === "string") {
-    const parsed = tryParseJsonError(error);
-    if (parsed) {
-      return makeCallError(
-        parsed.code,
-        parsed.message,
-        parsed.details,
-        parsed.cause
-      );
-    }
-    return makeCallError("UNKNOWN", error);
-  }
-
-  // Standard Error (may have JSON message)
-  if (error instanceof Error) {
-    const parsed = tryParseJsonError(error.message);
-    if (parsed) {
-      return makeCallError(
-        parsed.code,
-        parsed.message,
-        parsed.details,
-        parsed.cause
-      );
-    }
-    return makeCallError("UNKNOWN", error.message, undefined, error.stack);
-  }
-
-  // Fallback
-  return makeCallError("UNKNOWN", String(error));
-};
