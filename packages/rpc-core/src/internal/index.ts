@@ -7,10 +7,11 @@
 import { Layer } from "effect";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  makeConfigLayer,
-  makeTransportLayer,
-  makeInterceptorLayer,
-  makeLoggerLayer,
+  RpcConfigService,
+  RpcTransportService,
+  RpcInterceptorService,
+  RpcLoggerService,
+  consoleLogger,
   fromTransportError,
   type RpcConfig,
   type RpcTransport,
@@ -52,7 +53,7 @@ const tauriTransport: RpcTransport = {
   parseError: fromTransportError,
 };
 
-export const TauriTransportLayer = makeTransportLayer(tauriTransport);
+export const TauriTransportLayer = RpcTransportService.layer(tauriTransport);
 
 // =============================================================================
 // Layer Builders
@@ -60,23 +61,18 @@ export const TauriTransportLayer = makeTransportLayer(tauriTransport);
 
 export const makeDefaultLayer = (config?: Partial<RpcConfig>) =>
   Layer.mergeAll(
-    makeConfigLayer(config),
+    RpcConfigService.layer(config),
     TauriTransportLayer,
-    makeInterceptorLayer({ interceptors: [] }),
-    makeLoggerLayer(),
+    RpcInterceptorService.Default,
+    RpcLoggerService.Default,
   );
 
 export const makeDebugLayer = (config?: Partial<RpcConfig>) =>
   Layer.mergeAll(
-    makeConfigLayer(config),
+    RpcConfigService.layer(config),
     TauriTransportLayer,
-    makeInterceptorLayer({ interceptors: [] }),
-    makeLoggerLayer({
-      debug: (msg, data) => console.debug(`[RPC] ${msg}`, data ?? ""),
-      info: (msg, data) => console.info(`[RPC] ${msg}`, data ?? ""),
-      warn: (msg, data) => console.warn(`[RPC] ${msg}`, data ?? ""),
-      error: (msg, data) => console.error(`[RPC] ${msg}`, data ?? ""),
-    }),
+    RpcInterceptorService.Default,
+    RpcLoggerService.layer(consoleLogger),
   );
 
 // =============================================================================
@@ -112,12 +108,12 @@ export {
   RpcTransportService,
   RpcInterceptorService,
   RpcLoggerService,
-  // Error constructors
-  makeCallError,
-  makeTimeoutError,
-  makeCancelledError,
-  makeValidationError,
-  makeNetworkError,
+  // Error constructors (using new naming)
+  createCallError,
+  createTimeoutError,
+  createCancelledError,
+  createValidationError,
+  createNetworkError,
   // Type guards
   isEffectRpcError,
   isRpcCallError,
@@ -147,7 +143,7 @@ export {
   type ErrorParserOptions,
   isRpcErrorShape,
   parseJsonError,
-  makeCallErrorFromShape,
+  createCallErrorFromShape,
   parseToEffectError,
   fromTransportError,
   parseEffectError,
@@ -162,10 +158,8 @@ export {
   validatePathPure,
   isValidPathPure,
   // Runtime
-  makeConfigLayer,
-  makeTransportLayer,
-  makeInterceptorLayer,
-  makeLoggerLayer,
+  createRpcLayer,
+  createDebugLayer,
   consoleLogger,
   // Call effects
   call as callEffect,

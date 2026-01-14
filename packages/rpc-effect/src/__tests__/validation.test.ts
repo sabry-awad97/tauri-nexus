@@ -10,7 +10,7 @@ import {
   validatePaths,
   isValidPath,
   validatePathWithRules,
-} from "../validation";
+} from "../index";
 
 describe("validatePath", () => {
   it("should accept valid paths", async () => {

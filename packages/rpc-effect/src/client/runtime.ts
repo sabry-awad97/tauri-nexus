@@ -1,7 +1,6 @@
 // =============================================================================
-// @tauri-nexus/rpc-effect - Effect Runtime Management
+// Runtime Management
 // =============================================================================
-// Manages the Effect runtime and provides service layers for RPC operations.
 
 import { Effect, Layer, ManagedRuntime } from "effect";
 import {
@@ -9,88 +8,41 @@ import {
   RpcTransportService,
   RpcInterceptorService,
   RpcLoggerService,
-  consoleLogger,
-  type RpcConfig,
-  type RpcTransport,
-  type RpcInterceptorChain,
-  type RpcLogger,
-} from "./types";
-
-// =============================================================================
-// Layer Factories (Convenience wrappers)
-// =============================================================================
-
-/**
- * Create a config layer with custom settings.
- * @deprecated Use RpcConfigService.layer() instead
- */
-export const makeConfigLayer = (config: Partial<RpcConfig> = {}) =>
-  RpcConfigService.layer(config);
-
-/**
- * Create a custom transport layer.
- * @deprecated Use RpcTransportService.layer() instead
- */
-export const makeTransportLayer = (transport: RpcTransport) =>
-  RpcTransportService.layer(transport);
-
-/**
- * Create an interceptor layer.
- * @deprecated Use RpcInterceptorService.layer() instead
- */
-export const makeInterceptorLayer = (chain: RpcInterceptorChain) =>
-  RpcInterceptorService.layer(chain);
-
-/**
- * Create a logger layer.
- * @deprecated Use RpcLoggerService.layer() or RpcLoggerService.Default instead
- */
-export const makeLoggerLayer = (logger?: RpcLogger) =>
-  logger ? RpcLoggerService.layer(logger) : RpcLoggerService.Default;
-
-// Re-export consoleLogger for backward compatibility
-export { consoleLogger };
+  type RpcServices,
+} from "../services";
+import type { RpcConfig, RpcTransport } from "../core/types";
 
 // =============================================================================
 // Combined Layers
 // =============================================================================
 
 /**
- * Full service requirements for RPC operations.
- */
-export type RpcServices =
-  | RpcConfigService
-  | RpcTransportService
-  | RpcInterceptorService
-  | RpcLoggerService;
-
-/**
  * Create a layer stack with custom transport.
  * Uses default config, no interceptors, and no logging.
  */
-export const makeRpcLayer = (
+export const createRpcLayer = (
   transport: RpcTransport,
-  config?: Partial<RpcConfig>
+  config?: Partial<RpcConfig>,
 ) =>
   Layer.mergeAll(
     RpcConfigService.layer(config),
     RpcTransportService.layer(transport),
     RpcInterceptorService.Default,
-    RpcLoggerService.Default
+    RpcLoggerService.Default,
   );
 
 /**
  * Create a layer with console logging enabled.
  */
-export const makeDebugLayer = (
+export const createDebugLayer = (
   transport: RpcTransport,
-  config?: Partial<RpcConfig>
+  config?: Partial<RpcConfig>,
 ) =>
   Layer.mergeAll(
     RpcConfigService.layer(config),
     RpcTransportService.layer(transport),
     RpcInterceptorService.Default,
-    RpcLoggerService.Console
+    RpcLoggerService.Console,
   );
 
 // =============================================================================
@@ -101,7 +53,7 @@ let globalRuntime: ManagedRuntime.ManagedRuntime<RpcServices, never> | null =
   null;
 
 export const getRuntime = (
-  layer?: Layer.Layer<RpcServices>
+  layer?: Layer.Layer<RpcServices>,
 ): ManagedRuntime.ManagedRuntime<RpcServices, never> => {
   if (!globalRuntime && layer) {
     globalRuntime = ManagedRuntime.make(layer);
@@ -113,7 +65,7 @@ export const getRuntime = (
 };
 
 export const initializeRuntime = (
-  layer: Layer.Layer<RpcServices>
+  layer: Layer.Layer<RpcServices>,
 ): ManagedRuntime.ManagedRuntime<RpcServices, never> => {
   if (globalRuntime) {
     globalRuntime.dispose();
@@ -134,7 +86,7 @@ export const disposeRuntime = async (): Promise<void> => {
 // =============================================================================
 
 export const runEffect = async <A, E>(
-  effect: Effect.Effect<A, E, RpcServices>
+  effect: Effect.Effect<A, E, RpcServices>,
 ): Promise<A> => {
   const runtime = getRuntime();
   return runtime.runPromise(effect);

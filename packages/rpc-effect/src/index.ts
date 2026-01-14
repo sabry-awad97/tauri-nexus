@@ -1,11 +1,10 @@
 // =============================================================================
 // @tauri-nexus/rpc-effect - Effect-Based RPC Library
 // =============================================================================
-// Pure Effect-based RPC implementation with no Promise wrappers.
-// Use this package for Effect-first development.
+// Pure Effect-based RPC implementation with clean architecture.
 
 // =============================================================================
-// Core Types
+// Core Types & Errors
 // =============================================================================
 
 export type {
@@ -13,7 +12,6 @@ export type {
   Event,
   EventIterator,
   ValidationIssue,
-  RpcEffectError,
   RpcConfig,
   RpcTransport,
   SubscribeTransportOptions,
@@ -23,33 +21,23 @@ export type {
   RpcLogger,
   EffectRequestContext,
   EffectResponseContext,
-} from "./types";
+} from "./core";
 
 export {
+  // Error classes
   RpcCallError,
   RpcTimeoutError,
   RpcCancelledError,
   RpcValidationError,
   RpcNetworkError,
-  RpcConfigService,
-  RpcTransportService,
-  RpcInterceptorService,
-  RpcLoggerService,
-  consoleLogger,
-} from "./types";
-
-// =============================================================================
-// Error Utilities
-// =============================================================================
-
-export {
-  // Constructors
-  makeCallError,
-  makeTimeoutError,
-  makeCancelledError,
-  makeValidationError,
-  makeNetworkError,
-  // Type Guards (Effect errors)
+  type RpcEffectError,
+  // Error constructors
+  createCallError,
+  createTimeoutError,
+  createCancelledError,
+  createValidationError,
+  createNetworkError,
+  // Type guards
   isEffectRpcError,
   isRpcCallError,
   isRpcTimeoutError,
@@ -62,49 +50,64 @@ export {
   hasCode,
   hasAnyCode,
   isRetryableError,
-  // Pattern Matching
+  // Pattern matching
   type ErrorHandlers,
   matchError,
-  // Effect Combinators
+  // Effect combinators
   failWithCallError,
   failWithTimeout,
   failWithValidation,
   failWithNetwork,
   failWithCancelled,
-  // Serializable RpcError (for Promise API)
+} from "./core";
+
+// =============================================================================
+// Services
+// =============================================================================
+
+export {
+  RpcConfigService,
+  RpcTransportService,
+  RpcInterceptorService,
+  RpcLoggerService,
+  consoleLogger,
+  type RpcServices,
+} from "./services";
+
+// =============================================================================
+// Serializable Errors (for Promise API)
+// =============================================================================
+
+export {
   type RpcError,
   type RpcErrorCode,
+  type RpcErrorShape,
   toRpcError,
   fromRpcError,
   isRpcError,
   hasErrorCode,
   createRpcError,
-  parseError,
-  // Rate Limit Helpers
   isRateLimitError,
   getRateLimitRetryAfter,
-  // Error Parsing
-  type RpcErrorShape,
   type ErrorParserOptions,
   isRpcErrorShape,
   parseJsonError,
-  makeCallErrorFromShape,
+  createCallErrorFromShape,
   parseToEffectError,
   fromTransportError,
   parseEffectError,
-} from "./errors";
+  parseError,
+} from "./serializable";
 
 // =============================================================================
 // Validation
 // =============================================================================
 
 export {
-  // Pure functions (no Effect)
   validatePathPure,
   isValidPathPure,
   validatePathOrThrow,
   type PathValidationResult,
-  // Effect-based
   validatePath,
   validatePaths,
   validateAndNormalizePath,
@@ -114,16 +117,114 @@ export {
 } from "./validation";
 
 // =============================================================================
-// Runtime
+// Operations
 // =============================================================================
 
 export {
-  makeConfigLayer,
-  makeTransportLayer,
-  makeInterceptorLayer,
-  makeLoggerLayer,
-  makeRpcLayer,
-  makeDebugLayer,
+  defaultParseError,
+  type CallOptions,
+  call,
+  callWithTimeout,
+  type SubscribeOptions,
+  subscribe,
+  type BatchRequestItem,
+  type BatchResultItem,
+  type BatchRequest,
+  type BatchResponse,
+  validateBatchRequests,
+  batchCall,
+} from "./operations";
+
+// =============================================================================
+// Interceptors
+// =============================================================================
+
+export {
+  type InterceptorOptions,
+  type InterceptorHandler,
+  createInterceptorFactory,
+  createSimpleInterceptor,
+  composeInterceptors,
+  loggingInterceptor,
+  type LoggingInterceptorOptions,
+  retryInterceptor,
+  type RetryInterceptorOptions,
+  authInterceptor,
+  type AuthInterceptorOptions,
+  timingInterceptor,
+  dedupeInterceptor,
+  type DedupeInterceptorOptions,
+  errorHandlerInterceptor,
+} from "./interceptors";
+
+// =============================================================================
+// Utilities
+// =============================================================================
+
+export {
+  stableStringify,
+  sleep,
+  calculateBackoff,
+  type RetryConfig,
+  defaultRetryConfig,
+  createRetrySchedule,
+  withRetry,
+  withRetryDetailed,
+  createDedupCache,
+  deduplicationKey,
+  withDedup,
+} from "./utils";
+
+// =============================================================================
+// Subscription
+// =============================================================================
+
+export {
+  type SubscriptionEventType,
+  type SubscriptionEvent,
+  type SubscriptionError,
+  type SubscriptionState,
+  type ReconnectConfig,
+  type QueueItem,
+  SHUTDOWN_SENTINEL,
+  defaultReconnectConfig,
+  createSubscriptionState,
+  createSubscriptionStateRef,
+  createEventQueue,
+  markCompleted,
+  updateLastEventId,
+  incrementConsumers,
+  decrementConsumers,
+  resetForReconnect,
+  incrementReconnectAttempts,
+  resetReconnectAttempts,
+  offerEvent,
+  sendShutdownSentinels,
+  takeFromQueue,
+  calculateReconnectDelay,
+  shouldReconnect,
+  prepareReconnect,
+  waitForReconnect,
+  maxReconnectsExceededError,
+  processDataEvent,
+  processErrorEvent,
+  generateSubscriptionId,
+  extractSubscriptionError,
+} from "./subscription";
+
+// =============================================================================
+// Client
+// =============================================================================
+
+export {
+  EffectLink,
+  type EffectLinkConfig,
+  createEffectClient,
+  createEffectClientWithTransport,
+  type EffectClientConfig,
+  type EffectClient,
+  createRpcLayer,
+  createDebugLayer,
   getRuntime,
   initializeRuntime,
   disposeRuntime,
@@ -132,130 +233,4 @@ export {
   getTransport,
   getInterceptors,
   getLogger,
-  type RpcServices,
-} from "./runtime";
-
-// =============================================================================
-// Call Effects
-// =============================================================================
-
-export {
-  call,
-  callWithTimeout,
-  subscribe,
-  validateBatchRequests,
-  batchCall,
-  defaultParseError,
-  type CallOptions,
-  type SubscribeOptions,
-  type BatchRequestItem,
-  type BatchResultItem,
-  type BatchRequest,
-  type BatchResponse,
-} from "./call";
-
-// =============================================================================
-// Utilities
-// =============================================================================
-
-export {
-  sleep,
-  calculateBackoff,
-  withRetry,
-  withRetryDetailed,
-  createRetrySchedule,
-  defaultRetryConfig,
-  createDedupCache,
-  deduplicationKey,
-  withDedup,
-  stableStringify,
-  type RetryConfig,
-} from "./utils";
-
-// =============================================================================
-// Interceptors
-// =============================================================================
-
-export {
-  // Generic factory
-  createInterceptorFactory,
-  createSimpleInterceptor,
-  composeInterceptors,
-  type InterceptorHandler,
-  // Pre-built interceptors
-  loggingInterceptor,
-  retryInterceptor,
-  errorHandlerInterceptor,
-  authInterceptor,
-  timingInterceptor,
-  dedupeInterceptor,
-  // Deprecated aliases
-  createLoggingInterceptor,
-  createRetryInterceptor,
-  createErrorInterceptor,
-  createAuthInterceptor,
-  type InterceptorOptions,
-  type RetryInterceptorOptions,
-  type AuthInterceptorOptions,
-} from "./interceptors";
-
-// =============================================================================
-// Link
-// =============================================================================
-
-export { EffectLink, type EffectLinkConfig } from "./link";
-
-// =============================================================================
-// Client
-// =============================================================================
-
-export {
-  createEffectClient,
-  createEffectClientWithTransport,
-  type EffectClientConfig,
-  type EffectClient,
 } from "./client";
-
-// =============================================================================
-// Subscription Primitives
-// =============================================================================
-
-export {
-  // Types
-  type SubscriptionEventType,
-  type SubscriptionEvent,
-  type SubscriptionError,
-  type SubscriptionState,
-  type ReconnectConfig,
-  type QueueItem,
-  SHUTDOWN_SENTINEL,
-  // Configuration
-  defaultReconnectConfig,
-  // State Management
-  createSubscriptionState,
-  makeSubscriptionStateRef,
-  makeEventQueue,
-  markCompleted,
-  updateLastEventId,
-  incrementConsumers,
-  decrementConsumers,
-  resetForReconnect,
-  incrementReconnectAttempts,
-  resetReconnectAttempts,
-  // Queue Operations
-  offerEvent,
-  sendShutdownSentinels,
-  takeFromQueue,
-  // Reconnection Logic
-  calculateReconnectDelay,
-  shouldReconnect,
-  prepareReconnect,
-  waitForReconnect,
-  maxReconnectsExceededError,
-  // Event Processing
-  processDataEvent,
-  processErrorEvent,
-  // Utilities
-  generateSubscriptionId,
-  extractSubscriptionError,
-} from "./subscription";

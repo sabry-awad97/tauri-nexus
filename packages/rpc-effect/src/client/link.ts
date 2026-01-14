@@ -1,39 +1,27 @@
 // =============================================================================
-// @tauri-nexus/rpc-effect - Effect-Based Link Implementation
+// Effect Link Implementation
 // =============================================================================
-// A composable link system using Effect for advanced use cases.
 
 import { Effect, Layer, pipe } from "effect";
+import type { RpcConfig, RpcInterceptor, EventIterator } from "../core/types";
+import type { RpcEffectError } from "../core/errors";
 import {
-  type RpcConfig,
-  type RpcInterceptor,
-  type RpcEffectError,
-  type EventIterator,
-} from "./types";
+  RpcConfigService,
+  RpcTransportService,
+  RpcInterceptorService,
+  RpcLoggerService,
+  consoleLogger,
+  type RpcServices,
+} from "../services";
 import {
   call,
   subscribe,
   type CallOptions,
   type SubscribeOptions,
-} from "./call";
-import {
-  makeConfigLayer,
-  makeInterceptorLayer,
-  makeLoggerLayer,
-  makeTransportLayer,
-  type RpcServices,
-} from "./runtime";
-
-// Re-export interceptor factories for convenience
-export {
-  createLoggingInterceptor,
-  createRetryInterceptor,
-  createErrorInterceptor,
-  createAuthInterceptor,
-} from "./interceptors";
+} from "../operations";
 
 // =============================================================================
-// Effect Link Configuration
+// Configuration
 // =============================================================================
 
 export interface EffectLinkConfig<TContext = unknown> {
@@ -45,6 +33,28 @@ export interface EffectLinkConfig<TContext = unknown> {
 }
 
 // =============================================================================
+// Transport Type
+// =============================================================================
+
+type TransportProvider = () => {
+  call: <T>(path: string, input: unknown) => Promise<T>;
+  callBatch: <T>(
+    requests: readonly { id: string; path: string; input: unknown }[],
+  ) => Promise<{
+    results: readonly {
+      id: string;
+      data?: T;
+      error?: { code: string; message: string; details?: unknown };
+    }[];
+  }>;
+  subscribe: <T>(
+    path: string,
+    input: unknown,
+    options?: { lastEventId?: string; signal?: AbortSignal },
+  ) => Promise<EventIterator<T>>;
+};
+
+// =============================================================================
 // Effect Link Class
 // =============================================================================
 
@@ -54,25 +64,7 @@ export interface EffectLinkConfig<TContext = unknown> {
 export class EffectLink<TContext = unknown> {
   private readonly config: EffectLinkConfig<TContext>;
   private layer: Layer.Layer<RpcServices> | null = null;
-  private transportProvider:
-    | (() => {
-        call: <T>(path: string, input: unknown) => Promise<T>;
-        callBatch: <T>(
-          requests: readonly { id: string; path: string; input: unknown }[],
-        ) => Promise<{
-          results: readonly {
-            id: string;
-            data?: T;
-            error?: { code: string; message: string; details?: unknown };
-          }[];
-        }>;
-        subscribe: <T>(
-          path: string,
-          input: unknown,
-          options?: { lastEventId?: string; signal?: AbortSignal },
-        ) => Promise<EventIterator<T>>;
-      })
-    | null = null;
+  private transportProvider: TransportProvider | null = null;
 
   constructor(config: EffectLinkConfig<TContext> = {}) {
     this.config = config;
@@ -81,25 +73,7 @@ export class EffectLink<TContext = unknown> {
   /**
    * Set the transport provider for this link.
    */
-  setTransport(
-    provider: () => {
-      call: <T>(path: string, input: unknown) => Promise<T>;
-      callBatch: <T>(
-        requests: readonly { id: string; path: string; input: unknown }[],
-      ) => Promise<{
-        results: readonly {
-          id: string;
-          data?: T;
-          error?: { code: string; message: string; details?: unknown };
-        }[];
-      }>;
-      subscribe: <T>(
-        path: string,
-        input: unknown,
-        options?: { lastEventId?: string; signal?: AbortSignal },
-      ) => Promise<EventIterator<T>>;
-    },
-  ): this {
+  setTransport(provider: TransportProvider): this {
     this.transportProvider = provider;
     this.layer = null;
     return this;
@@ -119,27 +93,18 @@ export class EffectLink<TContext = unknown> {
 
     const transport = this.transportProvider();
 
+    const noopLogger = {
+      debug: () => {},
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+    };
+
     return Layer.mergeAll(
-      makeConfigLayer(rpcConfig),
-      makeTransportLayer(transport),
-      makeInterceptorLayer({
-        interceptors: [...(this.config.interceptors ?? [])],
-      }),
-      makeLoggerLayer(
-        this.config.debug
-          ? {
-              debug: (msg, data) => console.debug(`[RPC] ${msg}`, data ?? ""),
-              info: (msg, data) => console.info(`[RPC] ${msg}`, data ?? ""),
-              warn: (msg, data) => console.warn(`[RPC] ${msg}`, data ?? ""),
-              error: (msg, data) => console.error(`[RPC] ${msg}`, data ?? ""),
-            }
-          : {
-              debug: () => {},
-              info: () => {},
-              warn: () => {},
-              error: () => {},
-            },
-      ),
+      RpcConfigService.layer(rpcConfig),
+      RpcTransportService.layer(transport),
+      RpcInterceptorService.withInterceptors(this.config.interceptors ?? []),
+      RpcLoggerService.layer(this.config.debug ? consoleLogger : noopLogger),
     );
   }
 

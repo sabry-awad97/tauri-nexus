@@ -1,11 +1,12 @@
 // =============================================================================
-// @tauri-nexus/rpc-effect - Path Validation
+// Path Validation
 // =============================================================================
 // Effect-based path validation utilities.
 
 import { Effect, pipe } from "effect";
-import type { RpcEffectError, ValidationIssue } from "./types";
-import { makeValidationError } from "./errors";
+import type { RpcEffectError } from "../core/errors";
+import type { ValidationIssue } from "../core/types";
+import { createValidationError } from "../core/error-utils";
 
 // =============================================================================
 // Constants
@@ -100,7 +101,7 @@ export const validatePath = (
   Effect.gen(function* () {
     const result = validatePathPure(path);
     if (!result.valid) {
-      return yield* Effect.fail(makeValidationError(path, result.issues));
+      return yield* Effect.fail(createValidationError(path, result.issues));
     }
     return path;
   });
@@ -129,7 +130,7 @@ export const validatePaths = (
             message: `[${path}] ${issue.message}`,
           })),
       );
-      return yield* Effect.fail(makeValidationError("batch", combinedIssues));
+      return yield* Effect.fail(createValidationError("batch", combinedIssues));
     }
 
     return paths;
@@ -220,7 +221,7 @@ export const validatePathWithRules = (
     }
 
     if (issues.length > 0) {
-      return yield* Effect.fail(makeValidationError(path, issues));
+      return yield* Effect.fail(createValidationError(path, issues));
     }
 
     return path;

@@ -4,11 +4,11 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  makeCallError,
-  makeTimeoutError,
-  makeCancelledError,
-  makeValidationError,
-  makeNetworkError,
+  createCallError,
+  createTimeoutError,
+  createCancelledError,
+  createValidationError,
+  createNetworkError,
   isEffectRpcError,
   isRpcCallError,
   isRpcTimeoutError,
@@ -25,19 +25,17 @@ import {
   failWithValidation,
   failWithNetwork,
   failWithCancelled,
-} from "../errors";
-import {
   RpcCallError,
   RpcTimeoutError,
   RpcCancelledError,
   RpcValidationError,
   RpcNetworkError,
-} from "../types";
+} from "../index";
 import { Effect } from "effect";
 
 describe("Error Constructors", () => {
   it("should create RpcCallError", () => {
-    const error = makeCallError("NOT_FOUND", "User not found", { id: 1 });
+    const error = createCallError("NOT_FOUND", "User not found", { id: 1 });
     expect(error).toBeInstanceOf(RpcCallError);
     expect(error._tag).toBe("RpcCallError");
     expect(error.code).toBe("NOT_FOUND");
@@ -46,7 +44,7 @@ describe("Error Constructors", () => {
   });
 
   it("should create RpcTimeoutError", () => {
-    const error = makeTimeoutError("user.get", 5000);
+    const error = createTimeoutError("user.get", 5000);
     expect(error).toBeInstanceOf(RpcTimeoutError);
     expect(error._tag).toBe("RpcTimeoutError");
     expect(error.path).toBe("user.get");
@@ -54,7 +52,7 @@ describe("Error Constructors", () => {
   });
 
   it("should create RpcCancelledError", () => {
-    const error = makeCancelledError("user.get", "User cancelled");
+    const error = createCancelledError("user.get", "User cancelled");
     expect(error).toBeInstanceOf(RpcCancelledError);
     expect(error._tag).toBe("RpcCancelledError");
     expect(error.path).toBe("user.get");
@@ -63,7 +61,7 @@ describe("Error Constructors", () => {
 
   it("should create RpcValidationError", () => {
     const issues = [{ path: ["name"], message: "Required", code: "required" }];
-    const error = makeValidationError("user.create", issues);
+    const error = createValidationError("user.create", issues);
     expect(error).toBeInstanceOf(RpcValidationError);
     expect(error._tag).toBe("RpcValidationError");
     expect(error.path).toBe("user.create");
@@ -72,7 +70,7 @@ describe("Error Constructors", () => {
 
   it("should create RpcNetworkError", () => {
     const originalError = new Error("Connection refused");
-    const error = makeNetworkError("user.get", originalError);
+    const error = createNetworkError("user.get", originalError);
     expect(error).toBeInstanceOf(RpcNetworkError);
     expect(error._tag).toBe("RpcNetworkError");
     expect(error.path).toBe("user.get");
@@ -82,11 +80,13 @@ describe("Error Constructors", () => {
 
 describe("isEffectRpcError", () => {
   it("should identify Effect RPC errors", () => {
-    expect(isEffectRpcError(makeCallError("TEST", "Test"))).toBe(true);
-    expect(isEffectRpcError(makeTimeoutError("path", 1000))).toBe(true);
-    expect(isEffectRpcError(makeCancelledError("path"))).toBe(true);
-    expect(isEffectRpcError(makeValidationError("path", []))).toBe(true);
-    expect(isEffectRpcError(makeNetworkError("path", new Error()))).toBe(true);
+    expect(isEffectRpcError(createCallError("TEST", "Test"))).toBe(true);
+    expect(isEffectRpcError(createTimeoutError("path", 1000))).toBe(true);
+    expect(isEffectRpcError(createCancelledError("path"))).toBe(true);
+    expect(isEffectRpcError(createValidationError("path", []))).toBe(true);
+    expect(isEffectRpcError(createNetworkError("path", new Error()))).toBe(
+      true,
+    );
   });
 
   it("should reject non-Effect errors", () => {
@@ -99,31 +99,31 @@ describe("isEffectRpcError", () => {
 
 describe("Error Type Guards", () => {
   it("should identify RpcCallError", () => {
-    const error = makeCallError("TEST", "Test");
+    const error = createCallError("TEST", "Test");
     expect(isRpcCallError(error)).toBe(true);
     expect(isRpcTimeoutError(error)).toBe(false);
   });
 
   it("should identify RpcTimeoutError", () => {
-    const error = makeTimeoutError("path", 1000);
+    const error = createTimeoutError("path", 1000);
     expect(isRpcTimeoutError(error)).toBe(true);
     expect(isRpcCallError(error)).toBe(false);
   });
 
   it("should identify RpcCancelledError", () => {
-    const error = makeCancelledError("path");
+    const error = createCancelledError("path");
     expect(isRpcCancelledError(error)).toBe(true);
     expect(isRpcCallError(error)).toBe(false);
   });
 
   it("should identify RpcValidationError", () => {
-    const error = makeValidationError("path", []);
+    const error = createValidationError("path", []);
     expect(isRpcValidationError(error)).toBe(true);
     expect(isRpcCallError(error)).toBe(false);
   });
 
   it("should identify RpcNetworkError", () => {
-    const error = makeNetworkError("path", new Error());
+    const error = createNetworkError("path", new Error());
     expect(isRpcNetworkError(error)).toBe(true);
     expect(isRpcCallError(error)).toBe(false);
   });
@@ -131,55 +131,55 @@ describe("Error Type Guards", () => {
 
 describe("hasCode", () => {
   it("should check code for RpcCallError", () => {
-    const error = makeCallError("NOT_FOUND", "Not found");
+    const error = createCallError("NOT_FOUND", "Not found");
     expect(hasCode(error, "NOT_FOUND")).toBe(true);
     expect(hasCode(error, "OTHER")).toBe(false);
   });
 
   it("should return TIMEOUT for RpcTimeoutError", () => {
-    const error = makeTimeoutError("path", 1000);
+    const error = createTimeoutError("path", 1000);
     expect(hasCode(error, "TIMEOUT")).toBe(true);
   });
 
   it("should return CANCELLED for RpcCancelledError", () => {
-    const error = makeCancelledError("path");
+    const error = createCancelledError("path");
     expect(hasCode(error, "CANCELLED")).toBe(true);
   });
 
   it("should return VALIDATION_ERROR for RpcValidationError", () => {
-    const error = makeValidationError("path", []);
+    const error = createValidationError("path", []);
     expect(hasCode(error, "VALIDATION_ERROR")).toBe(true);
   });
 
   it("should return NETWORK_ERROR for RpcNetworkError", () => {
-    const error = makeNetworkError("path", new Error());
+    const error = createNetworkError("path", new Error());
     expect(hasCode(error, "NETWORK_ERROR")).toBe(true);
   });
 });
 
 describe("getErrorCode", () => {
   it("should return code for RpcCallError", () => {
-    expect(getErrorCode(makeCallError("NOT_FOUND", "Not found"))).toBe(
+    expect(getErrorCode(createCallError("NOT_FOUND", "Not found"))).toBe(
       "NOT_FOUND",
     );
   });
 
   it("should return TIMEOUT for RpcTimeoutError", () => {
-    expect(getErrorCode(makeTimeoutError("path", 1000))).toBe("TIMEOUT");
+    expect(getErrorCode(createTimeoutError("path", 1000))).toBe("TIMEOUT");
   });
 
   it("should return CANCELLED for RpcCancelledError", () => {
-    expect(getErrorCode(makeCancelledError("path"))).toBe("CANCELLED");
+    expect(getErrorCode(createCancelledError("path"))).toBe("CANCELLED");
   });
 
   it("should return VALIDATION_ERROR for RpcValidationError", () => {
-    expect(getErrorCode(makeValidationError("path", []))).toBe(
+    expect(getErrorCode(createValidationError("path", []))).toBe(
       "VALIDATION_ERROR",
     );
   });
 
   it("should return NETWORK_ERROR for RpcNetworkError", () => {
-    expect(getErrorCode(makeNetworkError("path", new Error()))).toBe(
+    expect(getErrorCode(createNetworkError("path", new Error()))).toBe(
       "NETWORK_ERROR",
     );
   });
@@ -187,50 +187,52 @@ describe("getErrorCode", () => {
 
 describe("hasAnyCode", () => {
   it("should match any of the given codes", () => {
-    const error = makeCallError("NOT_FOUND", "Not found");
+    const error = createCallError("NOT_FOUND", "Not found");
     expect(hasAnyCode(error, ["NOT_FOUND", "BAD_REQUEST"])).toBe(true);
     expect(hasAnyCode(error, ["BAD_REQUEST", "FORBIDDEN"])).toBe(false);
   });
 
   it("should work with virtual codes", () => {
-    const timeout = makeTimeoutError("path", 1000);
+    const timeout = createTimeoutError("path", 1000);
     expect(hasAnyCode(timeout, ["TIMEOUT", "CANCELLED"])).toBe(true);
   });
 });
 
 describe("isRetryableError", () => {
   it("should return false for non-retryable errors", () => {
-    expect(isRetryableError(makeValidationError("path", []))).toBe(false);
-    expect(isRetryableError(makeCancelledError("path"))).toBe(false);
+    expect(isRetryableError(createValidationError("path", []))).toBe(false);
+    expect(isRetryableError(createCancelledError("path"))).toBe(false);
     expect(
-      isRetryableError(makeCallError("UNAUTHORIZED", "Unauthorized")),
+      isRetryableError(createCallError("UNAUTHORIZED", "Unauthorized")),
     ).toBe(false);
-    expect(isRetryableError(makeCallError("FORBIDDEN", "Forbidden"))).toBe(
+    expect(isRetryableError(createCallError("FORBIDDEN", "Forbidden"))).toBe(
       false,
     );
-    expect(isRetryableError(makeCallError("BAD_REQUEST", "Bad request"))).toBe(
-      false,
-    );
-    expect(isRetryableError(makeCallError("NOT_FOUND", "Not found"))).toBe(
+    expect(
+      isRetryableError(createCallError("BAD_REQUEST", "Bad request")),
+    ).toBe(false);
+    expect(isRetryableError(createCallError("NOT_FOUND", "Not found"))).toBe(
       false,
     );
   });
 
   it("should return true for retryable errors", () => {
-    expect(isRetryableError(makeTimeoutError("path", 1000))).toBe(true);
-    expect(isRetryableError(makeNetworkError("path", new Error()))).toBe(true);
+    expect(isRetryableError(createTimeoutError("path", 1000))).toBe(true);
+    expect(isRetryableError(createNetworkError("path", new Error()))).toBe(
+      true,
+    );
     expect(
-      isRetryableError(makeCallError("INTERNAL_ERROR", "Internal error")),
+      isRetryableError(createCallError("INTERNAL_ERROR", "Internal error")),
     ).toBe(true);
     expect(
-      isRetryableError(makeCallError("SERVICE_UNAVAILABLE", "Unavailable")),
+      isRetryableError(createCallError("SERVICE_UNAVAILABLE", "Unavailable")),
     ).toBe(true);
   });
 });
 
 describe("matchError", () => {
   it("should match RpcCallError", () => {
-    const error = makeCallError("TEST", "Test");
+    const error = createCallError("TEST", "Test");
     const result = matchError(error, {
       onCallError: (e) => `call:${e.code}`,
       onTimeoutError: () => "timeout",
@@ -242,7 +244,7 @@ describe("matchError", () => {
   });
 
   it("should match RpcTimeoutError", () => {
-    const error = makeTimeoutError("path", 1000);
+    const error = createTimeoutError("path", 1000);
     const result = matchError(error, {
       onCallError: () => "call",
       onTimeoutError: (e) => `timeout:${e.timeoutMs}`,
@@ -255,11 +257,11 @@ describe("matchError", () => {
 
   it("should match all error types exhaustively", () => {
     const errors = [
-      makeCallError("TEST", "Test"),
-      makeTimeoutError("path", 1000),
-      makeCancelledError("path"),
-      makeValidationError("path", []),
-      makeNetworkError("path", new Error()),
+      createCallError("TEST", "Test"),
+      createTimeoutError("path", 1000),
+      createCancelledError("path"),
+      createValidationError("path", []),
+      createNetworkError("path", new Error()),
     ];
 
     const results = errors.map((error) =>
@@ -332,11 +334,11 @@ describe("Effect Combinators", () => {
 describe("Property-Based Tests", () => {
   it("property: type guards are mutually exclusive", () => {
     const errors = [
-      makeCallError("TEST", "Test"),
-      makeTimeoutError("path", 1000),
-      makeCancelledError("path"),
-      makeValidationError("path", []),
-      makeNetworkError("path", new Error()),
+      createCallError("TEST", "Test"),
+      createTimeoutError("path", 1000),
+      createCancelledError("path"),
+      createValidationError("path", []),
+      createNetworkError("path", new Error()),
     ];
 
     for (const error of errors) {

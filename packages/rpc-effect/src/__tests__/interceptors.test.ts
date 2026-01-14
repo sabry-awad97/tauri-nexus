@@ -11,8 +11,8 @@ import {
   authInterceptor,
   timingInterceptor,
   dedupeInterceptor,
-} from "../interceptors";
-import type { InterceptorContext } from "../types";
+  type InterceptorContext,
+} from "../index";
 
 const createMockContext = (
   path: string = "test.path",

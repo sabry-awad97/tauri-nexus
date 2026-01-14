@@ -1,26 +1,24 @@
 // =============================================================================
-// @tauri-nexus/rpc-effect - Effect-Based RPC Call Implementation
+// RPC Call Operations
 // =============================================================================
-// Core RPC call logic using Effect for type-safe error handling and composition.
 
 import { Effect, pipe, Duration } from "effect";
+import type { RpcEffectError } from "../core/errors";
+import type { InterceptorContext, EventIterator } from "../core/types";
+import {
+  createCallError,
+  createTimeoutError,
+  createCancelledError,
+  isEffectRpcError,
+} from "../core/error-utils";
 import {
   RpcConfigService,
   RpcTransportService,
   RpcInterceptorService,
   RpcLoggerService,
-  type RpcEffectError,
-  type InterceptorContext,
-  type EventIterator,
-} from "./types";
-import {
-  makeCallError,
-  makeTimeoutError,
-  makeCancelledError,
-  isEffectRpcError,
-} from "./errors";
-import { validatePath } from "./validation";
-import type { RpcServices } from "./runtime";
+  type RpcServices,
+} from "../services";
+import { validatePath } from "../validation";
 
 // =============================================================================
 // Default Error Converter
@@ -28,40 +26,31 @@ import type { RpcServices } from "./runtime";
 
 /**
  * Minimal error converter for when transport doesn't provide one.
- * Handles basic cases only - transport should provide parseError for full support.
  */
 export const defaultParseError = (
   error: unknown,
   path: string,
   timeoutMs?: number,
 ): RpcEffectError => {
-  // Passthrough Effect errors
   if (isEffectRpcError(error)) return error;
 
-  // AbortError → Timeout or Cancelled
   if (error instanceof Error && error.name === "AbortError") {
     return timeoutMs !== undefined
-      ? makeTimeoutError(path, timeoutMs)
-      : makeCancelledError(path);
+      ? createTimeoutError(path, timeoutMs)
+      : createCancelledError(path);
   }
 
-  // Standard Error
   if (error instanceof Error) {
-    return makeCallError("UNKNOWN", error.message, undefined, error.stack);
+    return createCallError("UNKNOWN", error.message, undefined, error.stack);
   }
 
-  // String error
   if (typeof error === "string") {
-    return makeCallError("UNKNOWN", error);
+    return createCallError("UNKNOWN", error);
   }
 
-  // Fallback
-  return makeCallError("UNKNOWN", String(error));
+  return createCallError("UNKNOWN", String(error));
 };
 
-/**
- * Get the error parser from transport or use default.
- */
 const getParseError = (transport: { parseError?: typeof defaultParseError }) =>
   transport.parseError ?? defaultParseError;
 
@@ -95,7 +84,7 @@ const executeWithInterceptors = <T>(
   });
 
 // =============================================================================
-// Core Call Effect
+// Call Options
 // =============================================================================
 
 export interface CallOptions {
@@ -103,6 +92,10 @@ export interface CallOptions {
   readonly timeout?: number;
   readonly meta?: Record<string, unknown>;
 }
+
+// =============================================================================
+// Call Effect
+// =============================================================================
 
 /**
  * Make an RPC call using Effect.
@@ -173,12 +166,12 @@ export const callWithTimeout = <T>(
     call<T>(path, input, { ...options, timeout: timeoutMs }),
     Effect.timeoutFail({
       duration: Duration.millis(timeoutMs),
-      onTimeout: () => makeTimeoutError(path, timeoutMs),
+      onTimeout: () => createTimeoutError(path, timeoutMs),
     }),
   );
 
 // =============================================================================
-// Subscribe Effect
+// Subscribe Options
 // =============================================================================
 
 export interface SubscribeOptions {
@@ -213,67 +206,4 @@ export const subscribe = <T>(
     });
 
     return iterator;
-  });
-
-// =============================================================================
-// Batch Types and Validation
-// =============================================================================
-
-export interface BatchRequestItem {
-  readonly id: string;
-  readonly path: string;
-  readonly input: unknown;
-}
-
-export interface BatchResultItem<T = unknown> {
-  readonly id: string;
-  readonly data?: T;
-  readonly error?: { code: string; message: string; details?: unknown };
-}
-
-export interface BatchRequest {
-  readonly requests: readonly BatchRequestItem[];
-}
-
-export interface BatchResponse<T = unknown> {
-  readonly results: readonly BatchResultItem<T>[];
-}
-
-/**
- * Validate batch requests (paths only).
- * Use this before executing a batch via custom transport.
- */
-export const validateBatchRequests = (
-  requests: readonly BatchRequestItem[],
-): Effect.Effect<readonly BatchRequestItem[], RpcEffectError> =>
-  Effect.gen(function* () {
-    for (const req of requests) {
-      yield* validatePath(req.path);
-    }
-    return requests;
-  });
-
-/**
- * Execute a batch of RPC calls using the transport's batch method.
- */
-export const batchCall = <T = unknown>(
-  requests: readonly BatchRequestItem[],
-): Effect.Effect<BatchResponse<T>, RpcEffectError, RpcServices> =>
-  Effect.gen(function* () {
-    const transport = yield* RpcTransportService;
-    const logger = yield* RpcLoggerService;
-
-    // Validate all paths first
-    for (const req of requests) {
-      yield* validatePath(req.path);
-    }
-
-    logger.debug(`Executing batch with ${requests.length} requests`);
-
-    const response = yield* Effect.tryPromise({
-      try: () => transport.callBatch<T>(requests),
-      catch: (error) => getParseError(transport)(error, "batch"),
-    });
-
-    return response as BatchResponse<T>;
   });

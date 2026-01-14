@@ -22,7 +22,7 @@ import {
   type QueueItem,
   SHUTDOWN_SENTINEL,
   // State management
-  makeEventQueue,
+  createEventQueue,
   markCompleted,
   updateLastEventId,
   incrementConsumers,
@@ -39,7 +39,7 @@ import {
   generateSubscriptionId,
   extractSubscriptionError,
   // Errors
-  makeNetworkError,
+  createNetworkError,
   type RpcEffectError,
 } from "@tauri-nexus/rpc-effect";
 
@@ -70,7 +70,7 @@ const connectEffect = <T>(
         listen<SubscriptionEvent<T>>(eventName, (event) => {
           Effect.runPromise(Queue.offer(eventQueue, event.payload));
         }),
-      catch: (error) => makeNetworkError(path, error),
+      catch: (error) => createNetworkError(path, error),
     });
 
     yield* Ref.update(stateRef, (s) => ({ ...s, unlisten }));
@@ -86,7 +86,7 @@ const connectEffect = <T>(
       try: () => invoke("plugin:rpc|rpc_subscribe", { request }),
       catch: (error) => {
         unlisten();
-        return makeNetworkError(path, error);
+        return createNetworkError(path, error);
       },
     });
   });
@@ -194,7 +194,7 @@ const createEventIteratorEffect = <T>(
       unlisten: null,
     });
 
-    const eventQueue = yield* makeEventQueue<T>();
+    const eventQueue = yield* createEventQueue<T>();
 
     yield* connectEffect(stateRef, path, input, eventQueue);
 

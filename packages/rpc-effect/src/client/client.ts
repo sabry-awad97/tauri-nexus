@@ -1,11 +1,10 @@
 // =============================================================================
-// @tauri-nexus/rpc-effect - Effect Client Factory
+// Effect Client Factory
 // =============================================================================
-// Creates a type-safe RPC client that uses Effect internally.
 
-import type { RpcInterceptor, EventIterator } from "./types";
-import { EffectLink } from "./link";
-import type { CallOptions, SubscribeOptions } from "./call";
+import type { RpcInterceptor, EventIterator } from "../core/types";
+import { EffectLink, type EffectLinkConfig } from "./link";
+import type { CallOptions, SubscribeOptions } from "../operations";
 
 // =============================================================================
 // Configuration

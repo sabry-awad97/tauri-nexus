@@ -22,9 +22,9 @@ import {
   validatePath as validatePathEffect,
   toRpcError,
   parseEffectError,
-  makeConfigLayer,
-  makeInterceptorLayer,
-  makeLoggerLayer,
+  RpcConfigService,
+  RpcInterceptorService,
+  RpcLoggerService,
   TauriTransportLayer,
   type RpcServices,
   type RpcEffectError,
@@ -62,13 +62,13 @@ const buildLayerFromConfig = (): Layer.Layer<RpcServices> => {
   );
 
   return Layer.mergeAll(
-    makeConfigLayer({
+    RpcConfigService.layer({
       defaultTimeout: config.timeout,
       subscriptionPaths: new Set(config.subscriptionPaths ?? []),
     }),
     TauriTransportLayer,
-    makeInterceptorLayer({ interceptors }),
-    makeLoggerLayer(),
+    RpcInterceptorService.withInterceptors(interceptors),
+    RpcLoggerService.Default,
   );
 };
 

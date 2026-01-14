@@ -10,9 +10,9 @@ import {
   validatePath,
   toRpcError,
   parseEffectError,
-  makeConfigLayer,
-  makeInterceptorLayer,
-  makeLoggerLayer,
+  RpcConfigService,
+  RpcInterceptorService,
+  RpcLoggerService,
   TauriTransportLayer,
   type RpcServices,
   type RpcEffectError,
@@ -66,13 +66,13 @@ export class TauriLink<TClientContext = unknown> {
     }));
 
     return Layer.mergeAll(
-      makeConfigLayer({
+      RpcConfigService.layer({
         defaultTimeout: this.config.timeout,
         subscriptionPaths: new Set(this.config.subscriptionPaths ?? []),
       }),
       TauriTransportLayer,
-      makeInterceptorLayer({ interceptors: effectInterceptors }),
-      makeLoggerLayer(),
+      RpcInterceptorService.withInterceptors(effectInterceptors),
+      RpcLoggerService.Default,
     );
   }
 
