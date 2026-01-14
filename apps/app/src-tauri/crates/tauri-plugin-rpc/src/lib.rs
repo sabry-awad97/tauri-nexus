@@ -325,7 +325,10 @@ pub use error::{
 };
 pub use handler::Handler;
 pub use logging::{
-    LogConfig, LogEntry, LogLevel, Logger, RequestId, RequestMeta, TracingLogger,
+    AuthLogEvent, CacheLogEvent, JsonLogger, LogConfig, LogEntry, LogLevel, Logger, MetricsLogger,
+    RateLimitLogEvent, RequestId, RequestMeta, SubscriptionLogEvent, TracingConfig, TracingLogger,
+    log_auth_event, log_batch_request, log_cache_event, log_plugin_init, log_plugin_shutdown,
+    log_procedure_registered, log_rate_limit_event, log_router_compiled, log_subscription_event,
     logging_middleware, logging_middleware_with_logger, redact_value,
 };
 pub use middleware::{Middleware, MiddlewareFn, Next, ProcedureType, Request, from_fn};
@@ -372,6 +375,8 @@ pub mod prelude {
         // Auth
         AlwaysAuthProvider,
         AuthConfig,
+        // Logging
+        AuthLogEvent,
         AuthProvider,
         AuthResult,
         AuthRule,
@@ -387,6 +392,7 @@ pub mod prelude {
         Cache,
         CacheConfig,
         CacheEntry,
+        CacheLogEvent,
         CacheStats,
         // Subscription types
         ChannelPublisher,
@@ -417,12 +423,13 @@ pub mod prelude {
         FieldError,
         // Handler
         Handler,
-        // Logging
+        JsonLogger,
         LogConfig,
         LogEntry,
         LogLevel,
         Logger,
         LoggingTransformer,
+        MetricsLogger,
         // Middleware
         Middleware,
         Next,
@@ -444,6 +451,7 @@ pub mod prelude {
         // Rate limiting
         RateLimit,
         RateLimitConfig,
+        RateLimitLogEvent,
         RateLimitStrategy,
         RateLimitUsage,
         RateLimiter,
@@ -464,8 +472,10 @@ pub mod prelude {
         SubscriptionEvent,
         SubscriptionHandler,
         SubscriptionId,
+        SubscriptionLogEvent,
         SubscriptionManager,
         SuccessResponse,
+        TracingConfig,
         TracingLogger,
         TypeSchema,
         TypedProcedureChain,
@@ -484,6 +494,15 @@ pub mod prelude {
         init,
         init_with_config,
         invalidation_middleware,
+        log_auth_event,
+        log_batch_request,
+        log_cache_event,
+        log_plugin_init,
+        log_plugin_shutdown,
+        log_procedure_registered,
+        log_rate_limit_event,
+        log_router_compiled,
+        log_subscription_event,
         logging_middleware,
         logging_middleware_with_logger,
         rate_limit_middleware,

@@ -16,7 +16,7 @@ use tauri::{
     plugin::{Builder, TauriPlugin},
 };
 use tokio::sync::mpsc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 // =============================================================================
 // Type Aliases
@@ -158,13 +158,49 @@ async fn rpc_call(
     state: State<'_, RouterState>,
     config: State<'_, ConfigState>,
 ) -> Result<serde_json::Value, String> {
-    validate_rpc_input(&path, &input, &config.0)
-        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
-    state
-        .0
-        .call(&path, input)
-        .await
-        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))
+    let request_id = uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
+    let start = std::time::Instant::now();
+
+    debug!(
+        request_id = %request_id,
+        path = %path,
+        "RPC call started"
+    );
+
+    validate_rpc_input(&path, &input, &config.0).map_err(|e| {
+        warn!(
+            request_id = %request_id,
+            path = %path,
+            error = %e,
+            "RPC input validation failed"
+        );
+        serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())
+    })?;
+
+    let result = state.0.call(&path, input).await.map_err(|e| {
+        let duration = start.elapsed();
+        warn!(
+            request_id = %request_id,
+            path = %path,
+            error_code = %e.code,
+            error_message = %e.message,
+            duration_ms = %duration.as_millis(),
+            "RPC call failed"
+        );
+        serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())
+    });
+
+    if result.is_ok() {
+        let duration = start.elapsed();
+        debug!(
+            request_id = %request_id,
+            path = %path,
+            duration_ms = %duration.as_millis(),
+            "RPC call completed"
+        );
+    }
+
+    result
 }
 
 #[tauri::command]
@@ -270,12 +306,24 @@ async fn rpc_subscribe<R: Runtime>(
     };
 
     if !router_state.0.is_subscription(&path) {
+        warn!(
+            subscription_id = %subscription_id,
+            path = %path,
+            "Attempted to subscribe to non-subscription procedure"
+        );
         return Err(serde_json::to_string(&RpcError::bad_request(format!(
             "'{}' is not a subscription procedure",
             path
         )))
         .unwrap());
     }
+
+    info!(
+        subscription_id = %subscription_id,
+        path = %path,
+        last_event_id = ?last_event_id,
+        "Subscription started"
+    );
 
     let sub_ctx = SubscriptionContext::new(subscription_id, last_event_id);
     let signal = sub_ctx.signal();
@@ -286,28 +334,55 @@ async fn rpc_subscribe<R: Runtime>(
     let event_name = format!("rpc:subscription:{}", subscription_id);
     let router = router_state.0.clone();
     let sub_manager = sub_state.0.clone();
+    let path_clone = path.clone();
 
     // Use spawn_subscription for tracked task management instead of tokio::spawn
     // This ensures proper cleanup during shutdown
     sub_state
         .0
         .spawn_subscription(subscription_id, async move {
-            match router.subscribe(&path, input, sub_ctx).await {
+            match router.subscribe(&path_clone, input, sub_ctx).await {
                 Ok(mut stream) => {
+                    let mut event_count = 0u64;
                     while let Some(event) = stream.recv().await {
                         if signal.is_cancelled() {
+                            debug!(
+                                subscription_id = %subscription_id,
+                                path = %path_clone,
+                                event_count = %event_count,
+                                "Subscription cancelled"
+                            );
                             break;
                         }
+                        event_count += 1;
                         let sub_event = SubscriptionEvent::data(event);
                         if app.emit(&event_name, &sub_event).is_err() {
+                            debug!(
+                                subscription_id = %subscription_id,
+                                path = %path_clone,
+                                "Subscription emit failed, closing"
+                            );
                             break;
                         }
                     }
                     if !signal.is_cancelled() {
+                        info!(
+                            subscription_id = %subscription_id,
+                            path = %path_clone,
+                            event_count = %event_count,
+                            "Subscription completed"
+                        );
                         let _ = app.emit(&event_name, &SubscriptionEvent::completed());
                     }
                 }
                 Err(err) => {
+                    warn!(
+                        subscription_id = %subscription_id,
+                        path = %path_clone,
+                        error_code = %err.code,
+                        error_message = %err.message,
+                        "Subscription error"
+                    );
                     let _ = app.emit(&event_name, &SubscriptionEvent::error(err));
                 }
             }
@@ -325,7 +400,22 @@ async fn rpc_unsubscribe(
 ) -> Result<bool, String> {
     let subscription_id = validate_subscription_id(&id)
         .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
-    Ok(sub_state.0.unsubscribe(&subscription_id).await)
+
+    let result = sub_state.0.unsubscribe(&subscription_id).await;
+
+    if result {
+        info!(
+            subscription_id = %subscription_id,
+            "Subscription unsubscribed"
+        );
+    } else {
+        debug!(
+            subscription_id = %subscription_id,
+            "Unsubscribe called for non-existent subscription"
+        );
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -387,6 +477,14 @@ where
     // Clone subscription manager for shutdown handler
     let shutdown_manager = subscription_manager.clone();
 
+    // Log plugin initialization
+    info!(
+        max_input_size = config.max_input_size,
+        channel_buffer = config.default_channel_buffer,
+        debug_logging = config.debug_logging,
+        "RPC plugin initializing"
+    );
+
     Builder::new("rpc")
         .invoke_handler(tauri::generate_handler![
             rpc_call,
@@ -397,6 +495,11 @@ where
             rpc_subscription_count
         ])
         .setup(move |app, _api| {
+            let procedure_count = router.procedures().len();
+            debug!(
+                procedure_count = procedure_count,
+                "RPC plugin setup complete"
+            );
             app.manage(RouterState(router.clone()));
             app.manage(SubscriptionState(subscription_manager.clone()));
             app.manage(ConfigState(config.clone()));
@@ -405,6 +508,7 @@ where
         .on_drop(move |_app| {
             // Spawn blocking task to run async shutdown
             let manager = shutdown_manager.clone();
+            info!("RPC plugin shutting down");
             std::thread::spawn(move || {
                 // Create a new tokio runtime for the shutdown task
                 if let Ok(rt) = tokio::runtime::Runtime::new() {
