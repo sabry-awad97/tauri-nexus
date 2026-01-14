@@ -59,7 +59,7 @@ const connectEffect = <T>(
   stateRef: Ref.Ref<TauriSubscriptionState>,
   path: string,
   input: unknown,
-  eventQueue: Queue.Queue<QueueItem<T>>
+  eventQueue: Queue.Queue<QueueItem<T>>,
 ): Effect.Effect<void, RpcEffectError> =>
   Effect.gen(function* () {
     const state = yield* Ref.get(stateRef);
@@ -93,7 +93,7 @@ const connectEffect = <T>(
 
 const disconnectEffect = <T>(
   stateRef: Ref.Ref<TauriSubscriptionState>,
-  eventQueue: Queue.Queue<QueueItem<T>>
+  eventQueue: Queue.Queue<QueueItem<T>>,
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     const state = yield* Ref.get(stateRef);
@@ -109,7 +109,7 @@ const disconnectEffect = <T>(
     yield* sendShutdownSentinels(eventQueue, sentinelsToSend - 1);
 
     yield* Effect.tryPromise(() =>
-      invoke("plugin:rpc|rpc_unsubscribe", { id: `sub_${state.id}` })
+      invoke("plugin:rpc|rpc_unsubscribe", { id: `sub_${state.id}` }),
     ).pipe(Effect.catchAll(() => Effect.void));
   });
 
@@ -118,7 +118,7 @@ const reconnectEffect = <T>(
   path: string,
   input: unknown,
   config: ReconnectConfig,
-  eventQueue: Queue.Queue<QueueItem<T>>
+  eventQueue: Queue.Queue<QueueItem<T>>,
 ): Effect.Effect<boolean, RpcEffectError> =>
   Effect.gen(function* () {
     if (!config.autoReconnect) {
@@ -136,8 +136,8 @@ const reconnectEffect = <T>(
           maxReconnectsExceededError(
             path,
             state.reconnectAttempts,
-            config.maxReconnects
-          )
+            config.maxReconnects,
+          ),
         ),
       };
 
@@ -150,8 +150,8 @@ const reconnectEffect = <T>(
         maxReconnectsExceededError(
           path,
           state.reconnectAttempts,
-          config.maxReconnects
-        )
+          config.maxReconnects,
+        ),
       );
       return false;
     }
@@ -166,8 +166,8 @@ const reconnectEffect = <T>(
     yield* connectEffect(stateRef, path, input, eventQueue).pipe(
       Effect.tap(() => resetReconnectAttempts(stateRef)),
       Effect.catchAll(() =>
-        reconnectEffect(stateRef, path, input, config, eventQueue)
-      )
+        reconnectEffect(stateRef, path, input, config, eventQueue),
+      ),
     );
 
     return true;
@@ -180,7 +180,7 @@ const reconnectEffect = <T>(
 const createEventIteratorEffect = <T>(
   path: string,
   input: unknown = null,
-  options: SubscriptionOptions = {}
+  options: SubscriptionOptions = {},
 ): Effect.Effect<EventIterator<T>, RpcEffectError> =>
   Effect.gen(function* () {
     const subscriptionId = yield* generateSubscriptionId;
@@ -262,7 +262,7 @@ const createEventIteratorEffect = <T>(
                           path,
                           input,
                           reconnectConfig,
-                          eventQueue
+                          eventQueue,
                         ).pipe(Effect.catchAll(() => Effect.succeed(false)));
 
                         if (reconnected) {
@@ -286,7 +286,7 @@ const createEventIteratorEffect = <T>(
                         value: undefined,
                       } as IteratorResult<T>;
                   }
-                })
+                }),
               );
             } catch (error) {
               throw extractSubscriptionError(error);
@@ -314,7 +314,7 @@ const createEventIteratorEffect = <T>(
 export async function createEventIterator<T>(
   path: string,
   input: unknown = null,
-  options: SubscriptionOptions = {}
+  options: SubscriptionOptions = {},
 ): Promise<EventIterator<T>> {
   return Effect.runPromise(createEventIteratorEffect<T>(path, input, options));
 }
@@ -335,7 +335,7 @@ export interface ConsumeOptions<T> {
  */
 export function consumeEventIterator<T>(
   iteratorPromise: Promise<EventIterator<T>>,
-  options: ConsumeOptions<T>
+  options: ConsumeOptions<T>,
 ): () => Promise<void> {
   let cancelled = false;
   let iterator: EventIterator<T> | null = null;

@@ -1,11 +1,10 @@
 // =============================================================================
 // @tauri-nexus/rpc-core - Link Interceptors
 // =============================================================================
-// Thin wrappers around rpc-effect interceptors for Link-specific types.
-// Core logic lives in rpc-effect - this just adapts the types.
+// Link-specific interceptors using shared utilities from rpc-effect.
 
-import type { PublicRpcError } from "@tauri-nexus/rpc-effect";
-import { isPublicRpcError } from "@tauri-nexus/rpc-effect";
+import type { RpcError } from "@tauri-nexus/rpc-effect";
+import { isRpcError } from "@tauri-nexus/rpc-effect";
 import type { LinkInterceptor, LinkRequestContext } from "./types";
 
 // =============================================================================
@@ -14,7 +13,6 @@ import type { LinkInterceptor, LinkRequestContext } from "./types";
 
 /**
  * Options for the Link auth interceptor.
- * Different from rpc-effect's AuthInterceptorOptions which uses getToken callback.
  */
 export interface AuthInterceptorOptions {
   /** The header name to use for the token. Defaults to "Authorization" */
@@ -28,23 +26,18 @@ export interface AuthInterceptorOptions {
 // =============================================================================
 // Link-Specific Interceptors
 // =============================================================================
-// These adapt rpc-effect interceptors to work with LinkRequestContext
-// which includes client context for type-safe context access.
 
 /**
  * Create an error handler interceptor for Link.
  */
 export function onError<TClientContext = unknown>(
-  handler: (
-    error: PublicRpcError,
-    ctx: LinkRequestContext<TClientContext>
-  ) => void
+  handler: (error: RpcError, ctx: LinkRequestContext<TClientContext>) => void,
 ): LinkInterceptor<TClientContext> {
   return async (ctx, next) => {
     try {
       return await next();
     } catch (error) {
-      if (isPublicRpcError(error)) {
+      if (isRpcError(error)) {
         handler(error, ctx);
       }
       throw error;
@@ -56,7 +49,7 @@ export function onError<TClientContext = unknown>(
  * Create a logging interceptor for Link.
  */
 export function logging<TClientContext = unknown>(
-  options: { prefix?: string } = {}
+  options: { prefix?: string } = {},
 ): LinkInterceptor<TClientContext> {
   const prefix = options.prefix ?? "[RPC]";
   return async (ctx, next) => {
@@ -77,39 +70,39 @@ export function logging<TClientContext = unknown>(
 
 /**
  * Create a retry interceptor for Link.
+ * Uses linear backoff: delay * (attempt + 1)
  */
 export function retry<TClientContext = unknown>(
   options: {
     maxRetries?: number;
     delay?: number;
-    shouldRetry?: (error: PublicRpcError) => boolean;
-  } = {}
+    shouldRetry?: (error: RpcError) => boolean;
+  } = {},
 ): LinkInterceptor<TClientContext> {
   const maxRetries = options.maxRetries ?? 3;
-  const delay = options.delay ?? 1000;
+  const baseDelay = options.delay ?? 1000;
   const shouldRetry =
     options.shouldRetry ??
     ((error) =>
       error.code === "SERVICE_UNAVAILABLE" || error.code === "TIMEOUT");
 
   return async (_ctx, next) => {
-    let lastError: PublicRpcError | undefined;
+    let lastError: RpcError | undefined;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await next();
       } catch (error) {
         if (
-          !isPublicRpcError(error) ||
+          !isRpcError(error) ||
           !shouldRetry(error) ||
           attempt === maxRetries
         ) {
           throw error;
         }
         lastError = error;
-        await new Promise((resolve) =>
-          setTimeout(resolve, delay * (attempt + 1))
-        );
+        const delay = baseDelay * (attempt + 1);
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
@@ -120,23 +113,10 @@ export function retry<TClientContext = unknown>(
 /**
  * Create an authentication interceptor for Link.
  * Adds Bearer token from client context to request metadata.
- *
- * @example
- * ```typescript
- * const link = new TauriLink<{ token?: string }>({
- *   interceptors: [authInterceptor()],
- * });
- * ```
  */
 export function authInterceptor<
-  TClientContext extends Record<string, unknown> = Record<string, unknown>
->(
-  options: {
-    headerName?: string;
-    tokenProperty?: string;
-    prefix?: string;
-  } = {}
-): LinkInterceptor<TClientContext> {
+  TClientContext extends Record<string, unknown> = Record<string, unknown>,
+>(options: AuthInterceptorOptions = {}): LinkInterceptor<TClientContext> {
   const headerName = options.headerName ?? "Authorization";
   const tokenProperty = options.tokenProperty ?? "token";
   const prefix = options.prefix ?? "Bearer";

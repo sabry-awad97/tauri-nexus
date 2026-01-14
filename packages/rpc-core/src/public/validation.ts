@@ -6,7 +6,8 @@
 import {
   validatePathPure,
   isValidPathPure,
-  createPublicError,
+  validatePathOrThrow,
+  createRpcError,
 } from "@tauri-nexus/rpc-effect";
 
 /**
@@ -17,7 +18,7 @@ export function validatePath(path: string): void {
   const result = validatePathPure(path);
   if (!result.valid) {
     const message = result.issues.map((i) => i.message).join("; ");
-    throw createPublicError("VALIDATION_ERROR", message);
+    throw createRpcError("VALIDATION_ERROR", message);
   }
 }
 
@@ -28,8 +29,6 @@ export const isValidPath = isValidPathPure;
 
 /**
  * Validate and return the path, throwing if invalid.
+ * Uses the pure function from rpc-effect.
  */
-export function validateAndReturnPath(path: string): string {
-  validatePath(path);
-  return path;
-}
+export const validateAndReturnPath = validatePathOrThrow;

@@ -33,7 +33,7 @@ import type { RpcServices } from "./runtime";
 export const defaultParseError = (
   error: unknown,
   path: string,
-  timeoutMs?: number
+  timeoutMs?: number,
 ): RpcEffectError => {
   // Passthrough Effect errors
   if (isEffectRpcError(error)) return error;
@@ -75,8 +75,8 @@ const executeWithInterceptors = <T>(
   parseError: (
     error: unknown,
     path: string,
-    timeoutMs?: number
-  ) => RpcEffectError
+    timeoutMs?: number,
+  ) => RpcEffectError,
 ): Effect.Effect<T, RpcEffectError, RpcInterceptorService> =>
   Effect.gen(function* () {
     const { interceptors } = yield* RpcInterceptorService;
@@ -110,7 +110,7 @@ export interface CallOptions {
 export const call = <T>(
   path: string,
   input: unknown,
-  options: CallOptions = {}
+  options: CallOptions = {},
 ): Effect.Effect<T, RpcEffectError, RpcServices> =>
   Effect.gen(function* () {
     yield* validatePath(path);
@@ -151,7 +151,7 @@ export const call = <T>(
 
         return transport.call<T>(path, input);
       },
-      getParseError(transport)
+      getParseError(transport),
     );
 
     const durationMs = Date.now() - startTime;
@@ -167,14 +167,14 @@ export const callWithTimeout = <T>(
   path: string,
   input: unknown,
   timeoutMs: number,
-  options: Omit<CallOptions, "timeout"> = {}
+  options: Omit<CallOptions, "timeout"> = {},
 ): Effect.Effect<T, RpcEffectError, RpcServices> =>
   pipe(
     call<T>(path, input, { ...options, timeout: timeoutMs }),
     Effect.timeoutFail({
       duration: Duration.millis(timeoutMs),
       onTimeout: () => makeTimeoutError(path, timeoutMs),
-    })
+    }),
   );
 
 // =============================================================================
@@ -193,7 +193,7 @@ export interface SubscribeOptions {
 export const subscribe = <T>(
   path: string,
   input: unknown,
-  options: SubscribeOptions = {}
+  options: SubscribeOptions = {},
 ): Effect.Effect<EventIterator<T>, RpcEffectError, RpcServices> =>
   Effect.gen(function* () {
     yield* validatePath(path);
@@ -244,7 +244,7 @@ export interface BatchResponse<T = unknown> {
  * Use this before executing a batch via custom transport.
  */
 export const validateBatchRequests = (
-  requests: readonly BatchRequestItem[]
+  requests: readonly BatchRequestItem[],
 ): Effect.Effect<readonly BatchRequestItem[], RpcEffectError> =>
   Effect.gen(function* () {
     for (const req of requests) {
@@ -257,7 +257,7 @@ export const validateBatchRequests = (
  * Execute a batch of RPC calls using the transport's batch method.
  */
 export const batchCall = <T = unknown>(
-  requests: readonly BatchRequestItem[]
+  requests: readonly BatchRequestItem[],
 ): Effect.Effect<BatchResponse<T>, RpcEffectError, RpcServices> =>
   Effect.gen(function* () {
     const transport = yield* RpcTransportService;

@@ -16,7 +16,7 @@ import type {
   TypedBatchResult,
 } from "../core/inference";
 import { EffectBatchBuilder, executeBatchEffect } from "../client";
-import { toPublicError, parseEffectError } from "../internal";
+import { toRpcError, parseEffectError } from "../internal";
 
 // =============================================================================
 // Types
@@ -43,7 +43,7 @@ type OutputTypeMap = Record<string, unknown>;
  */
 export class TypedBatchBuilder<
   TContract,
-  TOutputMap extends OutputTypeMap = Record<string, never>
+  TOutputMap extends OutputTypeMap = Record<string, never>,
 > {
   private readonly effectBuilder: EffectBatchBuilder<TContract, TOutputMap>;
 
@@ -57,7 +57,7 @@ export class TypedBatchBuilder<
   add<TId extends string, TPath extends ExtractCallablePaths<TContract>>(
     id: TId,
     path: TPath,
-    input: GetInputAtPath<TContract, TPath>
+    input: GetInputAtPath<TContract, TPath>,
   ): TypedBatchBuilder<
     TContract,
     TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
@@ -98,20 +98,20 @@ export class TypedBatchBuilder<
    * Execute the batch and return a typed response.
    */
   async execute(
-    options?: BatchCallOptions
+    options?: BatchCallOptions,
   ): Promise<TypedBatchResponse<TOutputMap>> {
     try {
       const response = await Effect.runPromise(
-        executeBatchEffect(this.getRequests(), options)
+        executeBatchEffect(this.getRequests(), options),
       );
       return new TypedBatchResponse<TOutputMap>(response);
     } catch (error) {
-      const rpcError = toPublicError(
-        parseEffectError(error, "batch", options?.timeout)
+      const rpcError = toRpcError(
+        parseEffectError(error, "batch", options?.timeout),
       );
       console.warn(
         `[RPC] Batch request failed: ${rpcError.code} - ${rpcError.message}`,
-        rpcError.details
+        rpcError.details,
       );
       throw rpcError;
     }
@@ -136,7 +136,7 @@ export class TypedBatchResponse<TOutputMap extends OutputTypeMap> {
       this.resultMap.set(result.id, result);
       if (result.error) {
         console.warn(
-          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`
+          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`,
         );
       }
     }
@@ -153,7 +153,7 @@ export class TypedBatchResponse<TOutputMap extends OutputTypeMap> {
    * Get a typed result by request ID.
    */
   getResult<TId extends keyof TOutputMap & string>(
-    id: TId
+    id: TId,
   ): TypedBatchResult<TOutputMap[TId]> {
     const result = this.resultMap.get(id);
     if (!result) {

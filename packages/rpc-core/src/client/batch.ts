@@ -22,7 +22,7 @@ import {
   makeCallError,
   type RpcEffectError,
 } from "@tauri-nexus/rpc-effect";
-import { toPublicError, parseEffectError } from "../internal";
+import { toRpcError, parseEffectError } from "../internal";
 
 // =============================================================================
 // Types
@@ -42,7 +42,7 @@ type OutputTypeMap = Record<string, unknown>;
 
 export const executeBatchEffect = <T = unknown>(
   requests: readonly SingleRequest[],
-  options?: BatchCallOptions
+  options?: BatchCallOptions,
 ): Effect.Effect<BatchResponse<T>, RpcEffectError> =>
   Effect.gen(function* () {
     for (const req of requests) {
@@ -73,8 +73,8 @@ export const executeBatchEffect = <T = unknown>(
             return timeoutId;
           }),
           () => executeInvoke,
-          (timeoutId) => Effect.sync(() => clearTimeout(timeoutId))
-        )
+          (timeoutId) => Effect.sync(() => clearTimeout(timeoutId)),
+        ),
       );
     }
 
@@ -87,14 +87,14 @@ export const executeBatchEffect = <T = unknown>(
 
 export class EffectBatchBuilder<
   TContract,
-  TOutputMap extends OutputTypeMap = Record<string, never>
+  TOutputMap extends OutputTypeMap = Record<string, never>,
 > {
   private entries: BatchEntry[] = [];
 
   add<TId extends string, TPath extends ExtractCallablePaths<TContract>>(
     id: TId,
     path: TPath,
-    input: GetInputAtPath<TContract, TPath>
+    input: GetInputAtPath<TContract, TPath>,
   ): EffectBatchBuilder<
     TContract,
     TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
@@ -127,28 +127,28 @@ export class EffectBatchBuilder<
   }
 
   executeEffect(
-    options?: BatchCallOptions
+    options?: BatchCallOptions,
   ): Effect.Effect<EffectBatchResponseWrapper<TOutputMap>, RpcEffectError> {
     return pipe(
       executeBatchEffect(this.getRequests(), options),
       Effect.map(
-        (response) => new EffectBatchResponseWrapper<TOutputMap>(response)
-      )
+        (response) => new EffectBatchResponseWrapper<TOutputMap>(response),
+      ),
     );
   }
 
   async execute(
-    options?: BatchCallOptions
+    options?: BatchCallOptions,
   ): Promise<EffectBatchResponseWrapper<TOutputMap>> {
     try {
       return await Effect.runPromise(this.executeEffect(options));
     } catch (error) {
-      const rpcError = toPublicError(
-        parseEffectError(error, "batch", options?.timeout)
+      const rpcError = toRpcError(
+        parseEffectError(error, "batch", options?.timeout),
       );
       console.warn(
         `[RPC] Batch request failed: ${rpcError.code} - ${rpcError.message}`,
-        rpcError.details
+        rpcError.details,
       );
       throw rpcError;
     }
@@ -160,7 +160,7 @@ export class EffectBatchBuilder<
         for (const entry of this.entries) {
           yield* validatePath(entry.path);
         }
-      }.bind(this)
+      }.bind(this),
     );
   }
 
@@ -184,7 +184,7 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
       this.resultMap.set(result.id, result);
       if (result.error) {
         console.warn(
-          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`
+          `[RPC] Batch request '${result.id}' failed: ${result.error.code} - ${result.error.message}`,
         );
       }
     }
@@ -195,14 +195,14 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
   }
 
   getResultEffect<TId extends keyof TOutputMap & string>(
-    id: TId
+    id: TId,
   ): Effect.Effect<TOutputMap[TId], RpcEffectError> {
     return Effect.gen(
       function* (this: EffectBatchResponseWrapper<TOutputMap>) {
         const result = this.resultMap.get(id);
         if (!result) {
           return yield* Effect.fail(
-            makeCallError("NOT_FOUND", `No result found for id: ${id}`)
+            makeCallError("NOT_FOUND", `No result found for id: ${id}`),
           );
         }
         if (result.error) {
@@ -210,17 +210,17 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
             makeCallError(
               result.error.code,
               result.error.message,
-              result.error.details
-            )
+              result.error.details,
+            ),
           );
         }
         return result.data as TOutputMap[TId];
-      }.bind(this)
+      }.bind(this),
     );
   }
 
   getResult<TId extends keyof TOutputMap & string>(
-    id: TId
+    id: TId,
   ): TypedBatchResult<TOutputMap[TId]> {
     const result = this.resultMap.get(id);
     if (!result) {

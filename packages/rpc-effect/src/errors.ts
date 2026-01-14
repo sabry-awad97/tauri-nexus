@@ -22,27 +22,27 @@ export const makeCallError = (
   code: string,
   message: string,
   details?: unknown,
-  cause?: string
+  cause?: string,
 ): RpcCallError => new RpcCallError({ code, message, details, cause });
 
 export const makeTimeoutError = (
   path: string,
-  timeoutMs: number
+  timeoutMs: number,
 ): RpcTimeoutError => new RpcTimeoutError({ path, timeoutMs });
 
 export const makeCancelledError = (
   path: string,
-  reason?: string
+  reason?: string,
 ): RpcCancelledError => new RpcCancelledError({ path, reason });
 
 export const makeValidationError = (
   path: string,
-  issues: readonly ValidationIssue[]
+  issues: readonly ValidationIssue[],
 ): RpcValidationError => new RpcValidationError({ path, issues });
 
 export const makeNetworkError = (
   path: string,
-  originalError: unknown
+  originalError: unknown,
 ): RpcNetworkError => new RpcNetworkError({ path, originalError });
 
 // =============================================================================
@@ -72,11 +72,11 @@ export const isRpcTimeoutError = (error: unknown): error is RpcTimeoutError =>
   error instanceof RpcTimeoutError;
 
 export const isRpcCancelledError = (
-  error: unknown
+  error: unknown,
 ): error is RpcCancelledError => error instanceof RpcCancelledError;
 
 export const isRpcValidationError = (
-  error: unknown
+  error: unknown,
 ): error is RpcValidationError => error instanceof RpcValidationError;
 
 export const isRpcNetworkError = (error: unknown): error is RpcNetworkError =>
@@ -103,12 +103,12 @@ export const getErrorCode = (error: RpcEffectError): string =>
 
 export const hasCode = <C extends string>(
   error: RpcEffectError,
-  code: C
+  code: C,
 ): boolean => getErrorCode(error) === code;
 
 export const hasAnyCode = (
   error: RpcEffectError,
-  codes: readonly string[]
+  codes: readonly string[],
 ): boolean => codes.includes(getErrorCode(error));
 
 export const isRetryableError = (error: RpcEffectError): boolean => {
@@ -137,7 +137,7 @@ export interface ErrorHandlers<A> {
 
 export const matchError = <A>(
   error: RpcEffectError,
-  handlers: ErrorHandlers<A>
+  handlers: ErrorHandlers<A>,
 ): A =>
   Match.value(error).pipe(
     Match.tag("RpcCallError", handlers.onCallError),
@@ -145,7 +145,7 @@ export const matchError = <A>(
     Match.tag("RpcCancelledError", handlers.onCancelledError),
     Match.tag("RpcValidationError", handlers.onValidationError),
     Match.tag("RpcNetworkError", handlers.onNetworkError),
-    Match.exhaustive
+    Match.exhaustive,
   ) as A;
 
 // =============================================================================
@@ -155,39 +155,44 @@ export const matchError = <A>(
 export const failWithCallError = (
   code: string,
   message: string,
-  details?: unknown
+  details?: unknown,
 ): Effect.Effect<never, RpcCallError> =>
   Effect.fail(makeCallError(code, message, details));
 
 export const failWithTimeout = (
   path: string,
-  timeoutMs: number
+  timeoutMs: number,
 ): Effect.Effect<never, RpcTimeoutError> =>
   Effect.fail(makeTimeoutError(path, timeoutMs));
 
 export const failWithValidation = (
   path: string,
-  issues: readonly ValidationIssue[]
+  issues: readonly ValidationIssue[],
 ): Effect.Effect<never, RpcValidationError> =>
   Effect.fail(makeValidationError(path, issues));
 
 export const failWithNetwork = (
   path: string,
-  originalError: unknown
+  originalError: unknown,
 ): Effect.Effect<never, RpcNetworkError> =>
   Effect.fail(makeNetworkError(path, originalError));
 
 export const failWithCancelled = (
   path: string,
-  reason?: string
+  reason?: string,
 ): Effect.Effect<never, RpcCancelledError> =>
   Effect.fail(makeCancelledError(path, reason));
 
 // =============================================================================
-// Public Error Type (for conversion)
+// Serializable RPC Error (for Promise API and transport)
 // =============================================================================
 
-export interface PublicRpcError {
+/**
+ * Plain serializable RPC error object.
+ * Used by Promise-based APIs and for transport/serialization.
+ * Effect users should use RpcEffectError types for pattern matching.
+ */
+export interface RpcError {
   readonly code: string;
   readonly message: string;
   readonly details?: unknown;
@@ -215,11 +220,14 @@ export type RpcErrorCode =
   | "UNKNOWN";
 
 // =============================================================================
-// Conversion
+// Conversion (Effect Error <-> Serializable Error)
 // =============================================================================
 
-export const toPublicError = (error: RpcEffectError): PublicRpcError =>
-  matchError(error, {
+/**
+ * Convert Effect error to serializable RpcError.
+ */
+export const toRpcError = (error: RpcEffectError): RpcError =>
+  matchError<RpcError>(error, {
     onCallError: (e) => ({
       code: e.code,
       message: e.message,
@@ -230,13 +238,11 @@ export const toPublicError = (error: RpcEffectError): PublicRpcError =>
       code: "TIMEOUT",
       message: `Request to '${e.path}' timed out after ${e.timeoutMs}ms`,
       details: { timeoutMs: e.timeoutMs, path: e.path },
-      cause: undefined,
     }),
     onCancelledError: (e) => ({
       code: "CANCELLED",
       message: e.reason ?? `Request to '${e.path}' was cancelled`,
       details: { path: e.path },
-      cause: undefined,
     }),
     onValidationError: (e) => ({
       code: "VALIDATION_ERROR",
@@ -245,20 +251,18 @@ export const toPublicError = (error: RpcEffectError): PublicRpcError =>
           ? e.issues[0].message
           : `Validation failed for '${e.path}'`,
       details: { issues: e.issues },
-      cause: undefined,
     }),
     onNetworkError: (e) => ({
       code: "INTERNAL_ERROR",
       message: `Network error calling '${e.path}'`,
       details: { originalError: String(e.originalError) },
-      cause: undefined,
     }),
   });
 
-export const fromPublicError = (
-  error: PublicRpcError,
-  path: string
-): RpcEffectError => {
+/**
+ * Convert serializable RpcError to Effect error.
+ */
+export const fromRpcError = (error: RpcError, path: string): RpcEffectError => {
   switch (error.code) {
     case "TIMEOUT":
       return new RpcTimeoutError({
@@ -283,38 +287,51 @@ export const fromPublicError = (
 };
 
 // =============================================================================
-// Public Error Utilities
+// RpcError Utilities
 // =============================================================================
 
-export const isPublicRpcError = (error: unknown): error is PublicRpcError =>
+/**
+ * Type guard for serializable RpcError.
+ */
+export const isRpcError = (error: unknown): error is RpcError =>
   typeof error === "object" &&
   error !== null &&
   "code" in error &&
   "message" in error &&
-  typeof (error as PublicRpcError).code === "string" &&
-  typeof (error as PublicRpcError).message === "string";
+  typeof (error as RpcError).code === "string" &&
+  typeof (error as RpcError).message === "string";
 
-export const hasPublicErrorCode = (
+/**
+ * Check if error has a specific error code.
+ */
+export const hasErrorCode = (
   error: unknown,
-  code: RpcErrorCode | string
-): boolean => isPublicRpcError(error) && error.code === code;
+  code: RpcErrorCode | string,
+): boolean => isRpcError(error) && error.code === code;
 
-export const createPublicError = (
+/**
+ * Create a serializable RpcError.
+ */
+export const createRpcError = (
   code: RpcErrorCode | string,
   message: string,
-  details?: unknown
-): PublicRpcError => ({ code, message, details });
+  details?: unknown,
+): RpcError => ({ code, message, details });
 
 // =============================================================================
-// Rate Limit
+// Rate Limit Utilities
 // =============================================================================
 
-export const isRateLimitError = (error: unknown): error is PublicRpcError =>
-  isPublicRpcError(error) && error.code === "RATE_LIMITED";
+/**
+ * Check if error is a rate limit error.
+ */
+export const isRateLimitError = (error: unknown): error is RpcError =>
+  isRpcError(error) && error.code === "RATE_LIMITED";
 
-export const getRateLimitRetryAfter = (
-  error: PublicRpcError
-): number | undefined => {
+/**
+ * Extract retry-after duration from rate limit error.
+ */
+export const getRateLimitRetryAfter = (error: RpcError): number | undefined => {
   if (error.code !== "RATE_LIMITED") return undefined;
   const details = error.details as { retry_after_ms?: number } | undefined;
   return typeof details?.retry_after_ms === "number"
@@ -379,7 +396,7 @@ export const parseToEffectError = (
   error: unknown,
   path: string,
   timeoutMs?: number,
-  options: ErrorParserOptions = { parseJson: true }
+  options: ErrorParserOptions = { parseJson: true },
 ): RpcEffectError => {
   if (isEffectRpcError(error)) return error;
 
@@ -416,7 +433,7 @@ export const parseToEffectError = (
         (error as { error: unknown }).error,
         path,
         timeoutMs,
-        options
+        options,
       );
     }
   }
@@ -450,14 +467,14 @@ export const parseToEffectError = (
 export const fromTransportError = (
   error: unknown,
   path: string,
-  timeoutMs?: number
+  timeoutMs?: number,
 ): RpcEffectError =>
   parseToEffectError(error, path, timeoutMs, { parseJson: true });
 
 export const parseEffectError = (
   error: unknown,
   path: string,
-  timeoutMs?: number
+  timeoutMs?: number,
 ): RpcEffectError =>
   parseToEffectError(error, path, timeoutMs, {
     parseJson: true,
@@ -465,8 +482,11 @@ export const parseEffectError = (
     unwrapNested: true,
   });
 
-export const parseToPublicError = (
+/**
+ * Parse any error to serializable RpcError.
+ */
+export const parseError = (
   error: unknown,
   path: string,
-  timeoutMs?: number
-): PublicRpcError => toPublicError(parseEffectError(error, path, timeoutMs));
+  timeoutMs?: number,
+): RpcError => toRpcError(parseEffectError(error, path, timeoutMs));

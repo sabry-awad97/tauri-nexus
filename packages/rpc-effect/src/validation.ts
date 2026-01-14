@@ -69,7 +69,7 @@ export const validatePathPure = (path: string): PathValidationResult => {
     issues.push({
       path: [],
       message: `Procedure path contains invalid characters: '${invalidChars.join(
-        "', '"
+        "', '",
       )}'`,
       code: "invalid_chars",
     });
@@ -95,7 +95,7 @@ export const validatePathOrThrow = (path: string): string => {
 // =============================================================================
 
 export const validatePath = (
-  path: string
+  path: string,
 ): Effect.Effect<string, RpcEffectError> =>
   Effect.gen(function* () {
     const result = validatePathPure(path);
@@ -106,7 +106,7 @@ export const validatePath = (
   });
 
 export const validatePaths = (
-  paths: readonly string[]
+  paths: readonly string[],
 ): Effect.Effect<readonly string[], RpcEffectError> =>
   Effect.gen(function* () {
     const allIssues: Array<{ path: string; issues: ValidationIssue[] }> = [];
@@ -127,7 +127,7 @@ export const validatePaths = (
           issues.map((issue) => ({
             ...issue,
             message: `[${path}] ${issue.message}`,
-          }))
+          })),
       );
       return yield* Effect.fail(makeValidationError("batch", combinedIssues));
     }
@@ -136,23 +136,23 @@ export const validatePaths = (
   });
 
 export const validateAndNormalizePath = (
-  path: string
+  path: string,
 ): Effect.Effect<string, RpcEffectError> =>
   pipe(
     validatePath(path),
-    Effect.map((validPath) => validPath.toLowerCase())
+    Effect.map((validPath) => validPath.toLowerCase()),
   );
 
 export const isValidPath = (path: string): Effect.Effect<boolean> =>
   pipe(
     validatePath(path),
     Effect.map(() => true),
-    Effect.catchAll(() => Effect.succeed(false))
+    Effect.catchAll(() => Effect.succeed(false)),
   );
 
 export const validatePathWithRules = (
   path: string,
-  rules: PathValidationRules = {}
+  rules: PathValidationRules = {},
 ): Effect.Effect<string, RpcEffectError> =>
   Effect.gen(function* () {
     if (!rules.allowEmpty || path) {
@@ -193,13 +193,13 @@ export const validatePathWithRules = (
 
     if (rules.allowedPrefixes && rules.allowedPrefixes.length > 0) {
       const hasAllowedPrefix = rules.allowedPrefixes.some((prefix) =>
-        path.startsWith(prefix)
+        path.startsWith(prefix),
       );
       if (!hasAllowedPrefix) {
         issues.push({
           path: [],
           message: `Path must start with one of: ${rules.allowedPrefixes.join(
-            ", "
+            ", ",
           )}`,
           code: "invalid_prefix",
         });
@@ -208,7 +208,7 @@ export const validatePathWithRules = (
 
     if (rules.disallowedPrefixes) {
       const hasDisallowedPrefix = rules.disallowedPrefixes.find((prefix) =>
-        path.startsWith(prefix)
+        path.startsWith(prefix),
       );
       if (hasDisallowedPrefix) {
         issues.push({

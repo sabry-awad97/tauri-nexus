@@ -67,7 +67,7 @@ export const defaultReconnectConfig: ReconnectConfig = {
  */
 export const createSubscriptionState = (
   id: string,
-  lastEventId?: string
+  lastEventId?: string,
 ): SubscriptionState => ({
   id,
   reconnectAttempts: 0,
@@ -81,7 +81,7 @@ export const createSubscriptionState = (
  */
 export const makeSubscriptionStateRef = (
   id: string,
-  lastEventId?: string
+  lastEventId?: string,
 ): Effect.Effect<Ref.Ref<SubscriptionState>> =>
   Ref.make(createSubscriptionState(id, lastEventId));
 
@@ -99,7 +99,7 @@ export const makeEventQueue = <T>(): Effect.Effect<Queue.Queue<QueueItem<T>>> =>
  * Mark subscription as completed.
  */
 export const markCompleted = <S extends SubscriptionState>(
-  stateRef: Ref.Ref<S>
+  stateRef: Ref.Ref<S>,
 ): Effect.Effect<void> =>
   Ref.update(stateRef, (s) => ({ ...s, completed: true }));
 
@@ -108,7 +108,7 @@ export const markCompleted = <S extends SubscriptionState>(
  */
 export const updateLastEventId = <S extends SubscriptionState>(
   stateRef: Ref.Ref<S>,
-  eventId: string
+  eventId: string,
 ): Effect.Effect<void> =>
   Ref.update(stateRef, (s) => ({ ...s, lastEventId: eventId }));
 
@@ -116,7 +116,7 @@ export const updateLastEventId = <S extends SubscriptionState>(
  * Increment pending consumers count.
  */
 export const incrementConsumers = <S extends SubscriptionState>(
-  stateRef: Ref.Ref<S>
+  stateRef: Ref.Ref<S>,
 ): Effect.Effect<void> =>
   Ref.update(stateRef, (s) => ({
     ...s,
@@ -127,7 +127,7 @@ export const incrementConsumers = <S extends SubscriptionState>(
  * Decrement pending consumers count.
  */
 export const decrementConsumers = <S extends SubscriptionState>(
-  stateRef: Ref.Ref<S>
+  stateRef: Ref.Ref<S>,
 ): Effect.Effect<void> =>
   Ref.update(stateRef, (s) => ({
     ...s,
@@ -139,7 +139,7 @@ export const decrementConsumers = <S extends SubscriptionState>(
  */
 export const resetForReconnect = <S extends SubscriptionState>(
   stateRef: Ref.Ref<S>,
-  newId: string
+  newId: string,
 ): Effect.Effect<void> =>
   Ref.update(stateRef, (s) => ({
     ...s,
@@ -151,7 +151,7 @@ export const resetForReconnect = <S extends SubscriptionState>(
  * Increment reconnect attempts.
  */
 export const incrementReconnectAttempts = <S extends SubscriptionState>(
-  stateRef: Ref.Ref<S>
+  stateRef: Ref.Ref<S>,
 ): Effect.Effect<void> =>
   Ref.update(stateRef, (s) => ({
     ...s,
@@ -162,7 +162,7 @@ export const incrementReconnectAttempts = <S extends SubscriptionState>(
  * Reset reconnect attempts counter.
  */
 export const resetReconnectAttempts = <S extends SubscriptionState>(
-  stateRef: Ref.Ref<S>
+  stateRef: Ref.Ref<S>,
 ): Effect.Effect<void> =>
   Ref.update(stateRef, (s) => ({ ...s, reconnectAttempts: 0 }));
 
@@ -175,7 +175,7 @@ export const resetReconnectAttempts = <S extends SubscriptionState>(
  */
 export const offerEvent = <T>(
   queue: Queue.Queue<QueueItem<T>>,
-  event: SubscriptionEvent<T>
+  event: SubscriptionEvent<T>,
 ): Effect.Effect<boolean> => Queue.offer(queue, event);
 
 /**
@@ -183,7 +183,7 @@ export const offerEvent = <T>(
  */
 export const sendShutdownSentinels = <T>(
   queue: Queue.Queue<QueueItem<T>>,
-  count: number
+  count: number,
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     const sentinelCount = Math.max(1, count + 1);
@@ -196,7 +196,7 @@ export const sendShutdownSentinels = <T>(
  * Take next item from queue.
  */
 export const takeFromQueue = <T>(
-  queue: Queue.Queue<QueueItem<T>>
+  queue: Queue.Queue<QueueItem<T>>,
 ): Effect.Effect<QueueItem<T>> => Queue.take(queue);
 
 // =============================================================================
@@ -208,7 +208,7 @@ export const takeFromQueue = <T>(
  */
 export const calculateReconnectDelay = (
   attempt: number,
-  baseDelay: number
+  baseDelay: number,
 ): Effect.Effect<number> =>
   Effect.sync(() => {
     const delay = baseDelay * Math.pow(2, attempt - 1);
@@ -220,7 +220,7 @@ export const calculateReconnectDelay = (
  */
 export const shouldReconnect = <S extends SubscriptionState>(
   stateRef: Ref.Ref<S>,
-  config: ReconnectConfig
+  config: ReconnectConfig,
 ): Effect.Effect<boolean> =>
   Effect.gen(function* () {
     if (!config.autoReconnect) return false;
@@ -233,14 +233,14 @@ export const shouldReconnect = <S extends SubscriptionState>(
  */
 export const prepareReconnect = <S extends SubscriptionState>(
   stateRef: Ref.Ref<S>,
-  config: ReconnectConfig
+  config: ReconnectConfig,
 ): Effect.Effect<number> =>
   Effect.gen(function* () {
     yield* incrementReconnectAttempts(stateRef);
     const state = yield* Ref.get(stateRef);
     return yield* calculateReconnectDelay(
       state.reconnectAttempts,
-      config.reconnectDelay
+      config.reconnectDelay,
     );
   });
 
@@ -256,12 +256,12 @@ export const waitForReconnect = (delayMs: number): Effect.Effect<void> =>
 export const maxReconnectsExceededError = (
   path: string,
   attempts: number,
-  maxReconnects: number
+  maxReconnects: number,
 ): RpcEffectError =>
   makeCallError(
     "MAX_RECONNECTS_EXCEEDED",
     `Maximum reconnection attempts (${maxReconnects}) exceeded`,
-    { attempts, maxReconnects, path }
+    { attempts, maxReconnects, path },
   );
 
 // =============================================================================
@@ -273,7 +273,7 @@ export const maxReconnectsExceededError = (
  */
 export const processDataEvent = <T, S extends SubscriptionState>(
   stateRef: Ref.Ref<S>,
-  event: Event<T>
+  event: Event<T>,
 ): Effect.Effect<T> =>
   Effect.gen(function* () {
     if (event.id) {
@@ -290,7 +290,7 @@ export const processErrorEvent = <T, S extends SubscriptionState>(
   _queue: Queue.Queue<QueueItem<T>>,
   error: SubscriptionError,
   config: ReconnectConfig,
-  path: string
+  path: string,
 ): Effect.Effect<
   { shouldRetry: boolean; error: RpcEffectError },
   RpcEffectError
@@ -308,7 +308,7 @@ export const processErrorEvent = <T, S extends SubscriptionState>(
           error: maxReconnectsExceededError(
             path,
             state.reconnectAttempts,
-            config.maxReconnects
+            config.maxReconnects,
           ),
         };
       }

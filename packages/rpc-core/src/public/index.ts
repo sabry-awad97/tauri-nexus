@@ -70,17 +70,24 @@ export type {
 } from "../core/inference";
 
 // =============================================================================
-// Error Utilities
+// Error Utilities (from rpc-effect)
 // =============================================================================
 
 export {
+  // Type guards
   isRpcError,
   hasErrorCode,
-  createError,
-  parseError,
+  // Constructors
+  createRpcError,
+  // Backward compatibility alias
+  createRpcError as createError,
+  // Rate limit
   isRateLimitError,
   getRateLimitRetryAfter,
-} from "../core/errors";
+} from "@tauri-nexus/rpc-effect";
+
+// rpc-core specific error utilities
+export { parseError } from "../core/errors";
 
 // =============================================================================
 // Validation

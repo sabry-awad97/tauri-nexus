@@ -8,7 +8,7 @@ import {
   callEffect,
   subscribeEffect,
   validatePath,
-  toPublicError,
+  toRpcError,
   parseEffectError,
   makeConfigLayer,
   makeInterceptorLayer,
@@ -72,12 +72,12 @@ export class TauriLink<TClientContext = unknown> {
       }),
       TauriTransportLayer,
       makeInterceptorLayer({ interceptors: effectInterceptors }),
-      makeLoggerLayer()
+      makeLoggerLayer(),
     );
   }
 
   private provideLayer<T>(
-    effect: Effect.Effect<T, RpcEffectError, RpcServices>
+    effect: Effect.Effect<T, RpcEffectError, RpcServices>,
   ): Effect.Effect<T, RpcEffectError> {
     return pipe(effect, Effect.provide(this.layer));
   }
@@ -85,12 +85,12 @@ export class TauriLink<TClientContext = unknown> {
   private async runEffect<T>(
     effect: Effect.Effect<T, RpcEffectError>,
     path: string,
-    timeoutMs?: number
+    timeoutMs?: number,
   ): Promise<T> {
     try {
       return await Effect.runPromise(effect);
     } catch (error) {
-      throw toPublicError(parseEffectError(error, path, timeoutMs));
+      throw toRpcError(parseEffectError(error, path, timeoutMs));
     }
   }
 
@@ -98,7 +98,7 @@ export class TauriLink<TClientContext = unknown> {
     path: string,
     input: unknown,
     type: "query" | "mutation" | "subscription",
-    options: LinkCallOptions<TClientContext>
+    options: LinkCallOptions<TClientContext>,
   ): LinkRequestContext<TClientContext> {
     return {
       path,
@@ -113,7 +113,7 @@ export class TauriLink<TClientContext = unknown> {
   private callWithLifecycle<T>(
     path: string,
     input: unknown,
-    options: LinkCallOptions<TClientContext>
+    options: LinkCallOptions<TClientContext>,
   ): Effect.Effect<T, RpcEffectError, RpcServices> {
     const timeoutMs = options.timeout ?? this.config.timeout;
     const ctx = this.createRequestContext(path, input, "query", options);
@@ -123,7 +123,7 @@ export class TauriLink<TClientContext = unknown> {
 
       if (this.config.onRequest) {
         yield* Effect.promise(() =>
-          Promise.resolve(this.config.onRequest!(ctx))
+          Promise.resolve(this.config.onRequest!(ctx)),
         );
       }
 
@@ -135,14 +135,14 @@ export class TauriLink<TClientContext = unknown> {
         }),
         Effect.tapError((error) =>
           Effect.promise(() =>
-            Promise.resolve(this.config.onError?.(toPublicError(error), ctx))
-          )
-        )
+            Promise.resolve(this.config.onError?.(toRpcError(error), ctx)),
+          ),
+        ),
       );
 
       if (this.config.onResponse) {
         yield* Effect.promise(() =>
-          Promise.resolve(this.config.onResponse!(result, ctx))
+          Promise.resolve(this.config.onResponse!(result, ctx)),
         );
       }
 
@@ -153,7 +153,7 @@ export class TauriLink<TClientContext = unknown> {
   private subscribeWithLifecycle<T>(
     path: string,
     input: unknown,
-    options: LinkSubscribeOptions<TClientContext>
+    options: LinkSubscribeOptions<TClientContext>,
   ): Effect.Effect<AsyncIterable<T>, RpcEffectError, RpcServices> {
     const ctx = this.createRequestContext(path, input, "subscription", options);
 
@@ -162,7 +162,7 @@ export class TauriLink<TClientContext = unknown> {
 
       if (this.config.onRequest) {
         yield* Effect.promise(() =>
-          Promise.resolve(this.config.onRequest!(ctx))
+          Promise.resolve(this.config.onRequest!(ctx)),
         );
       }
 
@@ -174,9 +174,9 @@ export class TauriLink<TClientContext = unknown> {
         }),
         Effect.tapError((error) =>
           Effect.promise(() =>
-            Promise.resolve(this.config.onError?.(toPublicError(error), ctx))
-          )
-        )
+            Promise.resolve(this.config.onError?.(toRpcError(error), ctx)),
+          ),
+        ),
       );
 
       return iterator;
@@ -193,11 +193,11 @@ export class TauriLink<TClientContext = unknown> {
   async call<T>(
     path: string,
     input: unknown,
-    options: LinkCallOptions<TClientContext> = {}
+    options: LinkCallOptions<TClientContext> = {},
   ): Promise<T> {
     const timeoutMs = options.timeout ?? this.config.timeout;
     const effect = this.provideLayer(
-      this.callWithLifecycle<T>(path, input, options)
+      this.callWithLifecycle<T>(path, input, options),
     );
     return this.runEffect(effect, path, timeoutMs);
   }
@@ -208,10 +208,10 @@ export class TauriLink<TClientContext = unknown> {
   async subscribe<T>(
     path: string,
     input: unknown,
-    options: LinkSubscribeOptions<TClientContext> = {}
+    options: LinkSubscribeOptions<TClientContext> = {},
   ): Promise<AsyncIterable<T>> {
     const effect = this.provideLayer(
-      this.subscribeWithLifecycle<T>(path, input, options)
+      this.subscribeWithLifecycle<T>(path, input, options),
     );
     return this.runEffect(effect, path);
   }
@@ -241,7 +241,7 @@ export class TauriLink<TClientContext = unknown> {
    * Create a new link with additional interceptors.
    */
   withInterceptors(
-    interceptors: TauriLinkConfig<TClientContext>["interceptors"]
+    interceptors: TauriLinkConfig<TClientContext>["interceptors"],
   ): TauriLink<TClientContext> {
     return new TauriLink({
       ...this.config,

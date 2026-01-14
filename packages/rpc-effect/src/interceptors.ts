@@ -34,7 +34,7 @@ export interface AuthInterceptorOptions extends InterceptorOptions {
  * Handler function type for interceptor logic.
  */
 export type InterceptorHandler<TOptions> = (
-  options: TOptions
+  options: TOptions,
 ) => <T>(ctx: InterceptorContext, next: () => Promise<T>) => Promise<T>;
 
 /**
@@ -54,7 +54,7 @@ export type InterceptorHandler<TOptions> = (
  */
 export function createInterceptorFactory<TOptions extends InterceptorOptions>(
   defaultName: string,
-  handler: InterceptorHandler<TOptions>
+  handler: InterceptorHandler<TOptions>,
 ): (options: TOptions) => RpcInterceptor {
   return (options: TOptions): RpcInterceptor => ({
     name: options.name ?? defaultName,
@@ -67,7 +67,7 @@ export function createInterceptorFactory<TOptions extends InterceptorOptions>(
  */
 export function createSimpleInterceptor(
   name: string,
-  intercept: <T>(ctx: InterceptorContext, next: () => Promise<T>) => Promise<T>
+  intercept: <T>(ctx: InterceptorContext, next: () => Promise<T>) => Promise<T>,
 ): RpcInterceptor {
   return { name, intercept };
 }
@@ -77,7 +77,7 @@ export function createSimpleInterceptor(
  */
 export function composeInterceptors(
   name: string,
-  interceptors: readonly RpcInterceptor[]
+  interceptors: readonly RpcInterceptor[],
 ): RpcInterceptor {
   return {
     name,
@@ -113,7 +113,7 @@ const defaultShouldRetry = (error: unknown): boolean => {
   if (typeof error === "object" && error !== null && "code" in error) {
     const code = (error as { code: string }).code;
     return !NON_RETRYABLE_CODES.includes(
-      code as (typeof NON_RETRYABLE_CODES)[number]
+      code as (typeof NON_RETRYABLE_CODES)[number],
     );
   }
   return true;
@@ -124,7 +124,7 @@ const defaultShouldRetry = (error: unknown): boolean => {
 // =============================================================================
 
 export function loggingInterceptor(
-  options: InterceptorOptions & { prefix?: string } = {}
+  options: InterceptorOptions & { prefix?: string } = {},
 ): RpcInterceptor {
   const prefix = options.prefix ?? "[RPC]";
 
@@ -153,7 +153,7 @@ export function loggingInterceptor(
 // =============================================================================
 
 export function retryInterceptor(
-  options: RetryInterceptorOptions = {}
+  options: RetryInterceptorOptions = {},
 ): RpcInterceptor {
   const { maxRetries = 3, delay = 1000, backoff = "linear", retryOn } = options;
 
@@ -196,7 +196,7 @@ export function retryInterceptor(
 
 export function errorHandlerInterceptor(
   handler: (error: unknown, ctx: InterceptorContext) => void | Promise<void>,
-  options: InterceptorOptions = {}
+  options: InterceptorOptions = {},
 ): RpcInterceptor {
   return {
     name: options.name ?? "errorHandler",
@@ -216,7 +216,7 @@ export function errorHandlerInterceptor(
 // =============================================================================
 
 export function authInterceptor(
-  options: AuthInterceptorOptions
+  options: AuthInterceptorOptions,
 ): RpcInterceptor {
   const { getToken, headerName = "authorization", prefix = "Bearer" } = options;
 
@@ -240,7 +240,7 @@ export function authInterceptor(
 
 export function timingInterceptor(
   onTiming: (path: string, durationMs: number) => void,
-  options: InterceptorOptions = {}
+  options: InterceptorOptions = {},
 ): RpcInterceptor {
   return {
     name: options.name ?? "timing",
@@ -262,7 +262,7 @@ export function timingInterceptor(
 export function dedupeInterceptor(
   options: InterceptorOptions & {
     getKey?: (ctx: InterceptorContext) => string;
-  } = {}
+  } = {},
 ): RpcInterceptor {
   const pending = new Map<string, Promise<unknown>>();
 
@@ -309,9 +309,9 @@ export const createRetryInterceptor = (options: {
   });
 
 export const createErrorInterceptor = (
-  handler: (error: unknown, ctx: InterceptorContext) => void
+  handler: (error: unknown, ctx: InterceptorContext) => void,
 ): RpcInterceptor => errorHandlerInterceptor(handler);
 
 export const createAuthInterceptor = (
-  getToken: () => string | null | Promise<string | null>
+  getToken: () => string | null | Promise<string | null>,
 ): RpcInterceptor => authInterceptor({ getToken });

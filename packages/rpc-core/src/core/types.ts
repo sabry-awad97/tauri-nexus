@@ -1,16 +1,13 @@
 // =============================================================================
 // @tauri-nexus/rpc-core - Core Domain Types
 // =============================================================================
-// Pure TypeScript types. Error types re-exported from rpc-effect.
+// Pure TypeScript types. Error types imported from rpc-effect.
 
 // =============================================================================
 // Error Types - from rpc-effect (single source of truth)
 // =============================================================================
 
-export type {
-  PublicRpcError as RpcError,
-  RpcErrorCode,
-} from "@tauri-nexus/rpc-effect";
+export type { RpcError, RpcErrorCode } from "@tauri-nexus/rpc-effect";
 
 // =============================================================================
 // Procedure Types
@@ -23,7 +20,7 @@ export type ProcedureType = "query" | "mutation" | "subscription";
 export interface ProcedureDef<
   TType extends ProcedureType = ProcedureType,
   TInput = unknown,
-  TOutput = unknown
+  TOutput = unknown,
 > {
   readonly _type: TType;
   readonly _input: TInput;
@@ -31,16 +28,22 @@ export interface ProcedureDef<
 }
 
 /** Query procedure - for reading data */
-export interface QueryDef<TInput = void, TOutput = unknown>
-  extends ProcedureDef<"query", TInput, TOutput> {}
+export interface QueryDef<
+  TInput = void,
+  TOutput = unknown,
+> extends ProcedureDef<"query", TInput, TOutput> {}
 
 /** Mutation procedure - for writing data */
-export interface MutationDef<TInput = void, TOutput = unknown>
-  extends ProcedureDef<"mutation", TInput, TOutput> {}
+export interface MutationDef<
+  TInput = void,
+  TOutput = unknown,
+> extends ProcedureDef<"mutation", TInput, TOutput> {}
 
 /** Subscription procedure - for streaming data */
-export interface SubscriptionDef<TInput = void, TOutput = unknown>
-  extends ProcedureDef<"subscription", TInput, TOutput> {}
+export interface SubscriptionDef<
+  TInput = void,
+  TOutput = unknown,
+> extends ProcedureDef<"subscription", TInput, TOutput> {}
 
 // =============================================================================
 // Contract Types
@@ -84,8 +87,7 @@ export interface EventMeta {
 // Batch Request Types
 // =============================================================================
 
-/** Re-export RpcError for batch results */
-import type { PublicRpcError } from "@tauri-nexus/rpc-effect";
+import type { RpcError } from "@tauri-nexus/rpc-effect";
 
 /**
  * A single request within a batch.
@@ -109,7 +111,7 @@ export interface BatchRequest {
 export interface BatchResult<T = unknown> {
   readonly id: string;
   readonly data?: T;
-  readonly error?: PublicRpcError;
+  readonly error?: RpcError;
 }
 
 /**
@@ -179,7 +181,7 @@ export interface ResponseContext<T = unknown> {
 /** Middleware function type */
 export type Middleware = <T>(
   ctx: RequestContext,
-  next: () => Promise<T>
+  next: () => Promise<T>,
 ) => Promise<T>;
 
 // =============================================================================

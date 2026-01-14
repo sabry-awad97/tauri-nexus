@@ -20,7 +20,7 @@ import {
   callEffect,
   subscribeEffect,
   validatePath as validatePathEffect,
-  toPublicError,
+  toRpcError,
   parseEffectError,
   makeConfigLayer,
   makeInterceptorLayer,
@@ -48,7 +48,7 @@ const buildLayerFromConfig = (): Layer.Layer<RpcServices> => {
           type: string;
           meta: Record<string, unknown>;
         },
-        next: () => Promise<T>
+        next: () => Promise<T>,
       ) => {
         const requestCtx: RequestContext = {
           path: ctx.path,
@@ -58,7 +58,7 @@ const buildLayerFromConfig = (): Layer.Layer<RpcServices> => {
         };
         return mw(requestCtx, next);
       },
-    })
+    }),
   );
 
   return Layer.mergeAll(
@@ -68,7 +68,7 @@ const buildLayerFromConfig = (): Layer.Layer<RpcServices> => {
     }),
     TauriTransportLayer,
     makeInterceptorLayer({ interceptors }),
-    makeLoggerLayer()
+    makeLoggerLayer(),
   );
 };
 
@@ -77,19 +77,19 @@ const buildLayerFromConfig = (): Layer.Layer<RpcServices> => {
 // =============================================================================
 
 const runWithConfig = <T>(
-  effect: Effect.Effect<T, RpcEffectError, RpcServices>
+  effect: Effect.Effect<T, RpcEffectError, RpcServices>,
 ): Effect.Effect<T, RpcEffectError> =>
   pipe(effect, Effect.provide(buildLayerFromConfig()));
 
 const runToPromise = async <T>(
   effect: Effect.Effect<T, RpcEffectError>,
   path: string,
-  timeoutMs?: number
+  timeoutMs?: number,
 ): Promise<T> => {
   try {
     return await Effect.runPromise(effect);
   } catch (error) {
-    throw toPublicError(parseEffectError(error, path, timeoutMs));
+    throw toRpcError(parseEffectError(error, path, timeoutMs));
   }
 };
 
@@ -100,7 +100,7 @@ const runToPromise = async <T>(
 const callWithLifecycle = <T>(
   path: string,
   input: unknown,
-  options?: CallOptions
+  options?: CallOptions,
 ) =>
   Effect.gen(function* () {
     const config = getConfig();
@@ -124,9 +124,9 @@ const callWithLifecycle = <T>(
       }),
       Effect.tapError((error) =>
         Effect.sync(() => {
-          config.onError?.(ctx, toPublicError(error));
-        })
-      )
+          config.onError?.(ctx, toRpcError(error));
+        }),
+      ),
     );
 
     if (config.onResponse) {
@@ -142,11 +142,11 @@ const callWithLifecycle = <T>(
 export async function call<T>(
   path: string,
   input: unknown = null,
-  options?: CallOptions
+  options?: CallOptions,
 ): Promise<T> {
   const effect = pipe(
     callWithLifecycle<T>(path, input, options),
-    runWithConfig
+    runWithConfig,
   );
   return runToPromise(effect, path, options?.timeout);
 }
@@ -158,7 +158,7 @@ export async function call<T>(
 const subscribeWithLifecycle = <T>(
   path: string,
   input: unknown,
-  options?: SubscriptionOptions
+  options?: SubscriptionOptions,
 ) =>
   Effect.gen(function* () {
     const config = getConfig();
@@ -182,9 +182,9 @@ const subscribeWithLifecycle = <T>(
       }),
       Effect.tapError((error) =>
         Effect.sync(() => {
-          config.onError?.(ctx, toPublicError(error));
-        })
-      )
+          config.onError?.(ctx, toRpcError(error));
+        }),
+      ),
     );
 
     return iterator;
@@ -196,11 +196,11 @@ const subscribeWithLifecycle = <T>(
 export async function subscribe<T>(
   path: string,
   input: unknown = null,
-  options?: SubscriptionOptions
+  options?: SubscriptionOptions,
 ): Promise<EventIterator<T>> {
   const effect = pipe(
     subscribeWithLifecycle<T>(path, input, options),
-    runWithConfig
+    runWithConfig,
   );
   return runToPromise(effect, path) as Promise<EventIterator<T>>;
 }
@@ -211,7 +211,7 @@ export async function subscribe<T>(
 
 const executeBatchEffect = <T = unknown>(
   requests: SingleRequest[],
-  options?: BatchCallOptions
+  options?: BatchCallOptions,
 ) =>
   Effect.gen(function* () {
     for (const req of requests) {
@@ -243,8 +243,8 @@ const executeBatchEffect = <T = unknown>(
             return timeoutId;
           }),
           () => executeInvoke,
-          (timeoutId) => Effect.sync(() => clearTimeout(timeoutId))
-        )
+          (timeoutId) => Effect.sync(() => clearTimeout(timeoutId)),
+        ),
       );
     }
 
@@ -256,17 +256,17 @@ const executeBatchEffect = <T = unknown>(
  */
 export async function executeBatch<T = unknown>(
   requests: SingleRequest[],
-  options?: BatchCallOptions
+  options?: BatchCallOptions,
 ): Promise<BatchResponse<T>> {
   try {
     return await Effect.runPromise(executeBatchEffect<T>(requests, options));
   } catch (error) {
-    const rpcError = toPublicError(
-      parseEffectError(error, "batch", options?.timeout)
+    const rpcError = toRpcError(
+      parseEffectError(error, "batch", options?.timeout),
     );
     console.warn(
       `[RPC] Batch request failed: ${rpcError.code} - ${rpcError.message}`,
-      rpcError.details
+      rpcError.details,
     );
     throw rpcError;
   }

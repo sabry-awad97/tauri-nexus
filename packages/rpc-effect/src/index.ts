@@ -48,7 +48,7 @@ export {
   makeCancelledError,
   makeValidationError,
   makeNetworkError,
-  // Type Guards
+  // Type Guards (Effect errors)
   isEffectRpcError,
   isRpcCallError,
   isRpcTimeoutError,
@@ -70,14 +70,15 @@ export {
   failWithValidation,
   failWithNetwork,
   failWithCancelled,
-  // Public Error Types (for rpc-core)
-  type PublicRpcError,
+  // Serializable RpcError (for Promise API)
+  type RpcError,
   type RpcErrorCode,
-  toPublicError,
-  fromPublicError,
-  isPublicRpcError,
-  hasPublicErrorCode,
-  createPublicError,
+  toRpcError,
+  fromRpcError,
+  isRpcError,
+  hasErrorCode,
+  createRpcError,
+  parseError,
   // Rate Limit Helpers
   isRateLimitError,
   getRateLimitRetryAfter,
@@ -90,7 +91,6 @@ export {
   parseToEffectError,
   fromTransportError,
   parseEffectError,
-  parseToPublicError,
 } from "./errors";
 
 // =============================================================================

@@ -26,7 +26,7 @@ const tauriTransport: RpcTransport = {
     return invoke<T>("plugin:rpc|rpc_call", { path, input });
   },
   callBatch: async <T>(
-    requests: readonly { id: string; path: string; input: unknown }[]
+    requests: readonly { id: string; path: string; input: unknown }[],
   ) => {
     const normalizedRequests = requests.map((req) => ({
       ...req,
@@ -45,7 +45,7 @@ const tauriTransport: RpcTransport = {
   subscribe: async <T>(
     path: string,
     input: unknown,
-    options?: { lastEventId?: string; signal?: AbortSignal }
+    options?: { lastEventId?: string; signal?: AbortSignal },
   ) => {
     return createEventIterator<T>(path, input, options);
   },
@@ -63,7 +63,7 @@ export const makeDefaultLayer = (config?: Partial<RpcConfig>) =>
     makeConfigLayer(config),
     TauriTransportLayer,
     makeInterceptorLayer({ interceptors: [] }),
-    makeLoggerLayer()
+    makeLoggerLayer(),
   );
 
 export const makeDebugLayer = (config?: Partial<RpcConfig>) =>
@@ -76,7 +76,7 @@ export const makeDebugLayer = (config?: Partial<RpcConfig>) =>
       info: (msg, data) => console.info(`[RPC] ${msg}`, data ?? ""),
       warn: (msg, data) => console.warn(`[RPC] ${msg}`, data ?? ""),
       error: (msg, data) => console.error(`[RPC] ${msg}`, data ?? ""),
-    })
+    }),
   );
 
 // =============================================================================
@@ -99,7 +99,7 @@ export {
   type RetryInterceptorOptions,
   type AuthInterceptorOptions,
   // Public Error Types
-  type PublicRpcError,
+  type RpcError,
   type RpcErrorCode,
   // Error classes
   RpcCallError,
@@ -125,7 +125,7 @@ export {
   isRpcCancelledError,
   isRpcValidationError,
   isRpcNetworkError,
-  isPublicRpcError,
+  isRpcError,
   // Code utilities
   getErrorCode,
   hasCode,
@@ -140,8 +140,8 @@ export {
   failWithNetwork,
   failWithCancelled,
   // Error conversion (single source of truth)
-  toPublicError,
-  fromPublicError,
+  toRpcError,
+  fromRpcError,
   // Error parsing
   type RpcErrorShape,
   type ErrorParserOptions,
@@ -151,7 +151,7 @@ export {
   parseToEffectError,
   fromTransportError,
   parseEffectError,
-  parseToPublicError,
+  parseError,
   // Rate limit helpers
   isRateLimitError,
   getRateLimitRetryAfter,

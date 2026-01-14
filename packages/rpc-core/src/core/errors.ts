@@ -1,96 +1,40 @@
 // =============================================================================
-// @tauri-nexus/rpc-core - Error Types
+// @tauri-nexus/rpc-core - Error Handling
 // =============================================================================
-// Promise-based error handling. Types from rpc-effect, utilities for Promise API.
+// Direct imports from rpc-effect. No re-exports - use rpc-effect types directly.
+// This file provides only rpc-core specific error utilities.
 
 import {
   type RpcEffectError,
-  toPublicError,
+  toRpcError,
   parseEffectError,
-  isRateLimitError as isRateLimitErrorEffect,
-  getRateLimitRetryAfter as getRateLimitRetryAfterEffect,
 } from "@tauri-nexus/rpc-effect";
 
 // =============================================================================
-// Types
+// rpc-core Specific Utilities
 // =============================================================================
 
 /**
- * RPC error for Promise-based API.
+ * Convert Effect error to serializable RpcError.
+ * Use when bridging Effect-based code to Promise-based API.
  */
-export interface RpcError {
-  readonly code: string;
-  readonly message: string;
-  readonly details?: unknown;
-  readonly cause?: string;
+export const fromEffectError = toRpcError;
+
+/**
+ * Parse any error to serializable RpcError.
+ * Handles Effect errors, JSON strings, Error objects, and unknown values.
+ */
+export function parseError(
+  error: unknown,
+  path: string = "",
+): import("@tauri-nexus/rpc-effect").RpcError {
+  return toRpcError(parseEffectError(error, path));
 }
 
-export type RpcErrorCode =
-  | "BAD_REQUEST"
-  | "UNAUTHORIZED"
-  | "FORBIDDEN"
-  | "NOT_FOUND"
-  | "VALIDATION_ERROR"
-  | "CONFLICT"
-  | "PAYLOAD_TOO_LARGE"
-  | "RATE_LIMITED"
-  | "INTERNAL_ERROR"
-  | "NOT_IMPLEMENTED"
-  | "SERVICE_UNAVAILABLE"
-  | "PROCEDURE_NOT_FOUND"
-  | "SUBSCRIPTION_ERROR"
-  | "MIDDLEWARE_ERROR"
-  | "SERIALIZATION_ERROR"
-  | "TIMEOUT"
-  | "CANCELLED"
-  | "UNKNOWN";
-
-// =============================================================================
-// Type Guards
-// =============================================================================
-
-export const isRpcError = (error: unknown): error is RpcError =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  "message" in error &&
-  typeof (error as RpcError).code === "string" &&
-  typeof (error as RpcError).message === "string";
-
-export const hasErrorCode = (
-  error: unknown,
-  code: RpcErrorCode | string
-): boolean => isRpcError(error) && error.code === code;
-
-// =============================================================================
-// Constructors
-// =============================================================================
-
-export const createError = (
-  code: RpcErrorCode | string,
-  message: string,
-  details?: unknown
-): RpcError => ({ code, message, details });
-
-// =============================================================================
-// Rate Limit
-// =============================================================================
-
-export const isRateLimitError = isRateLimitErrorEffect;
-export const getRateLimitRetryAfter = getRateLimitRetryAfterEffect;
-
-// =============================================================================
-// Conversion
-// =============================================================================
-
 /**
- * Convert Effect error to RpcError.
+ * Convert Effect error and throw as serializable RpcError.
+ * Useful for Promise-based error boundaries.
  */
-export const fromEffectError = (error: RpcEffectError): RpcError =>
-  toPublicError(error);
-
-/**
- * Parse any error to RpcError.
- */
-export const parseError = (error: unknown, path: string = ""): RpcError =>
-  toPublicError(parseEffectError(error, path));
+export function throwAsRpcError(error: RpcEffectError): never {
+  throw toRpcError(error);
+}

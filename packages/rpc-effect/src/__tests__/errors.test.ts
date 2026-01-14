@@ -160,7 +160,7 @@ describe("hasCode", () => {
 describe("getErrorCode", () => {
   it("should return code for RpcCallError", () => {
     expect(getErrorCode(makeCallError("NOT_FOUND", "Not found"))).toBe(
-      "NOT_FOUND"
+      "NOT_FOUND",
     );
   });
 
@@ -174,13 +174,13 @@ describe("getErrorCode", () => {
 
   it("should return VALIDATION_ERROR for RpcValidationError", () => {
     expect(getErrorCode(makeValidationError("path", []))).toBe(
-      "VALIDATION_ERROR"
+      "VALIDATION_ERROR",
     );
   });
 
   it("should return NETWORK_ERROR for RpcNetworkError", () => {
     expect(getErrorCode(makeNetworkError("path", new Error()))).toBe(
-      "NETWORK_ERROR"
+      "NETWORK_ERROR",
     );
   });
 });
@@ -203,16 +203,16 @@ describe("isRetryableError", () => {
     expect(isRetryableError(makeValidationError("path", []))).toBe(false);
     expect(isRetryableError(makeCancelledError("path"))).toBe(false);
     expect(
-      isRetryableError(makeCallError("UNAUTHORIZED", "Unauthorized"))
+      isRetryableError(makeCallError("UNAUTHORIZED", "Unauthorized")),
     ).toBe(false);
     expect(isRetryableError(makeCallError("FORBIDDEN", "Forbidden"))).toBe(
-      false
+      false,
     );
     expect(isRetryableError(makeCallError("BAD_REQUEST", "Bad request"))).toBe(
-      false
+      false,
     );
     expect(isRetryableError(makeCallError("NOT_FOUND", "Not found"))).toBe(
-      false
+      false,
     );
   });
 
@@ -220,10 +220,10 @@ describe("isRetryableError", () => {
     expect(isRetryableError(makeTimeoutError("path", 1000))).toBe(true);
     expect(isRetryableError(makeNetworkError("path", new Error()))).toBe(true);
     expect(
-      isRetryableError(makeCallError("INTERNAL_ERROR", "Internal error"))
+      isRetryableError(makeCallError("INTERNAL_ERROR", "Internal error")),
     ).toBe(true);
     expect(
-      isRetryableError(makeCallError("SERVICE_UNAVAILABLE", "Unavailable"))
+      isRetryableError(makeCallError("SERVICE_UNAVAILABLE", "Unavailable")),
     ).toBe(true);
   });
 });
@@ -269,7 +269,7 @@ describe("matchError", () => {
         onCancelledError: () => "cancelled",
         onValidationError: () => "validation",
         onNetworkError: () => "network",
-      })
+      }),
     );
 
     expect(results).toEqual([

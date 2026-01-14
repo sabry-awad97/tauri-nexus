@@ -12,10 +12,11 @@ import {
   deduplicationKey as deduplicationKeyEffect,
   defaultRetryConfig,
   type RetryConfig,
+  isRpcError,
 } from "@tauri-nexus/rpc-effect";
 
 // =============================================================================
-// Re-exports
+// Re-exports (from rpc-effect)
 // =============================================================================
 
 export { stableStringify, defaultRetryConfig, type RetryConfig };
@@ -31,39 +32,38 @@ export const calculateBackoff = (
   attempt: number,
   baseDelay: number = 1000,
   maxDelay: number = 30000,
-  jitter: boolean = true
+  jitter: boolean = true,
 ): number =>
   Effect.runSync(calculateBackoffEffect(attempt, baseDelay, maxDelay, jitter));
 
 // =============================================================================
-// Deduplication
+// Deduplication Key
 // =============================================================================
 
 export const deduplicationKey = (path: string, input: unknown): string =>
   Effect.runSync(deduplicationKeyEffect(path, input));
 
 // =============================================================================
-// Retry (Promise-based implementation)
+// Retry (Promise-based, uses shared config from rpc-effect)
 // =============================================================================
 
-const isRetryableError = (
-  error: unknown,
-  retryableCodes: readonly string[]
-): boolean => {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof (error as { code: unknown }).code === "string"
-  ) {
-    return retryableCodes.includes((error as { code: string }).code);
+const isRetryableCode = (
+  code: string,
+  retryableCodes: readonly string[],
+): boolean => retryableCodes.includes(code);
+
+const getErrorCode = (error: unknown): string | undefined => {
+  if (isRpcError(error)) return error.code;
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code: unknown }).code;
+    return typeof code === "string" ? code : undefined;
   }
-  return false;
+  return undefined;
 };
 
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  config: Partial<RetryConfig> = {}
+  config: Partial<RetryConfig> = {},
 ): Promise<T> {
   const {
     maxRetries = defaultRetryConfig.maxRetries,
@@ -80,7 +80,11 @@ export async function withRetry<T>(
       return await fn();
     } catch (error) {
       lastError = error;
-      if (!isRetryableError(error, retryableCodes) || attempt >= maxRetries) {
+      const code = getErrorCode(error);
+      const isRetryable =
+        code !== undefined && isRetryableCode(code, retryableCodes);
+
+      if (!isRetryable || attempt >= maxRetries) {
         throw error;
       }
       const delay = calculateBackoff(attempt, baseDelay, maxDelay, jitter);
@@ -92,14 +96,14 @@ export async function withRetry<T>(
 }
 
 // =============================================================================
-// Deduplication (Promise-based implementation)
+// Deduplication (Promise-based)
 // =============================================================================
 
 const pendingRequests = new Map<string, Promise<unknown>>();
 
 export async function withDedup<T>(
   key: string,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
 ): Promise<T> {
   const existing = pendingRequests.get(key);
   if (existing) return existing as Promise<T>;

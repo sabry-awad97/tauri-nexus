@@ -62,24 +62,25 @@ export type {
   InferClientContext,
 } from "./inference";
 
-// Error utilities
-export {
-  isRpcError,
-  hasErrorCode,
-  createError,
-  parseError,
-  isRateLimitError,
-  getRateLimitRetryAfter,
-} from "./errors";
+// Error utilities (rpc-core specific)
+export { fromEffectError, parseError, throwAsRpcError } from "./errors";
 
-// Validation (re-exported from rpc-effect)
+// Validation - Pure functions
+export {
+  validatePathPure,
+  isValidPathPure,
+  validatePathOrThrow,
+  type PathValidationResult,
+  type PathValidationRules,
+} from "./validation";
+
+// Validation - Effect-based (for internal use)
 export {
   validatePathEffect,
   validatePathsEffect,
   validateAndNormalizePathEffect,
   isValidPathEffect,
   validatePathWithRulesEffect,
-  type PathValidationRules,
 } from "./validation";
 
 // Contract builders

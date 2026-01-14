@@ -58,7 +58,7 @@ export class EffectLink<TContext = unknown> {
     | (() => {
         call: <T>(path: string, input: unknown) => Promise<T>;
         callBatch: <T>(
-          requests: readonly { id: string; path: string; input: unknown }[]
+          requests: readonly { id: string; path: string; input: unknown }[],
         ) => Promise<{
           results: readonly {
             id: string;
@@ -69,7 +69,7 @@ export class EffectLink<TContext = unknown> {
         subscribe: <T>(
           path: string,
           input: unknown,
-          options?: { lastEventId?: string; signal?: AbortSignal }
+          options?: { lastEventId?: string; signal?: AbortSignal },
         ) => Promise<EventIterator<T>>;
       })
     | null = null;
@@ -85,7 +85,7 @@ export class EffectLink<TContext = unknown> {
     provider: () => {
       call: <T>(path: string, input: unknown) => Promise<T>;
       callBatch: <T>(
-        requests: readonly { id: string; path: string; input: unknown }[]
+        requests: readonly { id: string; path: string; input: unknown }[],
       ) => Promise<{
         results: readonly {
           id: string;
@@ -96,9 +96,9 @@ export class EffectLink<TContext = unknown> {
       subscribe: <T>(
         path: string,
         input: unknown,
-        options?: { lastEventId?: string; signal?: AbortSignal }
+        options?: { lastEventId?: string; signal?: AbortSignal },
       ) => Promise<EventIterator<T>>;
-    }
+    },
   ): this {
     this.transportProvider = provider;
     this.layer = null;
@@ -108,7 +108,7 @@ export class EffectLink<TContext = unknown> {
   private buildLayer(): Layer.Layer<RpcServices> {
     if (!this.transportProvider) {
       throw new Error(
-        "Transport not configured. Call setTransport() before using the link."
+        "Transport not configured. Call setTransport() before using the link.",
       );
     }
 
@@ -138,8 +138,8 @@ export class EffectLink<TContext = unknown> {
               info: () => {},
               warn: () => {},
               error: () => {},
-            }
-      )
+            },
+      ),
     );
   }
 
@@ -149,7 +149,7 @@ export class EffectLink<TContext = unknown> {
   call<T>(
     path: string,
     input: unknown,
-    options?: CallOptions
+    options?: CallOptions,
   ): Effect.Effect<T, RpcEffectError, RpcServices> {
     return call<T>(path, input, options);
   }
@@ -160,7 +160,7 @@ export class EffectLink<TContext = unknown> {
   subscribe<T>(
     path: string,
     input: unknown,
-    options?: SubscribeOptions
+    options?: SubscribeOptions,
   ): Effect.Effect<AsyncIterable<T>, RpcEffectError, RpcServices> {
     return subscribe<T>(path, input, options);
   }
@@ -171,14 +171,14 @@ export class EffectLink<TContext = unknown> {
   async runCall<T>(
     path: string,
     input: unknown,
-    options?: CallOptions
+    options?: CallOptions,
   ): Promise<T> {
     if (!this.layer) {
       this.layer = this.buildLayer();
     }
     const effect = pipe(
       this.call<T>(path, input, options),
-      Effect.provide(this.layer)
+      Effect.provide(this.layer),
     );
     return Effect.runPromise(effect);
   }
@@ -189,14 +189,14 @@ export class EffectLink<TContext = unknown> {
   async runSubscribe<T>(
     path: string,
     input: unknown,
-    options?: SubscribeOptions
+    options?: SubscribeOptions,
   ): Promise<AsyncIterable<T>> {
     if (!this.layer) {
       this.layer = this.buildLayer();
     }
     const effect = pipe(
       this.subscribe<T>(path, input, options),
-      Effect.provide(this.layer)
+      Effect.provide(this.layer),
     );
     return Effect.runPromise(effect);
   }
@@ -222,7 +222,7 @@ export class EffectLink<TContext = unknown> {
    * Create a new link with additional interceptors.
    */
   withInterceptors(
-    interceptors: readonly RpcInterceptor[]
+    interceptors: readonly RpcInterceptor[],
   ): EffectLink<TContext> {
     const newLink = new EffectLink({
       ...this.config,
