@@ -1,0 +1,173 @@
+// =============================================================================
+// @tauri-nexus/rpc-effect - Effect-Based RPC Library
+// =============================================================================
+// Pure Effect-based RPC implementation with no Promise wrappers.
+// Use this package for Effect-first development.
+
+// =============================================================================
+// Core Types
+// =============================================================================
+
+export type {
+  ProcedureType,
+  Event,
+  EventIterator,
+  ValidationIssue,
+  RpcEffectError,
+  RpcConfig,
+  RpcTransport,
+  SubscribeTransportOptions,
+  RpcInterceptorChain,
+  RpcInterceptor,
+  InterceptorContext,
+  RpcLogger,
+  EffectRequestContext,
+  EffectResponseContext,
+} from "./types";
+
+export {
+  RpcCallError,
+  RpcTimeoutError,
+  RpcCancelledError,
+  RpcValidationError,
+  RpcNetworkError,
+  RpcConfigService,
+  RpcTransportService,
+  RpcInterceptorService,
+  RpcLoggerService,
+} from "./types";
+
+// =============================================================================
+// Error Utilities
+// =============================================================================
+
+export {
+  makeCallError,
+  makeTimeoutError,
+  makeCancelledError,
+  makeValidationError,
+  makeNetworkError,
+  parseEffectError,
+  failWithCallError,
+  failWithTimeout,
+  failWithValidation,
+  isRpcCallError,
+  isRpcTimeoutError,
+  isRpcCancelledError,
+  isRpcValidationError,
+  isRpcNetworkError,
+  hasCode,
+  matchError,
+} from "./errors";
+
+// =============================================================================
+// Validation
+// =============================================================================
+
+export {
+  validatePath,
+  validatePaths,
+  validateAndNormalizePath,
+  isValidPath,
+  validatePathWithRules,
+  type PathValidationRules,
+} from "./validation";
+
+// =============================================================================
+// Runtime
+// =============================================================================
+
+export {
+  makeConfigLayer,
+  makeTransportLayer,
+  makeInterceptorLayer,
+  makeLoggerLayer,
+  makeRpcLayer,
+  makeDebugLayer,
+  consoleLogger,
+  getRuntime,
+  initializeRuntime,
+  disposeRuntime,
+  runEffect,
+  getConfig,
+  getTransport,
+  getInterceptors,
+  getLogger,
+  type RpcServices,
+} from "./runtime";
+
+// =============================================================================
+// Call Effects
+// =============================================================================
+
+export {
+  call,
+  callWithTimeout,
+  subscribe,
+  validateBatchRequests,
+  batchCallParallel,
+  type CallOptions,
+  type SubscribeOptions,
+  type BatchRequestItem,
+  type BatchResultItem,
+  type BatchRequest,
+  type BatchResponse,
+} from "./call";
+
+// =============================================================================
+// Utilities
+// =============================================================================
+
+export {
+  sleep,
+  calculateBackoff,
+  withRetry,
+  withRetryDetailed,
+  createRetrySchedule,
+  defaultRetryConfig,
+  createDedupCache,
+  deduplicationKey,
+  withDedup,
+  stableStringify,
+  type RetryConfig,
+} from "./utils";
+
+// =============================================================================
+// Interceptors
+// =============================================================================
+
+export {
+  loggingInterceptor,
+  retryInterceptor,
+  errorHandlerInterceptor,
+  authInterceptor,
+  timingInterceptor,
+  dedupeInterceptor,
+  type InterceptorOptions,
+  type RetryInterceptorOptions,
+  type AuthInterceptorOptions,
+} from "./interceptors";
+
+// =============================================================================
+// Link
+// =============================================================================
+
+export {
+  EffectLink,
+  createLoggingInterceptor,
+  createRetryInterceptor,
+  createErrorInterceptor,
+  createAuthInterceptor,
+  type EffectLinkConfig,
+} from "./link";
+
+// =============================================================================
+// Client
+// =============================================================================
+
+export {
+  createEffectClient,
+  createEffectClientWithTransport,
+  type EffectClientConfig,
+  type EffectClient,
+} from "./client";
