@@ -1,10 +1,21 @@
 // =============================================================================
 // @tauri-nexus/rpc-core - Utilities
 // =============================================================================
-// Pure utility functions without Effect dependencies.
+// Promise-based utilities. These are standalone implementations that don't
+// depend on Effect, providing simple retry and deduplication for Promise-based code.
 
 import { invoke } from "@tauri-apps/api/core";
-import { stableStringify as stableStringifyImpl } from "@tauri-nexus/rpc-effect";
+import {
+  stableStringify,
+  defaultRetryConfig,
+  type RetryConfig,
+} from "@tauri-nexus/rpc-effect";
+
+// =============================================================================
+// Re-exports (no wrapper needed)
+// =============================================================================
+
+export { stableStringify, defaultRetryConfig, type RetryConfig };
 
 // =============================================================================
 // Timing Utilities
@@ -35,26 +46,32 @@ export const calculateBackoff = (
   return cappedDelay;
 };
 
+/**
+ * Generate a deduplication key from path and input.
+ */
+export const deduplicationKey = (path: string, input: unknown): string =>
+  `${path}:${stableStringify(input)}`;
+
 // =============================================================================
 // Retry Logic
 // =============================================================================
 
-export interface RetryConfig {
-  readonly maxRetries: number;
-  readonly baseDelay: number;
-  readonly maxDelay: number;
-  readonly retryableCodes: readonly string[];
-  readonly jitter: boolean;
-  readonly backoff: "linear" | "exponential";
-}
-
-export const defaultRetryConfig: RetryConfig = {
-  maxRetries: 3,
-  baseDelay: 1000,
-  maxDelay: 30000,
-  retryableCodes: ["INTERNAL_ERROR", "TIMEOUT", "UNAVAILABLE"],
-  jitter: true,
-  backoff: "exponential",
+/**
+ * Check if an error is retryable based on its code.
+ */
+const isRetryableError = (
+  error: unknown,
+  retryableCodes: readonly string[]
+): boolean => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code: unknown }).code === "string"
+  ) {
+    return retryableCodes.includes((error as { code: string }).code);
+  }
+  return false;
 };
 
 /**
@@ -65,12 +82,12 @@ export async function withRetry<T>(
   config: Partial<RetryConfig> = {}
 ): Promise<T> {
   const {
-    maxRetries = 3,
-    baseDelay = 1000,
-    maxDelay = 30000,
-    retryableCodes = ["INTERNAL_ERROR", "TIMEOUT"],
-    jitter = true,
-  } = { ...defaultRetryConfig, ...config };
+    maxRetries = defaultRetryConfig.maxRetries,
+    baseDelay = defaultRetryConfig.baseDelay,
+    maxDelay = defaultRetryConfig.maxDelay,
+    retryableCodes = defaultRetryConfig.retryableCodes,
+    jitter = defaultRetryConfig.jitter,
+  } = config;
 
   let lastError: unknown;
 
@@ -80,16 +97,12 @@ export async function withRetry<T>(
     } catch (error) {
       lastError = error;
 
-      const shouldRetry =
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        retryableCodes.includes((error as { code: string }).code);
-
-      if (!shouldRetry || attempt === maxRetries) {
+      // Don't retry if not retryable or if we've exhausted retries
+      if (!isRetryableError(error, retryableCodes) || attempt >= maxRetries) {
         throw error;
       }
 
+      // Wait before retrying
       const delay = calculateBackoff(attempt, baseDelay, maxDelay, jitter);
       await sleep(delay);
     }
@@ -99,25 +112,10 @@ export async function withRetry<T>(
 }
 
 // =============================================================================
-// Serialization
-// =============================================================================
-
-/**
- * JSON.stringify with sorted keys for consistent output.
- */
-export const stableStringify = stableStringifyImpl;
-
-/**
- * Generate a deduplication key from path and input.
- */
-export const deduplicationKey = (path: string, input: unknown): string =>
-  `${path}:${stableStringify(input)}`;
-
-// =============================================================================
 // Deduplication
 // =============================================================================
 
-const pendingRequests = new Map<string, Promise<unknown>>();
+const globalPendingRequests = new Map<string, Promise<unknown>>();
 
 /**
  * Execute a function with deduplication.
@@ -127,21 +125,21 @@ export async function withDedup<T>(
   key: string,
   fn: () => Promise<T>
 ): Promise<T> {
-  const existing = pendingRequests.get(key);
+  const existing = globalPendingRequests.get(key);
   if (existing) {
     return existing as Promise<T>;
   }
 
   const promise = fn().finally(() => {
-    pendingRequests.delete(key);
+    globalPendingRequests.delete(key);
   });
 
-  pendingRequests.set(key, promise);
+  globalPendingRequests.set(key, promise);
   return promise;
 }
 
 // =============================================================================
-// Backend Utilities
+// Backend Utilities (Tauri-specific, not in rpc-effect)
 // =============================================================================
 
 /**

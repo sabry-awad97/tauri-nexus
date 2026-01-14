@@ -94,27 +94,6 @@ export function composeInterceptors(
 }
 
 // =============================================================================
-// Types
-// =============================================================================
-
-export interface InterceptorOptions {
-  readonly name?: string;
-}
-
-export interface RetryInterceptorOptions extends InterceptorOptions {
-  readonly maxRetries?: number;
-  readonly delay?: number;
-  readonly backoff?: "linear" | "exponential";
-  readonly retryOn?: (error: unknown) => boolean;
-}
-
-export interface AuthInterceptorOptions extends InterceptorOptions {
-  readonly getToken: () => string | null | Promise<string | null>;
-  readonly headerName?: string;
-  readonly prefix?: string;
-}
-
-// =============================================================================
 // Helpers (Internal)
 // =============================================================================
 
