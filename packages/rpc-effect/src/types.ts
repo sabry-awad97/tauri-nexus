@@ -100,10 +100,19 @@ export class RpcConfigService extends Context.Tag("RpcConfigService")<
  */
 export interface RpcTransport {
   readonly call: <T>(path: string, input: unknown) => Promise<T>;
+  readonly callBatch: <T>(
+    requests: readonly { id: string; path: string; input: unknown }[]
+  ) => Promise<{
+    results: readonly {
+      id: string;
+      data?: T;
+      error?: { code: string; message: string; details?: unknown };
+    }[];
+  }>;
   readonly subscribe: <T>(
     path: string,
     input: unknown,
-    options?: SubscribeTransportOptions,
+    options?: SubscribeTransportOptions
   ) => Promise<EventIterator<T>>;
 }
 
@@ -128,7 +137,7 @@ export interface RpcInterceptor {
   readonly name: string;
   readonly intercept: <T>(
     ctx: InterceptorContext,
-    next: () => Promise<T>,
+    next: () => Promise<T>
   ) => Promise<T>;
 }
 

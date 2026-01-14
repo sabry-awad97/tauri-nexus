@@ -111,7 +111,7 @@ export {
   callWithTimeout,
   subscribe,
   validateBatchRequests,
-  batchCallParallel,
+  batchCall,
   type CallOptions,
   type SubscribeOptions,
   type BatchRequestItem,
@@ -149,6 +149,11 @@ export {
   authInterceptor,
   timingInterceptor,
   dedupeInterceptor,
+  // Deprecated aliases
+  createLoggingInterceptor,
+  createRetryInterceptor,
+  createErrorInterceptor,
+  createAuthInterceptor,
   type InterceptorOptions,
   type RetryInterceptorOptions,
   type AuthInterceptorOptions,
@@ -158,14 +163,7 @@ export {
 // Link
 // =============================================================================
 
-export {
-  EffectLink,
-  createLoggingInterceptor,
-  createRetryInterceptor,
-  createErrorInterceptor,
-  createAuthInterceptor,
-  type EffectLinkConfig,
-} from "./link";
+export { EffectLink, type EffectLinkConfig } from "./link";
 
 // =============================================================================
 // Client

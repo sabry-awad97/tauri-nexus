@@ -23,7 +23,7 @@ import type { RpcServices } from "./runtime";
 
 const executeWithInterceptors = <T>(
   ctx: InterceptorContext,
-  operation: () => Promise<T>,
+  operation: () => Promise<T>
 ): Effect.Effect<T, RpcEffectError, RpcInterceptorService> =>
   Effect.gen(function* () {
     const { interceptors } = yield* RpcInterceptorService;
@@ -57,7 +57,7 @@ export interface CallOptions {
 export const call = <T>(
   path: string,
   input: unknown,
-  options: CallOptions = {},
+  options: CallOptions = {}
 ): Effect.Effect<T, RpcEffectError, RpcServices> =>
   Effect.gen(function* () {
     yield* validatePath(path);
@@ -110,7 +110,7 @@ export const callWithTimeout = <T>(
   path: string,
   input: unknown,
   timeoutMs: number,
-  options: Omit<CallOptions, "timeout"> = {},
+  options: Omit<CallOptions, "timeout"> = {}
 ): Effect.Effect<T, RpcEffectError, RpcServices> =>
   pipe(
     call<T>(path, input, { ...options, timeout: timeoutMs }),
@@ -120,9 +120,9 @@ export const callWithTimeout = <T>(
         parseEffectError(
           new DOMException("Timeout", "AbortError"),
           path,
-          timeoutMs,
+          timeoutMs
         ),
-    }),
+    })
   );
 
 // =============================================================================
@@ -141,7 +141,7 @@ export interface SubscribeOptions {
 export const subscribe = <T>(
   path: string,
   input: unknown,
-  options: SubscribeOptions = {},
+  options: SubscribeOptions = {}
 ): Effect.Effect<EventIterator<T>, RpcEffectError, RpcServices> =>
   Effect.gen(function* () {
     yield* validatePath(path);
@@ -192,7 +192,7 @@ export interface BatchResponse<T = unknown> {
  * Use this before executing a batch via custom transport.
  */
 export const validateBatchRequests = (
-  requests: readonly BatchRequestItem[],
+  requests: readonly BatchRequestItem[]
 ): Effect.Effect<readonly BatchRequestItem[], RpcEffectError> =>
   Effect.gen(function* () {
     for (const req of requests) {
@@ -202,49 +202,26 @@ export const validateBatchRequests = (
   });
 
 /**
- * Execute a batch of RPC calls using parallel individual calls.
- * Note: For production use with Tauri, use the dedicated batch endpoint
- * via rpc-core's executeBatch which calls plugin:rpc|rpc_call_batch.
- * This function is provided for testing or when no batch endpoint exists.
+ * Execute a batch of RPC calls using the transport's batch method.
  */
-export const batchCallParallel = <T = unknown>(
-  requests: readonly BatchRequestItem[],
-  options: CallOptions = {},
-): Effect.Effect<readonly BatchResultItem<T>[], RpcEffectError, RpcServices> =>
+export const batchCall = <T = unknown>(
+  requests: readonly BatchRequestItem[]
+): Effect.Effect<BatchResponse<T>, RpcEffectError, RpcServices> =>
   Effect.gen(function* () {
+    const transport = yield* RpcTransportService;
     const logger = yield* RpcLoggerService;
 
+    // Validate all paths first
     for (const req of requests) {
       yield* validatePath(req.path);
     }
 
-    logger.debug(`Executing batch with ${requests.length} requests (parallel)`);
+    logger.debug(`Executing batch with ${requests.length} requests`);
 
-    const results = yield* Effect.all(
-      requests.map((req) =>
-        pipe(
-          call<T>(req.path, req.input, options),
-          Effect.map(
-            (data): BatchResultItem<T> => ({
-              id: req.id,
-              data,
-            }),
-          ),
-          Effect.catchAll((error) =>
-            Effect.succeed<BatchResultItem<T>>({
-              id: req.id,
-              error: {
-                code: "code" in error ? String(error.code) : "UNKNOWN",
-                message:
-                  "message" in error ? String(error.message) : "Unknown error",
-                details: "details" in error ? error.details : undefined,
-              },
-            }),
-          ),
-        ),
-      ),
-      { concurrency: "unbounded" },
-    );
+    const response = yield* Effect.tryPromise({
+      try: () => transport.callBatch<T>(requests),
+      catch: (error) => parseEffectError(error, "batch"),
+    });
 
-    return results;
+    return response as BatchResponse<T>;
   });

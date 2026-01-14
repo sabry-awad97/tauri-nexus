@@ -27,11 +27,32 @@ export interface AuthInterceptorOptions extends InterceptorOptions {
 }
 
 // =============================================================================
+// Helpers (Internal)
+// =============================================================================
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+const defaultShouldRetry = (error: unknown): boolean => {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code: string }).code;
+    return ![
+      "VALIDATION_ERROR",
+      "UNAUTHORIZED",
+      "FORBIDDEN",
+      "CANCELLED",
+      "BAD_REQUEST",
+    ].includes(code);
+  }
+  return true;
+};
+
+// =============================================================================
 // Logging Interceptor
 // =============================================================================
 
 export function loggingInterceptor(
-  options: InterceptorOptions & { prefix?: string } = {},
+  options: InterceptorOptions & { prefix?: string } = {}
 ): RpcInterceptor {
   const prefix = options.prefix ?? "[RPC]";
 
@@ -60,25 +81,11 @@ export function loggingInterceptor(
 // =============================================================================
 
 export function retryInterceptor(
-  options: RetryInterceptorOptions = {},
+  options: RetryInterceptorOptions = {}
 ): RpcInterceptor {
   const { maxRetries = 3, delay = 1000, backoff = "linear", retryOn } = options;
 
-  const shouldRetry = (error: unknown): boolean => {
-    if (retryOn) return retryOn(error);
-
-    if (typeof error === "object" && error !== null && "code" in error) {
-      const code = (error as { code: string }).code;
-      return ![
-        "VALIDATION_ERROR",
-        "UNAUTHORIZED",
-        "FORBIDDEN",
-        "CANCELLED",
-        "BAD_REQUEST",
-      ].includes(code);
-    }
-    return true;
-  };
+  const shouldRetry = retryOn ?? defaultShouldRetry;
 
   const getDelay = (attempt: number): number => {
     if (backoff === "exponential") {
@@ -102,8 +109,7 @@ export function retryInterceptor(
             throw error;
           }
 
-          const retryDelay = getDelay(attempt);
-          await sleep(retryDelay);
+          await sleep(getDelay(attempt));
         }
       }
 
@@ -118,7 +124,7 @@ export function retryInterceptor(
 
 export function errorHandlerInterceptor(
   handler: (error: unknown, ctx: InterceptorContext) => void | Promise<void>,
-  options: InterceptorOptions = {},
+  options: InterceptorOptions = {}
 ): RpcInterceptor {
   return {
     name: options.name ?? "errorHandler",
@@ -138,7 +144,7 @@ export function errorHandlerInterceptor(
 // =============================================================================
 
 export function authInterceptor(
-  options: AuthInterceptorOptions,
+  options: AuthInterceptorOptions
 ): RpcInterceptor {
   const { getToken, headerName = "authorization", prefix = "Bearer" } = options;
 
@@ -162,7 +168,7 @@ export function authInterceptor(
 
 export function timingInterceptor(
   onTiming: (path: string, durationMs: number) => void,
-  options: InterceptorOptions = {},
+  options: InterceptorOptions = {}
 ): RpcInterceptor {
   return {
     name: options.name ?? "timing",
@@ -184,7 +190,7 @@ export function timingInterceptor(
 export function dedupeInterceptor(
   options: InterceptorOptions & {
     getKey?: (ctx: InterceptorContext) => string;
-  } = {},
+  } = {}
 ): RpcInterceptor {
   const pending = new Map<string, Promise<unknown>>();
 
@@ -213,8 +219,27 @@ export function dedupeInterceptor(
 }
 
 // =============================================================================
-// Helpers
+// Convenience Aliases
 // =============================================================================
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+export const createLoggingInterceptor = (prefix = "[RPC]"): RpcInterceptor =>
+  loggingInterceptor({ prefix });
+
+export const createRetryInterceptor = (options: {
+  maxRetries?: number;
+  delay?: number;
+  retryOn?: (error: unknown) => boolean;
+}): RpcInterceptor =>
+  retryInterceptor({
+    maxRetries: options.maxRetries,
+    delay: options.delay,
+    retryOn: options.retryOn,
+  });
+
+export const createErrorInterceptor = (
+  handler: (error: unknown, ctx: InterceptorContext) => void
+): RpcInterceptor => errorHandlerInterceptor(handler);
+
+export const createAuthInterceptor = (
+  getToken: () => string | null | Promise<string | null>
+): RpcInterceptor => authInterceptor({ getToken });

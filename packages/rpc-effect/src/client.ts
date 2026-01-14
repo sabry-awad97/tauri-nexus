@@ -28,12 +28,12 @@ export type EffectClient<T> = {
   call<TResult>(
     path: string,
     input?: unknown,
-    options?: CallOptions,
+    options?: CallOptions
   ): Promise<TResult>;
   subscribe<TResult>(
     path: string,
     input?: unknown,
-    options?: SubscribeOptions,
+    options?: SubscribeOptions
   ): Promise<EventIterator<TResult>>;
   isSubscription(path: string): boolean;
   withInterceptors(interceptors: readonly RpcInterceptor[]): EffectClient<T>;
@@ -55,7 +55,7 @@ class EffectClientImpl<T> implements EffectClient<T> {
   async call<TResult>(
     path: string,
     input?: unknown,
-    options?: CallOptions,
+    options?: CallOptions
   ): Promise<TResult> {
     return this.__link.runCall<TResult>(path, input, options);
   }
@@ -63,7 +63,7 @@ class EffectClientImpl<T> implements EffectClient<T> {
   async subscribe<TResult>(
     path: string,
     input?: unknown,
-    options?: SubscribeOptions,
+    options?: SubscribeOptions
   ): Promise<EventIterator<TResult>> {
     return this.__link.runSubscribe<TResult>(path, input, options) as Promise<
       EventIterator<TResult>
@@ -92,7 +92,7 @@ class EffectClientImpl<T> implements EffectClient<T> {
  * Note: You must call setTransport on the returned client's __link before use.
  */
 export function createEffectClient<T>(
-  config: EffectClientConfig = {},
+  config: EffectClientConfig = {}
 ): EffectClient<T> {
   const link = new EffectLink({
     subscriptionPaths: config.subscriptionPaths,
@@ -111,13 +111,22 @@ export function createEffectClientWithTransport<T>(
   config: EffectClientConfig & {
     transport: {
       call: <TResult>(path: string, input: unknown) => Promise<TResult>;
+      callBatch: <TResult>(
+        requests: readonly { id: string; path: string; input: unknown }[]
+      ) => Promise<{
+        results: readonly {
+          id: string;
+          data?: TResult;
+          error?: { code: string; message: string; details?: unknown };
+        }[];
+      }>;
       subscribe: <TResult>(
         path: string,
         input: unknown,
-        options?: { lastEventId?: string; signal?: AbortSignal },
+        options?: { lastEventId?: string; signal?: AbortSignal }
       ) => Promise<EventIterator<TResult>>;
     };
-  },
+  }
 ): EffectClient<T> {
   const link = new EffectLink({
     subscriptionPaths: config.subscriptionPaths,

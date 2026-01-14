@@ -8,7 +8,6 @@ import {
   type RpcConfig,
   type RpcInterceptor,
   type RpcEffectError,
-  type InterceptorContext,
   type EventIterator,
 } from "./types";
 import {
@@ -24,6 +23,14 @@ import {
   makeTransportLayer,
   type RpcServices,
 } from "./runtime";
+
+// Re-export interceptor factories for convenience
+export {
+  createLoggingInterceptor,
+  createRetryInterceptor,
+  createErrorInterceptor,
+  createAuthInterceptor,
+} from "./interceptors";
 
 // =============================================================================
 // Effect Link Configuration
@@ -50,10 +57,19 @@ export class EffectLink<TContext = unknown> {
   private transportProvider:
     | (() => {
         call: <T>(path: string, input: unknown) => Promise<T>;
+        callBatch: <T>(
+          requests: readonly { id: string; path: string; input: unknown }[]
+        ) => Promise<{
+          results: readonly {
+            id: string;
+            data?: T;
+            error?: { code: string; message: string; details?: unknown };
+          }[];
+        }>;
         subscribe: <T>(
           path: string,
           input: unknown,
-          options?: { lastEventId?: string; signal?: AbortSignal },
+          options?: { lastEventId?: string; signal?: AbortSignal }
         ) => Promise<EventIterator<T>>;
       })
     | null = null;
@@ -68,22 +84,31 @@ export class EffectLink<TContext = unknown> {
   setTransport(
     provider: () => {
       call: <T>(path: string, input: unknown) => Promise<T>;
+      callBatch: <T>(
+        requests: readonly { id: string; path: string; input: unknown }[]
+      ) => Promise<{
+        results: readonly {
+          id: string;
+          data?: T;
+          error?: { code: string; message: string; details?: unknown };
+        }[];
+      }>;
       subscribe: <T>(
         path: string,
         input: unknown,
-        options?: { lastEventId?: string; signal?: AbortSignal },
+        options?: { lastEventId?: string; signal?: AbortSignal }
       ) => Promise<EventIterator<T>>;
-    },
+    }
   ): this {
     this.transportProvider = provider;
-    this.layer = null; // Reset layer to rebuild with new transport
+    this.layer = null;
     return this;
   }
 
   private buildLayer(): Layer.Layer<RpcServices> {
     if (!this.transportProvider) {
       throw new Error(
-        "Transport not configured. Call setTransport() before using the link.",
+        "Transport not configured. Call setTransport() before using the link."
       );
     }
 
@@ -113,8 +138,8 @@ export class EffectLink<TContext = unknown> {
               info: () => {},
               warn: () => {},
               error: () => {},
-            },
-      ),
+            }
+      )
     );
   }
 
@@ -124,7 +149,7 @@ export class EffectLink<TContext = unknown> {
   call<T>(
     path: string,
     input: unknown,
-    options?: CallOptions,
+    options?: CallOptions
   ): Effect.Effect<T, RpcEffectError, RpcServices> {
     return call<T>(path, input, options);
   }
@@ -135,7 +160,7 @@ export class EffectLink<TContext = unknown> {
   subscribe<T>(
     path: string,
     input: unknown,
-    options?: SubscribeOptions,
+    options?: SubscribeOptions
   ): Effect.Effect<AsyncIterable<T>, RpcEffectError, RpcServices> {
     return subscribe<T>(path, input, options);
   }
@@ -146,14 +171,14 @@ export class EffectLink<TContext = unknown> {
   async runCall<T>(
     path: string,
     input: unknown,
-    options?: CallOptions,
+    options?: CallOptions
   ): Promise<T> {
     if (!this.layer) {
       this.layer = this.buildLayer();
     }
     const effect = pipe(
       this.call<T>(path, input, options),
-      Effect.provide(this.layer),
+      Effect.provide(this.layer)
     );
     return Effect.runPromise(effect);
   }
@@ -164,14 +189,14 @@ export class EffectLink<TContext = unknown> {
   async runSubscribe<T>(
     path: string,
     input: unknown,
-    options?: SubscribeOptions,
+    options?: SubscribeOptions
   ): Promise<AsyncIterable<T>> {
     if (!this.layer) {
       this.layer = this.buildLayer();
     }
     const effect = pipe(
       this.subscribe<T>(path, input, options),
-      Effect.provide(this.layer),
+      Effect.provide(this.layer)
     );
     return Effect.runPromise(effect);
   }
@@ -197,7 +222,7 @@ export class EffectLink<TContext = unknown> {
    * Create a new link with additional interceptors.
    */
   withInterceptors(
-    interceptors: readonly RpcInterceptor[],
+    interceptors: readonly RpcInterceptor[]
   ): EffectLink<TContext> {
     const newLink = new EffectLink({
       ...this.config,
@@ -223,105 +248,3 @@ export class EffectLink<TContext = unknown> {
     return newLink;
   }
 }
-
-// =============================================================================
-// Interceptor Factories
-// =============================================================================
-
-export const createLoggingInterceptor = (prefix = "[RPC]"): RpcInterceptor => ({
-  name: "logging",
-  intercept: async (ctx, next) => {
-    const start = Date.now();
-    console.log(`${prefix} → ${ctx.path}`, ctx.input);
-    try {
-      const result = await next();
-      console.log(`${prefix} ← ${ctx.path} (${Date.now() - start}ms)`, result);
-      return result;
-    } catch (error) {
-      console.error(`${prefix} ✗ ${ctx.path} (${Date.now() - start}ms)`, error);
-      throw error;
-    }
-  },
-});
-
-export const createRetryInterceptor = (options: {
-  maxRetries?: number;
-  delay?: number;
-  retryOn?: (error: unknown) => boolean;
-}): RpcInterceptor => {
-  const { maxRetries = 3, delay = 1000, retryOn } = options;
-
-  return {
-    name: "retry",
-    intercept: async (_ctx, next) => {
-      let lastError: unknown;
-
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          return await next();
-        } catch (error) {
-          lastError = error;
-
-          const shouldRetry = retryOn
-            ? retryOn(error)
-            : isRetryableError(error);
-
-          if (!shouldRetry || attempt === maxRetries) {
-            throw error;
-          }
-
-          await sleep(delay * (attempt + 1));
-        }
-      }
-
-      throw lastError;
-    },
-  };
-};
-
-export const createErrorInterceptor = (
-  handler: (error: unknown, ctx: InterceptorContext) => void,
-): RpcInterceptor => ({
-  name: "errorHandler",
-  intercept: async (ctx, next) => {
-    try {
-      return await next();
-    } catch (error) {
-      handler(error, ctx);
-      throw error;
-    }
-  },
-});
-
-export const createAuthInterceptor = (
-  getToken: () => string | null | Promise<string | null>,
-): RpcInterceptor => ({
-  name: "auth",
-  intercept: async (ctx, next) => {
-    const token = await getToken();
-    if (token) {
-      ctx.meta.authorization = `Bearer ${token}`;
-    }
-    return next();
-  },
-});
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-const isRetryableError = (error: unknown): boolean => {
-  if (typeof error === "object" && error !== null && "code" in error) {
-    const code = (error as { code: string }).code;
-    return ![
-      "VALIDATION_ERROR",
-      "UNAUTHORIZED",
-      "FORBIDDEN",
-      "CANCELLED",
-    ].includes(code);
-  }
-  return true;
-};

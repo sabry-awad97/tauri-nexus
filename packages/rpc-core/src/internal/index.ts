@@ -30,6 +30,23 @@ const tauriTransport: RpcTransport = {
   call: async <T>(path: string, input: unknown): Promise<T> => {
     return invoke<T>("plugin:rpc|rpc_call", { path, input });
   },
+  callBatch: async <T>(
+    requests: readonly { id: string; path: string; input: unknown }[]
+  ) => {
+    const normalizedRequests = requests.map((req) => ({
+      ...req,
+      input: req.input === undefined ? null : req.input,
+    }));
+    return invoke<{
+      results: readonly {
+        id: string;
+        data?: T;
+        error?: { code: string; message: string; details?: unknown };
+      }[];
+    }>("plugin:rpc|rpc_call_batch", {
+      batch: { requests: normalizedRequests },
+    });
+  },
   subscribe: async <T>(
     path: string,
     input: unknown,
@@ -118,7 +135,7 @@ export {
   call as callEffect,
   callWithTimeout,
   subscribe as subscribeEffect,
-  batchCallParallel,
+  batchCall as batchCallEffect,
   type CallOptions as CallEffectOptions,
   type SubscribeOptions as SubscribeEffectOptions,
   // Utils
