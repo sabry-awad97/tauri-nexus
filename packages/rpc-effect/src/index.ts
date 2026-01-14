@@ -210,6 +210,16 @@ export {
   processErrorEvent,
   generateSubscriptionId,
   extractSubscriptionError,
+  // Stream-based API
+  type SubscriptionStreamConfig,
+  type AsyncIteratorConfig,
+  createSubscriptionStream,
+  createManagedSubscriptionStream,
+  scopedConnection,
+  collectStream,
+  runStreamWithCallbacks,
+  runStreamInterruptible,
+  createAsyncIterator,
 } from "./subscription";
 
 // =============================================================================

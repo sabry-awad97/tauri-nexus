@@ -20,7 +20,7 @@ import { shouldReconnect, maxReconnectsExceededError } from "./reconnect";
  */
 export const processDataEvent = <T, S extends SubscriptionState>(
   stateRef: Ref.Ref<S>,
-  event: Event<T>,
+  event: Event<T>
 ): Effect.Effect<T> =>
   Effect.gen(function* () {
     if (event.id) {
@@ -37,7 +37,7 @@ export const processErrorEvent = <T, S extends SubscriptionState>(
   _queue: Queue.Queue<QueueItem<T>>,
   error: SubscriptionError,
   config: ReconnectConfig,
-  path: string,
+  path: string
 ): Effect.Effect<
   { shouldRetry: boolean; error: RpcEffectError },
   RpcEffectError
@@ -55,7 +55,7 @@ export const processErrorEvent = <T, S extends SubscriptionState>(
           error: maxReconnectsExceededError(
             path,
             state.reconnectAttempts,
-            config.maxReconnects,
+            config.maxReconnects
           ),
         };
       }
@@ -93,17 +93,24 @@ export const generateSubscriptionId: Effect.Effect<string> = Effect.sync(() => {
  * Extract error from various error formats.
  */
 export const extractSubscriptionError = (error: unknown): SubscriptionError => {
-  if (
-    error &&
-    typeof error === "object" &&
-    "code" in error &&
-    "message" in error
-  ) {
-    const e = error as { code: string; message: string; details?: unknown };
-    return { code: e.code, message: e.message, details: e.details };
+  // Handle any object with code and message (including Effect's Data.TaggedError)
+  // Check this BEFORE instanceof Error since TaggedError extends Error
+  if (error && typeof error === "object") {
+    const e = error as Record<string, unknown>;
+
+    // Direct property access works for both plain objects and TaggedError instances
+    const code = e.code;
+    const message = e.message;
+    const details = e.details;
+
+    if (typeof code === "string" && typeof message === "string") {
+      return { code, message, details };
+    }
   }
 
+  // Handle Error instances without code property
   if (error instanceof Error) {
+    // Try to parse JSON from message
     const message = error.message;
     if (message.startsWith("{") && message.includes('"code"')) {
       try {

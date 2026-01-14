@@ -42,3 +42,16 @@ export {
   generateSubscriptionId,
   extractSubscriptionError,
 } from "./events";
+
+// Stream-based API (Effect-idiomatic)
+export {
+  type SubscriptionStreamConfig,
+  type AsyncIteratorConfig,
+  createSubscriptionStream,
+  createManagedSubscriptionStream,
+  scopedConnection,
+  collectStream,
+  runStreamWithCallbacks,
+  runStreamInterruptible,
+  createAsyncIterator,
+} from "./stream";
