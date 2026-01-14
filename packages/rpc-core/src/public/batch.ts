@@ -16,7 +16,7 @@ import type {
   TypedBatchResult,
 } from "../core/inference";
 import { EffectBatchBuilder, executeBatchEffect } from "../client";
-import { toPublicError, parseEffectError } from "../internal/effect-errors";
+import { toPublicError, parseEffectError } from "../internal";
 
 // =============================================================================
 // Types

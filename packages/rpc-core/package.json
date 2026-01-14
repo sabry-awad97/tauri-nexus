@@ -8,14 +8,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./effect": {
-      "import": "./src/effect/index.ts",
-      "types": "./src/effect/index.ts"
-    },
-    "./internal": {
-      "import": "./src/internal/index.ts",
-      "types": "./src/internal/index.ts"
     }
   },
   "files": [
@@ -26,13 +18,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2.9.1",
+    "@tauri-nexus/rpc-effect": "workspace:*",
     "effect": "^3.19.14",
     "zod": "^4.3.5"
   },
   "devDependencies": {
-    "fast-check": "^3.23.0",
+    "fast-check": "^4.5.3",
     "typescript": "~5.9.3",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.17"
   }
 }

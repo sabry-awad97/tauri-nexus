@@ -3,9 +3,8 @@
 // =============================================================================
 // Promise-based wrappers for subscription event iterators.
 
-import { Effect } from "effect";
 import type { EventIterator, SubscriptionOptions } from "../core/types";
-import { createEventIteratorEffect } from "../subscription";
+import { createEventIterator as createEventIteratorImpl } from "../subscription";
 
 /**
  * Create an async event iterator for a subscription.
@@ -15,7 +14,7 @@ export async function createEventIterator<T>(
   input: unknown = null,
   options: SubscriptionOptions = {},
 ): Promise<EventIterator<T>> {
-  return Effect.runPromise(createEventIteratorEffect<T>(path, input, options));
+  return createEventIteratorImpl<T>(path, input, options);
 }
 
 // Re-export consumeEventIterator and types (already Promise-based)

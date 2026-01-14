@@ -17,13 +17,13 @@ import type {
   GetOutputAtPath,
   TypedBatchResult,
 } from "../core/inference";
-import { validatePathEffect } from "../core/effect-validation";
 import {
+  validatePath,
   makeCallError,
   parseEffectError,
-  toPublicError,
-} from "../internal/effect-errors";
-import type { RpcEffectError } from "../internal/effect-types";
+  type RpcEffectError,
+} from "@tauri-nexus/rpc-effect";
+import { toPublicError } from "../internal";
 
 // =============================================================================
 // Types
@@ -53,7 +53,7 @@ export const executeBatchEffect = <T = unknown>(
   Effect.gen(function* () {
     // Validate all paths
     for (const req of requests) {
-      yield* validatePathEffect(req.path);
+      yield* validatePath(req.path);
     }
 
     const normalizedRequests = requests.map((req) => ({
@@ -99,22 +99,6 @@ export const executeBatchEffect = <T = unknown>(
 
 /**
  * Type-safe batch builder that uses Effect for execution.
- *
- * @example
- * ```typescript
- * // Effect-based execution
- * const effect = createEffectBatch<AppContract>()
- *   .add('health-check', 'health', undefined)
- *   .add('user-1', 'user.get', { id: 1 })
- *   .executeEffect();
- *
- * const response = await Effect.runPromise(effect);
- *
- * // Or use Promise-based execution
- * const response = await createEffectBatch<AppContract>()
- *   .add('health-check', 'health', undefined)
- *   .execute();
- * ```
  */
 export class EffectBatchBuilder<
   TContract,
@@ -122,9 +106,6 @@ export class EffectBatchBuilder<
 > {
   private entries: BatchEntry[] = [];
 
-  /**
-   * Add a type-safe request to the batch.
-   */
   add<TId extends string, TPath extends ExtractCallablePaths<TContract>>(
     id: TId,
     path: TPath,
@@ -140,9 +121,6 @@ export class EffectBatchBuilder<
     >;
   }
 
-  /**
-   * Get the current requests in the batch.
-   */
   getRequests(): SingleRequest[] {
     return this.entries.map((e) => ({
       id: e.id,
@@ -151,16 +129,10 @@ export class EffectBatchBuilder<
     }));
   }
 
-  /**
-   * Get the number of requests in the batch.
-   */
   size(): number {
     return this.entries.length;
   }
 
-  /**
-   * Clear all requests from the batch.
-   */
   clear(): EffectBatchBuilder<TContract, Record<string, never>> {
     this.entries = [];
     return this as unknown as EffectBatchBuilder<
@@ -169,10 +141,6 @@ export class EffectBatchBuilder<
     >;
   }
 
-  /**
-   * Execute the batch using Effect.
-   * Returns an Effect that can be composed with other Effects.
-   */
   executeEffect(
     options?: BatchCallOptions,
   ): Effect.Effect<EffectBatchResponseWrapper<TOutputMap>, RpcEffectError> {
@@ -184,9 +152,6 @@ export class EffectBatchBuilder<
     );
   }
 
-  /**
-   * Execute the batch and return a Promise (convenience method).
-   */
   async execute(
     options?: BatchCallOptions,
   ): Promise<EffectBatchResponseWrapper<TOutputMap>> {
@@ -204,22 +169,16 @@ export class EffectBatchBuilder<
     }
   }
 
-  /**
-   * Validate all paths in the batch without executing.
-   */
   validateEffect(): Effect.Effect<void, RpcEffectError> {
     return Effect.gen(
       function* (this: EffectBatchBuilder<TContract, TOutputMap>) {
         for (const entry of this.entries) {
-          yield* validatePathEffect(entry.path);
+          yield* validatePath(entry.path);
         }
       }.bind(this),
     );
   }
 
-  /**
-   * Map over the batch entries.
-   */
   map<U>(fn: (entry: BatchEntry) => U): U[] {
     return this.entries.map(fn);
   }
@@ -229,9 +188,6 @@ export class EffectBatchBuilder<
 // EffectBatchResponseWrapper
 // =============================================================================
 
-/**
- * Type-safe batch response with Effect-based helper methods.
- */
 export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
   private resultMap: Map<string, TypedBatchResult<unknown>>;
   private orderedResults: TypedBatchResult<unknown>[];
@@ -249,16 +205,10 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
     }
   }
 
-  /**
-   * Get all results in order.
-   */
   get results(): TypedBatchResult<unknown>[] {
     return this.orderedResults;
   }
 
-  /**
-   * Get a typed result by request ID using Effect.
-   */
   getResultEffect<TId extends keyof TOutputMap & string>(
     id: TId,
   ): Effect.Effect<TOutputMap[TId], RpcEffectError> {
@@ -284,9 +234,6 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
     );
   }
 
-  /**
-   * Get a typed result by request ID (synchronous).
-   */
   getResult<TId extends keyof TOutputMap & string>(
     id: TId,
   ): TypedBatchResult<TOutputMap[TId]> {
@@ -300,53 +247,32 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
     return result as TypedBatchResult<TOutputMap[TId]>;
   }
 
-  /**
-   * Check if a specific request succeeded.
-   */
   isSuccess(id: string): boolean {
     const result = this.resultMap.get(id);
     return result ? !result.error : false;
   }
 
-  /**
-   * Check if a specific request failed.
-   */
   isError(id: string): boolean {
     const result = this.resultMap.get(id);
     return result ? !!result.error : true;
   }
 
-  /**
-   * Get all successful results.
-   */
   getSuccessful(): TypedBatchResult<unknown>[] {
     return this.orderedResults.filter((r) => !r.error);
   }
 
-  /**
-   * Get all failed results.
-   */
   getFailed(): TypedBatchResult<unknown>[] {
     return this.orderedResults.filter((r) => r.error);
   }
 
-  /**
-   * Get all successful results using Effect.
-   */
   getSuccessfulEffect(): Effect.Effect<TypedBatchResult<unknown>[]> {
     return Effect.succeed(this.getSuccessful());
   }
 
-  /**
-   * Get all failed results using Effect.
-   */
   getFailedEffect(): Effect.Effect<TypedBatchResult<unknown>[]> {
     return Effect.succeed(this.getFailed());
   }
 
-  /**
-   * Process all results with Effect, failing on first error.
-   */
   processAllEffect<U>(
     fn: (data: unknown, id: string) => U,
   ): Effect.Effect<U[], RpcEffectError> {
@@ -370,9 +296,6 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
     );
   }
 
-  /**
-   * Process all results, collecting errors instead of failing fast.
-   */
   processAllCollectingErrorsEffect<U>(
     fn: (data: unknown, id: string) => U,
   ): Effect.Effect<{ successes: U[]; errors: TypedBatchResult<unknown>[] }> {
@@ -392,16 +315,10 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
     });
   }
 
-  /**
-   * Get the count of successful requests.
-   */
   get successCount(): number {
     return this.orderedResults.filter((r) => !r.error).length;
   }
 
-  /**
-   * Get the count of failed requests.
-   */
   get errorCount(): number {
     return this.orderedResults.filter((r) => r.error).length;
   }
@@ -411,9 +328,6 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
 // Factory Function
 // =============================================================================
 
-/**
- * Create a new Effect-based batch builder.
- */
 export function createEffectBatch<TContract>(): EffectBatchBuilder<
   TContract,
   Record<string, never>

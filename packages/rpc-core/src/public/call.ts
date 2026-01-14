@@ -20,16 +20,16 @@ import {
   callEffect,
   subscribeEffect,
   validatePath as validatePathEffect,
-} from "../internal/effect-call";
-import { toPublicError, parseEffectError } from "../internal/effect-errors";
-import {
+  toPublicError,
+  parseEffectError,
   makeConfigLayer,
   makeInterceptorLayer,
   makeLoggerLayer,
   TauriTransportLayer,
   type RpcServices,
-} from "../internal/effect-runtime";
-import type { RpcEffectError, RpcInterceptor } from "../internal/effect-types";
+  type RpcEffectError,
+  type RpcInterceptor,
+} from "../internal";
 
 // =============================================================================
 // Layer Construction from Config
@@ -38,7 +38,7 @@ import type { RpcEffectError, RpcInterceptor } from "../internal/effect-types";
 /**
  * Build Effect layer from current global config.
  */
-const buildLayerFromConfig = (): Layer.Layer<RpcServices> => {
+const buildLayerFromConfig = () => {
   const config = getConfig();
 
   // Convert middleware to interceptors
@@ -114,7 +114,7 @@ const callWithLifecycle = <T>(
   path: string,
   input: unknown,
   options?: CallOptions,
-): Effect.Effect<T, RpcEffectError, RpcServices> =>
+) =>
   Effect.gen(function* () {
     const config = getConfig();
     const ctx: RequestContext = {
@@ -175,7 +175,7 @@ const subscribeWithLifecycle = <T>(
   path: string,
   input: unknown,
   options?: SubscriptionOptions,
-): Effect.Effect<EventIterator<T>, RpcEffectError, RpcServices> =>
+) =>
   Effect.gen(function* () {
     const config = getConfig();
     const ctx: RequestContext = {
@@ -231,7 +231,7 @@ export async function subscribe<T>(
 const executeBatchEffect = <T = unknown>(
   requests: SingleRequest[],
   options?: BatchCallOptions,
-): Effect.Effect<BatchResponse<T>, RpcEffectError> =>
+) =>
   Effect.gen(function* () {
     for (const req of requests) {
       yield* validatePathEffect(req.path);

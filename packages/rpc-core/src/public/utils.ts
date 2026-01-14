@@ -3,16 +3,15 @@
 // =============================================================================
 // Promise-based wrappers for utility functions.
 
-import { Effect } from "effect";
 import type { RpcError } from "../core/types";
 import {
-  getProceduresEffect,
-  getSubscriptionCountEffect,
-  sleepEffect,
-  calculateBackoffEffect,
-  stableStringifyEffect,
-  deduplicationKeyEffect,
-  defaultEffectRetryConfig,
+  getProcedures as getProceduresImpl,
+  getSubscriptionCount as getSubscriptionCountImpl,
+  sleep as sleepImpl,
+  calculateBackoff as calculateBackoffImpl,
+  stableStringify,
+  deduplicationKey as deduplicationKeyImpl,
+  defaultRetryConfig as defaultEffectRetryConfig,
 } from "../utils";
 
 // =============================================================================
@@ -23,14 +22,14 @@ import {
  * Get list of available procedures from backend.
  */
 export async function getProcedures(): Promise<string[]> {
-  return Effect.runPromise(getProceduresEffect());
+  return getProceduresImpl();
 }
 
 /**
  * Get current subscription count from backend.
  */
 export async function getSubscriptionCount(): Promise<number> {
-  return Effect.runPromise(getSubscriptionCountEffect());
+  return getSubscriptionCountImpl();
 }
 
 // =============================================================================
@@ -41,7 +40,7 @@ export async function getSubscriptionCount(): Promise<number> {
  * Sleep utility for retry logic.
  */
 export function sleep(ms: number): Promise<void> {
-  return Effect.runPromise(sleepEffect(ms));
+  return sleepImpl(ms);
 }
 
 /**
@@ -53,9 +52,7 @@ export function calculateBackoff(
   maxDelay: number = 30000,
   jitter: boolean = true,
 ): number {
-  return Effect.runSync(
-    calculateBackoffEffect(attempt, baseDelay, maxDelay, jitter),
-  );
+  return calculateBackoffImpl(attempt, baseDelay, maxDelay, jitter);
 }
 
 // =============================================================================
@@ -120,15 +117,13 @@ export async function withRetry<T>(
 /**
  * JSON.stringify with sorted keys for consistent output.
  */
-export function stableStringify(value: unknown): string {
-  return Effect.runSync(stableStringifyEffect(value));
-}
+export { stableStringify };
 
 /**
  * Deduplication key generator with stable object serialization.
  */
 export function deduplicationKey(path: string, input: unknown): string {
-  return Effect.runSync(deduplicationKeyEffect(path, input));
+  return deduplicationKeyImpl(path, input);
 }
 
 // =============================================================================

@@ -9,20 +9,17 @@ import {
   callEffect,
   subscribeEffect,
   validatePath,
-} from "../internal/effect-call";
-import { toPublicError, parseEffectError } from "../internal/effect-errors";
-import {
+  toPublicError,
+  parseEffectError,
   makeConfigLayer,
   makeInterceptorLayer,
   makeLoggerLayer,
   TauriTransportLayer,
   type RpcServices,
-} from "../internal/effect-runtime";
-import type {
-  RpcEffectError,
-  RpcInterceptor,
-  InterceptorContext,
-} from "../internal/effect-types";
+  type RpcEffectError,
+  type RpcInterceptor,
+  type InterceptorContext,
+} from "../internal";
 import type {
   TauriLinkConfig,
   LinkRequestContext,

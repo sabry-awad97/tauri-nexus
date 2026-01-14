@@ -1,13 +1,13 @@
 // =============================================================================
-// @tauri-nexus/rpc-core - Path Validation (Internal)
+// @tauri-nexus/rpc-core - Path Validation
 // =============================================================================
-// Exports Effect-based APIs only. Promise wrappers are in public/.
+// Re-exports validation from rpc-effect.
 
 export {
-  validatePathEffect,
-  validatePathsEffect,
-  validateAndNormalizePathEffect,
-  isValidPathEffect,
-  validatePathWithRulesEffect,
+  validatePath as validatePathEffect,
+  validatePaths as validatePathsEffect,
+  validateAndNormalizePath as validateAndNormalizePathEffect,
+  isValidPath as isValidPathEffect,
+  validatePathWithRules as validatePathWithRulesEffect,
   type PathValidationRules,
-} from "./effect-validation";
+} from "@tauri-nexus/rpc-effect";

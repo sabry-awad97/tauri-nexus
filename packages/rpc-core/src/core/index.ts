@@ -1,7 +1,6 @@
 // =============================================================================
-// @tauri-nexus/rpc-core - Core Module (Internal)
+// @tauri-nexus/rpc-core - Core Module
 // =============================================================================
-// Exports Effect-based APIs only. Promise wrappers are in public/.
 
 // Types
 export type {
@@ -73,7 +72,7 @@ export {
   getRateLimitRetryAfter,
 } from "./errors";
 
-// Validation (Effect-based)
+// Validation (re-exported from rpc-effect)
 export {
   validatePathEffect,
   validatePathsEffect,
