@@ -107,13 +107,15 @@ export {
   RpcTransportService,
   RpcInterceptorService,
   RpcLoggerService,
-  // Error utilities
+  // Error constructors
   makeCallError,
   makeTimeoutError,
   makeCancelledError,
   makeValidationError,
   makeNetworkError,
-  toEffectError,
+  // Error conversion
+  fromTransportError,
+  // Type guards
   isEffectRpcError,
   isRpcCallError,
   isRpcTimeoutError,
@@ -121,7 +123,14 @@ export {
   isRpcValidationError,
   isRpcNetworkError,
   hasCode,
+  // Pattern matching
   matchError,
+  // Effect combinators
+  failWithCallError,
+  failWithTimeout,
+  failWithValidation,
+  failWithNetwork,
+  failWithCancelled,
   // Validation
   validatePath,
   validatePaths,

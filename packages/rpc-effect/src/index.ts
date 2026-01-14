@@ -42,29 +42,30 @@ export {
 // =============================================================================
 
 export {
-  // Error constructors
+  // Constructors
   makeCallError,
   makeTimeoutError,
   makeCancelledError,
   makeValidationError,
   makeNetworkError,
-  // Error conversion
-  toEffectError,
+  // Type Guards
   isEffectRpcError,
-  // Effect utilities
-  failWithCallError,
-  failWithTimeout,
-  failWithValidation,
-  // Type guards
   isRpcCallError,
   isRpcTimeoutError,
   isRpcCancelledError,
   isRpcValidationError,
   isRpcNetworkError,
   hasCode,
+  // Pattern Matching
   matchError,
-  // Backward compatibility
-  parseEffectError,
+  // Effect Combinators
+  failWithCallError,
+  failWithTimeout,
+  failWithValidation,
+  failWithNetwork,
+  failWithCancelled,
+  // Error Conversion
+  fromTransportError,
 } from "./errors";
 
 // =============================================================================

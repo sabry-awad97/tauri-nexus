@@ -10,7 +10,7 @@ import {
   makeCancelledError,
   makeValidationError,
   makeNetworkError,
-  toEffectError,
+  fromTransportError,
   isEffectRpcError,
   isRpcCallError,
   isRpcTimeoutError,
@@ -19,6 +19,11 @@ import {
   isRpcNetworkError,
   hasCode,
   matchError,
+  failWithCallError,
+  failWithTimeout,
+  failWithValidation,
+  failWithNetwork,
+  failWithCancelled,
 } from "../errors";
 import {
   RpcCallError,
@@ -27,6 +32,7 @@ import {
   RpcValidationError,
   RpcNetworkError,
 } from "../types";
+import { Effect } from "effect";
 
 describe("Error Constructors", () => {
   it("should create RpcCallError", () => {
@@ -73,10 +79,10 @@ describe("Error Constructors", () => {
   });
 });
 
-describe("toEffectError", () => {
+describe("fromTransportError", () => {
   it("should handle RPC error shape objects", () => {
     const rpcError = { code: "NOT_FOUND", message: "User not found" };
-    const error = toEffectError(rpcError, "user.get");
+    const error = fromTransportError(rpcError, "user.get");
     expect(error._tag).toBe("RpcCallError");
     expect((error as RpcCallError).code).toBe("NOT_FOUND");
   });
@@ -86,21 +92,21 @@ describe("toEffectError", () => {
       code: "NOT_FOUND",
       message: "User not found",
     });
-    const error = toEffectError(jsonError, "user.get");
+    const error = fromTransportError(jsonError, "user.get");
     expect(error._tag).toBe("RpcCallError");
     expect((error as RpcCallError).code).toBe("NOT_FOUND");
     expect((error as RpcCallError).message).toBe("User not found");
   });
 
   it("should handle plain string errors", () => {
-    const error = toEffectError("Connection failed", "user.get");
+    const error = fromTransportError("Connection failed", "user.get");
     expect(error._tag).toBe("RpcCallError");
     expect((error as RpcCallError).code).toBe("UNKNOWN");
     expect((error as RpcCallError).message).toBe("Connection failed");
   });
 
   it("should handle Error objects", () => {
-    const error = toEffectError(new Error("Network error"), "user.get");
+    const error = fromTransportError(new Error("Network error"), "user.get");
     expect(error._tag).toBe("RpcCallError");
     expect((error as RpcCallError).message).toBe("Network error");
   });
@@ -110,7 +116,7 @@ describe("toEffectError", () => {
       code: "FORBIDDEN",
       message: "Access denied",
     });
-    const error = toEffectError(new Error(jsonMessage), "user.get");
+    const error = fromTransportError(new Error(jsonMessage), "user.get");
     expect(error._tag).toBe("RpcCallError");
     expect((error as RpcCallError).code).toBe("FORBIDDEN");
     expect((error as RpcCallError).message).toBe("Access denied");
@@ -118,25 +124,25 @@ describe("toEffectError", () => {
 
   it("should handle AbortError as timeout when timeoutMs provided", () => {
     const abortError = new DOMException("Aborted", "AbortError");
-    const error = toEffectError(abortError, "user.get", 5000);
+    const error = fromTransportError(abortError, "user.get", 5000);
     expect(error._tag).toBe("RpcTimeoutError");
     expect((error as RpcTimeoutError).timeoutMs).toBe(5000);
   });
 
   it("should handle AbortError as cancelled when no timeoutMs", () => {
     const abortError = new DOMException("Aborted", "AbortError");
-    const error = toEffectError(abortError, "user.get");
+    const error = fromTransportError(abortError, "user.get");
     expect(error._tag).toBe("RpcCancelledError");
   });
 
   it("should pass through existing Effect errors", () => {
     const original = makeCallError("CUSTOM", "Custom error");
-    const error = toEffectError(original, "user.get");
+    const error = fromTransportError(original, "user.get");
     expect(error).toBe(original);
   });
 
   it("should handle unknown values", () => {
-    const error = toEffectError(12345, "user.get");
+    const error = fromTransportError(12345, "user.get");
     expect(error._tag).toBe("RpcCallError");
     expect((error as RpcCallError).code).toBe("UNKNOWN");
     expect((error as RpcCallError).message).toBe("12345");
@@ -244,13 +250,88 @@ describe("matchError", () => {
     });
     expect(result).toBe("timeout:1000");
   });
+
+  it("should match all error types exhaustively", () => {
+    const errors = [
+      makeCallError("TEST", "Test"),
+      makeTimeoutError("path", 1000),
+      makeCancelledError("path"),
+      makeValidationError("path", []),
+      makeNetworkError("path", new Error()),
+    ];
+
+    const results = errors.map((error) =>
+      matchError(error, {
+        onCallError: () => "call",
+        onTimeoutError: () => "timeout",
+        onCancelledError: () => "cancelled",
+        onValidationError: () => "validation",
+        onNetworkError: () => "network",
+      })
+    );
+
+    expect(results).toEqual([
+      "call",
+      "timeout",
+      "cancelled",
+      "validation",
+      "network",
+    ]);
+  });
+});
+
+describe("Effect Combinators", () => {
+  it("failWithCallError should create failing Effect", async () => {
+    const effect = failWithCallError("TEST", "Test error");
+    const result = await Effect.runPromise(Effect.either(effect));
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("RpcCallError");
+    }
+  });
+
+  it("failWithTimeout should create failing Effect", async () => {
+    const effect = failWithTimeout("path", 5000);
+    const result = await Effect.runPromise(Effect.either(effect));
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("RpcTimeoutError");
+    }
+  });
+
+  it("failWithValidation should create failing Effect", async () => {
+    const effect = failWithValidation("path", []);
+    const result = await Effect.runPromise(Effect.either(effect));
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("RpcValidationError");
+    }
+  });
+
+  it("failWithNetwork should create failing Effect", async () => {
+    const effect = failWithNetwork("path", new Error("Network"));
+    const result = await Effect.runPromise(Effect.either(effect));
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("RpcNetworkError");
+    }
+  });
+
+  it("failWithCancelled should create failing Effect", async () => {
+    const effect = failWithCancelled("path", "User cancelled");
+    const result = await Effect.runPromise(Effect.either(effect));
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left._tag).toBe("RpcCancelledError");
+    }
+  });
 });
 
 describe("Property-Based Tests", () => {
-  it("property: toEffectError always returns RpcEffectError", () => {
+  it("property: fromTransportError always returns RpcEffectError", () => {
     fc.assert(
       fc.property(fc.anything(), fc.string(), (error, path) => {
-        const result = toEffectError(error, path);
+        const result = fromTransportError(error, path);
         expect(result._tag).toMatch(
           /^Rpc(Call|Timeout|Cancelled|Validation|Network)Error$/
         );
