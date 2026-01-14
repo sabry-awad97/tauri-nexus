@@ -557,7 +557,29 @@ where
 
         async move {
             // Check rate limit
-            limiter.check_and_record(&path, &client_id).await?;
+            match limiter.check_and_record(&path, &client_id).await {
+                Ok(()) => {
+                    // Get usage info for logging
+                    if let Some(usage) = limiter.get_usage(&path, &client_id).await {
+                        tracing::trace!(
+                            path = %path,
+                            client_id = %client_id,
+                            remaining = %usage.remaining,
+                            limit = %usage.limit,
+                            "Rate limit check passed"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path,
+                        client_id = %client_id,
+                        error_code = %e.code,
+                        "Rate limit exceeded"
+                    );
+                    return Err(e);
+                }
+            }
 
             // Proceed with request
             next(ctx, req).await

@@ -19,6 +19,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
+use tracing::{debug, trace};
 
 /// Type-safe error codes for RPC operations.
 ///
@@ -202,6 +203,10 @@ impl RpcError {
     /// Sanitize error for client response (removes internal details for server errors).
     pub fn sanitize(mut self) -> Self {
         if matches!(self.code, RpcErrorCode::InternalError) {
+            debug!(
+                original_message = %self.message,
+                "Sanitizing internal error for client response"
+            );
             self.message = "An internal error occurred".to_string();
             self.details = None;
             self.cause = None;
@@ -212,20 +217,36 @@ impl RpcError {
 
     /// Apply error configuration to prepare error for client response.
     pub fn apply_config(mut self, config: &ErrorConfig) -> Self {
+        trace!(
+            code = %self.code,
+            development_mode = config.development_mode,
+            has_transformer = config.transformer.is_some(),
+            "Applying error configuration"
+        );
+
         // Remove stack trace in production mode
         if !config.development_mode {
+            if self.stack_trace.is_some() || self.cause.is_some() {
+                trace!("Removing debug info (stack_trace, cause) for production mode");
+            }
             self.stack_trace = None;
             self.cause = None;
         }
 
         // Sanitize internal errors in production
         if !config.development_mode && self.code.is_server_error() {
+            debug!(
+                original_code = %self.code,
+                original_message = %self.message,
+                "Sanitizing server error for production"
+            );
             self.message = "An internal error occurred".to_string();
             self.details = None;
         }
 
         // Apply custom transformer if configured
         if let Some(transformer) = &config.transformer {
+            trace!("Applying custom error transformer");
             self = transformer.transform(self);
         }
 
@@ -490,6 +511,11 @@ impl Default for ErrorCodeMapper {
 impl ErrorTransformer for ErrorCodeMapper {
     fn transform(&self, mut error: RpcError) -> RpcError {
         if let Some(&new_code) = self.mappings.get(&error.code) {
+            debug!(
+                from_code = %error.code,
+                to_code = %new_code,
+                "Mapping error code"
+            );
             error.code = new_code;
         }
         error
@@ -524,7 +550,12 @@ impl Default for ComposedTransformer {
 
 impl ErrorTransformer for ComposedTransformer {
     fn transform(&self, mut error: RpcError) -> RpcError {
-        for transformer in &self.transformers {
+        trace!(
+            transformer_count = self.transformers.len(),
+            "Applying composed error transformers"
+        );
+        for (i, transformer) in self.transformers.iter().enumerate() {
+            trace!(transformer_index = i, "Applying transformer");
             error = transformer.transform(error);
         }
         error

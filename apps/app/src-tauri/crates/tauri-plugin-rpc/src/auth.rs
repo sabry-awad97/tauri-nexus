@@ -454,12 +454,24 @@ where
 {
     from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let provider = provider.clone();
+        let path = req.path.clone();
         async move {
             let auth_result = provider.authenticate(&req).await;
 
             if !auth_result.authenticated {
+                tracing::debug!(
+                    path = %path,
+                    "Authentication failed: no credentials provided"
+                );
                 return Err(RpcError::unauthorized("Authentication required"));
             }
+
+            tracing::trace!(
+                path = %path,
+                user_id = ?auth_result.user_id,
+                roles = ?auth_result.roles,
+                "Authentication successful"
+            );
 
             next(ctx, req).await
         }
@@ -495,15 +507,34 @@ where
     from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let provider = provider.clone();
         let config = Arc::clone(&config);
+        let path = req.path.clone();
         async move {
             let auth_result = provider.authenticate(&req).await;
 
             match config.is_authorized(&req.path, &auth_result) {
-                AuthorizationResult::Allowed => next(ctx, req).await,
+                AuthorizationResult::Allowed => {
+                    tracing::trace!(
+                        path = %path,
+                        user_id = ?auth_result.user_id,
+                        "Authorization granted"
+                    );
+                    next(ctx, req).await
+                }
                 AuthorizationResult::Unauthorized => {
+                    tracing::debug!(
+                        path = %path,
+                        "Authorization denied: authentication required"
+                    );
                     Err(RpcError::unauthorized("Authentication required"))
                 }
                 AuthorizationResult::Forbidden(required_roles) => {
+                    tracing::warn!(
+                        path = %path,
+                        user_id = ?auth_result.user_id,
+                        user_roles = ?auth_result.roles,
+                        required_roles = ?required_roles,
+                        "Authorization denied: insufficient roles"
+                    );
                     let msg = if required_roles.is_empty() {
                         "Access denied".to_string()
                     } else {
@@ -543,20 +574,39 @@ where
     from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let provider = provider.clone();
         let roles = Arc::clone(&roles);
+        let path = req.path.clone();
         async move {
             let auth_result = provider.authenticate(&req).await;
 
             if !auth_result.authenticated {
+                tracing::debug!(
+                    path = %path,
+                    required_roles = ?roles.as_ref(),
+                    "Role check failed: not authenticated"
+                );
                 return Err(RpcError::unauthorized("Authentication required"));
             }
 
             let role_refs: Vec<&str> = roles.iter().map(|s| s.as_str()).collect();
             if !auth_result.has_any_role(&role_refs) {
+                tracing::warn!(
+                    path = %path,
+                    user_id = ?auth_result.user_id,
+                    user_roles = ?auth_result.roles,
+                    required_roles = ?roles.as_ref(),
+                    "Role check failed: insufficient roles"
+                );
                 return Err(RpcError::forbidden(format!(
                     "Access denied. Required roles: {}",
                     roles.join(", ")
                 )));
             }
+
+            tracing::trace!(
+                path = %path,
+                user_id = ?auth_result.user_id,
+                "Role check passed"
+            );
 
             next(ctx, req).await
         }

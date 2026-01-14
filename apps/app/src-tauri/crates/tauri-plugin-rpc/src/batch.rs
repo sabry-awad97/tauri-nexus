@@ -21,6 +21,7 @@
 
 use crate::RpcError;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, trace, warn};
 
 // =============================================================================
 // Batch Configuration
@@ -50,12 +51,14 @@ impl Default for BatchConfig {
 impl BatchConfig {
     /// Create a new batch configuration with default values.
     pub fn new() -> Self {
+        trace!("Creating new BatchConfig with defaults");
         Self::default()
     }
 
     /// Set the maximum batch size.
     #[must_use = "This method returns a new BatchConfig and does not modify self"]
     pub fn with_max_batch_size(mut self, size: usize) -> Self {
+        trace!(max_batch_size = size, "Setting batch max size");
         self.max_batch_size = size;
         self
     }
@@ -63,6 +66,10 @@ impl BatchConfig {
     /// Set whether to execute requests in parallel.
     #[must_use = "This method returns a new BatchConfig and does not modify self"]
     pub fn with_parallel_execution(mut self, parallel: bool) -> Self {
+        trace!(
+            parallel_execution = parallel,
+            "Setting batch parallel execution"
+        );
         self.parallel_execution = parallel;
         self
     }
@@ -70,8 +77,14 @@ impl BatchConfig {
     /// Validate the batch configuration.
     pub fn validate(&self) -> Result<(), String> {
         if self.max_batch_size == 0 {
+            warn!("BatchConfig validation failed: max_batch_size must be greater than 0");
             return Err("max_batch_size must be greater than 0".to_string());
         }
+        trace!(
+            max_batch_size = self.max_batch_size,
+            parallel = self.parallel_execution,
+            "BatchConfig validated"
+        );
         Ok(())
     }
 }
@@ -109,6 +122,7 @@ pub struct BatchRequest {
 impl BatchRequest {
     /// Create a new empty batch request.
     pub fn new() -> Self {
+        trace!("Creating new empty BatchRequest");
         Self {
             requests: Vec::new(),
         }
@@ -121,11 +135,10 @@ impl BatchRequest {
         path: impl Into<String>,
         input: serde_json::Value,
     ) -> Self {
-        self.requests.push(SingleRequest {
-            id: id.into(),
-            path: path.into(),
-            input,
-        });
+        let id = id.into();
+        let path = path.into();
+        trace!(request_id = %id, path = %path, "Adding request to batch");
+        self.requests.push(SingleRequest { id, path, input });
         self
     }
 
@@ -142,15 +155,26 @@ impl BatchRequest {
     /// Validate the batch against configuration limits.
     pub fn validate(&self, config: &BatchConfig) -> Result<(), RpcError> {
         if self.requests.is_empty() {
+            warn!("Batch validation failed: batch request cannot be empty");
             return Err(RpcError::bad_request("Batch request cannot be empty"));
         }
         if self.requests.len() > config.max_batch_size {
+            warn!(
+                batch_size = self.requests.len(),
+                max_size = config.max_batch_size,
+                "Batch validation failed: size exceeds maximum"
+            );
             return Err(RpcError::bad_request(format!(
                 "Batch size {} exceeds maximum allowed size {}",
                 self.requests.len(),
                 config.max_batch_size
             )));
         }
+        debug!(
+            batch_size = self.requests.len(),
+            max_size = config.max_batch_size,
+            "Batch request validated"
+        );
         Ok(())
     }
 }
@@ -195,16 +219,25 @@ pub enum BatchResultData {
 impl BatchResult {
     /// Create a successful batch result.
     pub fn success(id: impl Into<String>, data: serde_json::Value) -> Self {
+        let id = id.into();
+        trace!(request_id = %id, "Batch result: success");
         Self {
-            id: id.into(),
+            id,
             result: BatchResultData::Success { data },
         }
     }
 
     /// Create an error batch result.
     pub fn error(id: impl Into<String>, error: RpcError) -> Self {
+        let id = id.into();
+        debug!(
+            request_id = %id,
+            error_code = %error.code,
+            error_message = %error.message,
+            "Batch result: error"
+        );
         Self {
-            id: id.into(),
+            id,
             result: BatchResultData::Error { error },
         }
     }
@@ -246,6 +279,14 @@ pub struct BatchResponse {
 impl BatchResponse {
     /// Create a new batch response with the given results.
     pub fn new(results: Vec<BatchResult>) -> Self {
+        let success_count = results.iter().filter(|r| r.is_success()).count();
+        let error_count = results.iter().filter(|r| r.is_error()).count();
+        debug!(
+            total = results.len(),
+            success = success_count,
+            errors = error_count,
+            "Created batch response"
+        );
         Self { results }
     }
 

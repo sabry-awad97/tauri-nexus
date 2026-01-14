@@ -442,12 +442,16 @@ where
             // Only cache queries (check procedure type if available)
             // For now, we cache all procedures - mutations should use invalidation
             if !cache.config.should_cache(&path) {
+                tracing::trace!(path = %path, "Cache bypass: path excluded");
                 return next(ctx, req).await;
             }
 
             // Check cache first
             if let Some(cached) = cache.get(&path, &input).await {
-                tracing::debug!(path = %path, "Cache hit");
+                tracing::debug!(
+                    path = %path,
+                    "Cache hit"
+                );
                 return Ok(cached);
             }
 
@@ -457,7 +461,14 @@ where
             let result = next(ctx, req).await?;
 
             // Cache successful result
+            let ttl = cache.config.get_ttl(&path);
             cache.set(&path, &input, result.clone()).await;
+
+            tracing::trace!(
+                path = %path,
+                ttl_ms = %ttl.as_millis(),
+                "Cache entry stored"
+            );
 
             Ok(result)
         }
@@ -515,10 +526,20 @@ where
 
             // Invalidate cache entries based on rules
             if let Some(patterns) = rules.get(&path) {
+                let pattern_count = patterns.len();
                 for pattern in patterns {
-                    tracing::debug!(path = %path, pattern = %pattern, "Invalidating cache");
+                    tracing::debug!(
+                        path = %path,
+                        pattern = %pattern,
+                        "Invalidating cache entries"
+                    );
                     cache.invalidate_pattern(pattern).await;
                 }
+                tracing::trace!(
+                    path = %path,
+                    patterns_invalidated = %pattern_count,
+                    "Cache invalidation complete"
+                );
             }
 
             Ok(result)

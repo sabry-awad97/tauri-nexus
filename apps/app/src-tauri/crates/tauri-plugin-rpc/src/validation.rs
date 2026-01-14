@@ -31,6 +31,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::{debug, trace, warn};
 
 /// Validation error for a single field.
 ///
@@ -135,6 +136,7 @@ pub struct ValidationResult {
 impl ValidationResult {
     /// Create a successful validation result
     pub fn ok() -> Self {
+        trace!("Validation passed");
         Self {
             valid: true,
             errors: Vec::new(),
@@ -143,6 +145,13 @@ impl ValidationResult {
 
     /// Create a failed validation result with errors
     pub fn fail(errors: Vec<FieldError>) -> Self {
+        let error_count = errors.len();
+        let field_names: Vec<_> = errors.iter().map(|e| e.field.as_str()).collect();
+        debug!(
+            error_count = error_count,
+            fields = ?field_names,
+            "Validation failed"
+        );
         Self {
             valid: errors.is_empty(),
             errors,
@@ -152,6 +161,16 @@ impl ValidationResult {
     /// Create a validation result from a list of errors.
     /// If the list is empty, the result is valid.
     pub fn from_errors(errors: Vec<FieldError>) -> Self {
+        if errors.is_empty() {
+            trace!("Validation passed (no errors)");
+        } else {
+            let field_names: Vec<_> = errors.iter().map(|e| e.field.as_str()).collect();
+            debug!(
+                error_count = errors.len(),
+                fields = ?field_names,
+                "Validation failed"
+            );
+        }
         Self {
             valid: errors.is_empty(),
             errors,
@@ -179,6 +198,11 @@ impl ValidationResult {
 
     /// Merge another validation result into this one
     pub fn merge(mut self, other: ValidationResult) -> Self {
+        trace!(
+            current_errors = self.errors.len(),
+            other_errors = other.errors.len(),
+            "Merging validation results"
+        );
         self.errors.extend(other.errors);
         self.valid = self.errors.is_empty();
         self
@@ -266,11 +290,13 @@ pub struct ValidationRules {
 impl ValidationRules {
     /// Create a new validation rules builder
     pub fn new() -> Self {
+        trace!("Creating new ValidationRules builder");
         Self { errors: Vec::new() }
     }
 
     /// Add a custom error
     pub fn add_error(mut self, error: FieldError) -> Self {
+        trace!(field = %error.field, code = %error.code, "Adding custom validation error");
         self.errors.push(error);
         self
     }
@@ -278,6 +304,7 @@ impl ValidationRules {
     /// Validate that a string field is not empty (required)
     pub fn required(mut self, field: &str, value: &str) -> Self {
         if value.trim().is_empty() {
+            trace!(field = %field, "Required field is empty");
             self.errors.push(FieldError::required(field));
         }
         self
@@ -288,6 +315,7 @@ impl ValidationRules {
         if let Some(v) = value
             && v.trim().is_empty()
         {
+            trace!(field = %field, "Optional field present but empty");
             self.errors.push(FieldError::required(field));
         }
         self
@@ -296,6 +324,7 @@ impl ValidationRules {
     /// Validate minimum string length
     pub fn min_length(mut self, field: &str, value: &str, min: usize) -> Self {
         if value.len() < min {
+            trace!(field = %field, length = value.len(), min = min, "Field below minimum length");
             self.errors.push(FieldError::min_length(field, min));
         }
         self
@@ -304,6 +333,7 @@ impl ValidationRules {
     /// Validate maximum string length
     pub fn max_length(mut self, field: &str, value: &str, max: usize) -> Self {
         if value.len() > max {
+            trace!(field = %field, length = value.len(), max = max, "Field exceeds maximum length");
             self.errors.push(FieldError::max_length(field, max));
         }
         self
@@ -312,6 +342,7 @@ impl ValidationRules {
     /// Validate that a number is within a range (inclusive)
     pub fn range(mut self, field: &str, value: i64, min: i64, max: i64) -> Self {
         if value < min || value > max {
+            trace!(field = %field, value = value, min = min, max = max, "Field outside valid range");
             self.errors.push(FieldError::range(field, min, max));
         }
         self
@@ -320,6 +351,7 @@ impl ValidationRules {
     /// Validate that a float is within a range (inclusive)
     pub fn range_f64(mut self, field: &str, value: f64, min: f64, max: f64) -> Self {
         if value < min || value > max {
+            trace!(field = %field, value = %value, min = %min, max = %max, "Float field outside valid range");
             self.errors.push(FieldError::new(
                 field,
                 format!("{} must be between {} and {}", field, min, max),
@@ -334,11 +366,13 @@ impl ValidationRules {
         match regex::Regex::new(pattern) {
             Ok(re) => {
                 if !re.is_match(value) {
+                    trace!(field = %field, pattern = %pattern, "Field does not match pattern");
                     self.errors.push(FieldError::pattern(field, pattern));
                 }
             }
-            Err(_) => {
+            Err(e) => {
                 // Invalid regex pattern - this is a programming error
+                warn!(field = %field, pattern = %pattern, error = %e, "Invalid validation regex pattern");
                 self.errors.push(FieldError::new(
                     field,
                     format!("Invalid validation pattern: {}", pattern),
@@ -364,6 +398,7 @@ impl ValidationRules {
             && !value.ends_with('.');
 
         if !is_valid {
+            trace!(field = %field, "Invalid email format");
             self.errors.push(FieldError::email(field));
         }
         self
@@ -375,6 +410,7 @@ impl ValidationRules {
         F: FnOnce() -> bool,
     {
         if !predicate() {
+            trace!(field = %field, message = %message, "Custom validation failed");
             self.errors.push(FieldError::custom(field, message));
         }
         self
@@ -382,9 +418,17 @@ impl ValidationRules {
 
     /// Build the validation result
     pub fn build(self) -> ValidationResult {
-        if self.errors.is_empty() {
+        let error_count = self.errors.len();
+        if error_count == 0 {
+            trace!("Validation rules passed");
             ValidationResult::ok()
         } else {
+            let field_names: Vec<_> = self.errors.iter().map(|e| e.field.as_str()).collect();
+            debug!(
+                error_count = error_count,
+                fields = ?field_names,
+                "Validation rules failed"
+            );
             ValidationResult::fail(self.errors)
         }
     }

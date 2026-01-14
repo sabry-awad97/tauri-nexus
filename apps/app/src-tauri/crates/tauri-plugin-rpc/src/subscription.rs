@@ -474,6 +474,7 @@ impl Default for SubscriptionManager {
 impl SubscriptionManager {
     /// Create a new subscription manager
     pub fn new() -> Self {
+        tracing::trace!("SubscriptionManager created");
         Self {
             subscriptions: RwLock::new(HashMap::new()),
             task_tracker: RwLock::new(tokio::task::JoinSet::new()),
@@ -483,7 +484,15 @@ impl SubscriptionManager {
     /// Register a new subscription
     pub async fn subscribe(&self, handle: SubscriptionHandle) -> SubscriptionId {
         let id = handle.id;
+        let path = handle.path.clone();
         self.subscriptions.write().await.insert(id, handle);
+
+        tracing::debug!(
+            subscription_id = %id,
+            path = %path,
+            "Subscription registered"
+        );
+
         id
     }
 
@@ -514,6 +523,12 @@ impl SubscriptionManager {
     {
         let mut tracker = self.task_tracker.write().await;
         tracker.spawn(future);
+
+        tracing::trace!(
+            subscription_id = %id,
+            "Subscription task spawned"
+        );
+
         id
     }
 
@@ -530,10 +545,20 @@ impl SubscriptionManager {
     /// manager.shutdown().await;
     /// ```
     pub async fn shutdown(&self) {
+        let sub_count = self.subscriptions.read().await.len();
+        tracing::info!(
+            active_subscriptions = %sub_count,
+            "SubscriptionManager shutdown initiated"
+        );
+
         // Cancel all subscription signals first
         {
             let subs = self.subscriptions.read().await;
-            for handle in subs.values() {
+            for (id, handle) in subs.iter() {
+                tracing::trace!(
+                    subscription_id = %id,
+                    "Cancelling subscription"
+                );
                 handle.cancel();
             }
         }
@@ -541,6 +566,11 @@ impl SubscriptionManager {
         // Abort all tracked tasks and wait for them to complete
         {
             let mut tracker = self.task_tracker.write().await;
+            let task_count = tracker.len();
+            tracing::debug!(
+                task_count = %task_count,
+                "Aborting tracked tasks"
+            );
             tracker.abort_all();
             while tracker.join_next().await.is_some() {
                 // Wait for all tasks to complete
@@ -552,14 +582,25 @@ impl SubscriptionManager {
             let mut subs = self.subscriptions.write().await;
             subs.clear();
         }
+
+        tracing::info!("SubscriptionManager shutdown complete");
     }
 
     /// Unsubscribe by ID
     pub async fn unsubscribe(&self, id: &SubscriptionId) -> bool {
         if let Some(handle) = self.subscriptions.write().await.remove(id) {
+            tracing::debug!(
+                subscription_id = %id,
+                path = %handle.path,
+                "Subscription unsubscribed"
+            );
             handle.cancel();
             true
         } else {
+            tracing::trace!(
+                subscription_id = %id,
+                "Unsubscribe called for non-existent subscription"
+            );
             false
         }
     }
@@ -577,9 +618,18 @@ impl SubscriptionManager {
     /// Cancel all subscriptions
     pub async fn cancel_all(&self) {
         let mut subs = self.subscriptions.write().await;
-        for (_, handle) in subs.drain() {
+        let count = subs.len();
+        for (id, handle) in subs.drain() {
+            tracing::trace!(
+                subscription_id = %id,
+                "Cancelling subscription"
+            );
             handle.cancel();
         }
+        tracing::debug!(
+            cancelled_count = %count,
+            "All subscriptions cancelled"
+        );
     }
 
     /// Get all subscription IDs
@@ -590,7 +640,24 @@ impl SubscriptionManager {
     /// Clean up completed subscriptions
     pub async fn cleanup(&self) {
         let mut subs = self.subscriptions.write().await;
-        subs.retain(|_, handle| !handle.is_cancelled());
+        let before_count = subs.len();
+        subs.retain(|id, handle| {
+            let keep = !handle.is_cancelled();
+            if !keep {
+                tracing::trace!(
+                    subscription_id = %id,
+                    "Cleaning up cancelled subscription"
+                );
+            }
+            keep
+        });
+        let removed = before_count - subs.len();
+        if removed > 0 {
+            tracing::debug!(
+                removed_count = %removed,
+                "Subscription cleanup complete"
+            );
+        }
     }
 
     /// Get the number of tracked tasks (for testing/debugging)

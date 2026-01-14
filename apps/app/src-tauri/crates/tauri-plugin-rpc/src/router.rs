@@ -165,15 +165,19 @@ impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
     pub async fn call(&self, path: &str, input: serde_json::Value) -> RpcResult<serde_json::Value> {
         // Check if it's a subscription first
         if self.subscriptions.contains_key(path) {
+            tracing::debug!(
+                path = %path,
+                "Attempted to call subscription procedure"
+            );
             return Err(RpcError::bad_request(
                 "Cannot call subscription procedure with 'call'. Use 'subscribe' instead.",
             ));
         }
 
-        let compiled = self
-            .compiled_chains
-            .get(path)
-            .ok_or_else(|| RpcError::procedure_not_found(path))?;
+        let compiled = self.compiled_chains.get(path).ok_or_else(|| {
+            tracing::debug!(path = %path, "Procedure not found");
+            RpcError::procedure_not_found(path)
+        })?;
 
         let ctx = Context::new(
             self.context
@@ -187,6 +191,12 @@ impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
             input,
         };
 
+        tracing::trace!(
+            path = %path,
+            procedure_type = %compiled.procedure_type,
+            "Executing compiled procedure"
+        );
+
         // Use pre-compiled chain directly - no per-request chain building
         (compiled.chain.clone())(ctx, request).await
     }
@@ -198,13 +208,17 @@ impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
         input: serde_json::Value,
         sub_ctx: SubscriptionContext,
     ) -> RpcResult<mpsc::Receiver<Event<serde_json::Value>>> {
-        let handler = self
-            .subscriptions
-            .get(path)
-            .ok_or_else(|| RpcError::procedure_not_found(path))?;
+        let handler = self.subscriptions.get(path).ok_or_else(|| {
+            tracing::debug!(path = %path, "Subscription procedure not found");
+            RpcError::procedure_not_found(path)
+        })?;
 
         // Check if it's actually a subscription
         if self.compiled_chains.contains_key(path) {
+            tracing::debug!(
+                path = %path,
+                "Attempted to subscribe to non-subscription procedure"
+            );
             return Err(RpcError::bad_request(
                 "Cannot subscribe to non-subscription procedure. Use 'call' instead.",
             ));
@@ -214,6 +228,12 @@ impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
             self.context
                 .clone()
                 .ok_or_else(|| RpcError::internal("Router context not initialized"))?,
+        );
+
+        tracing::trace!(
+            path = %path,
+            subscription_id = %sub_ctx.subscription_id,
+            "Starting subscription"
         );
 
         (handler)(ctx, sub_ctx, input).await
@@ -756,6 +776,8 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
         let mut compiled_chains = HashMap::new();
         let mut subscriptions = HashMap::new();
 
+        let middleware_count = self.middleware.len();
+
         for (path, procedure) in self.procedures {
             match procedure {
                 Procedure::Handler {
@@ -772,6 +794,12 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
                     // This builds the chain once at compile time
                     let chain = build_middleware_chain(self.middleware.clone(), final_handler);
 
+                    tracing::trace!(
+                        path = %path,
+                        procedure_type = %procedure_type,
+                        "Compiled procedure chain"
+                    );
+
                     compiled_chains.insert(
                         path,
                         CompiledChain {
@@ -781,11 +809,22 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
                     );
                 }
                 Procedure::Subscription { handler } => {
+                    tracing::trace!(
+                        path = %path,
+                        "Registered subscription handler"
+                    );
                     // Subscriptions don't use middleware chains
                     subscriptions.insert(path, handler);
                 }
             }
         }
+
+        tracing::debug!(
+            procedures = %compiled_chains.len(),
+            subscriptions = %subscriptions.len(),
+            middleware = %middleware_count,
+            "Router compiled"
+        );
 
         CompiledRouter {
             context: self.context,
