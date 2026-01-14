@@ -19,7 +19,7 @@ import type {
 } from "../core/inference";
 import {
   validatePath,
-  makeCallError,
+  createCallError,
   type RpcEffectError,
 } from "@tauri-nexus/rpc-effect";
 import { toRpcError, parseEffectError } from "../internal";
@@ -202,12 +202,12 @@ export class EffectBatchResponseWrapper<TOutputMap extends OutputTypeMap> {
         const result = this.resultMap.get(id);
         if (!result) {
           return yield* Effect.fail(
-            makeCallError("NOT_FOUND", `No result found for id: ${id}`),
+            createCallError("NOT_FOUND", `No result found for id: ${id}`),
           );
         }
         if (result.error) {
           return yield* Effect.fail(
-            makeCallError(
+            createCallError(
               result.error.code,
               result.error.message,
               result.error.details,

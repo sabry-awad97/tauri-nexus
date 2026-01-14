@@ -2,7 +2,7 @@
 // RPC Config Service
 // =============================================================================
 
-import { Effect, Layer } from "effect";
+import { Context, Layer } from "effect";
 import type { RpcConfig } from "../core/types";
 
 const defaultRpcConfig: RpcConfig = {
@@ -14,7 +14,6 @@ const defaultRpcConfig: RpcConfig = {
 
 /**
  * Configuration service for RPC calls.
- * Uses Effect.Service for idiomatic service definition with default.
  *
  * @example
  * ```ts
@@ -25,12 +24,10 @@ const defaultRpcConfig: RpcConfig = {
  * Effect.provide(program, RpcConfigService.layer({ defaultTimeout: 5000 }))
  * ```
  */
-export class RpcConfigService extends Effect.Service<RpcConfigService>()(
-  "RpcConfigService",
-  {
-    succeed: defaultRpcConfig,
-  },
-) {
+export class RpcConfigService extends Context.Tag("RpcConfigService")<
+  RpcConfigService,
+  RpcConfig
+>() {
   /** Create a custom config by merging with defaults */
   static config(config: Partial<RpcConfig> = {}): RpcConfig {
     return {
@@ -42,6 +39,9 @@ export class RpcConfigService extends Effect.Service<RpcConfigService>()(
       ]),
     };
   }
+
+  /** Default layer with default config */
+  static Default = Layer.succeed(RpcConfigService, defaultRpcConfig);
 
   /** Create a layer with custom config */
   static layer(config: Partial<RpcConfig> = {}) {

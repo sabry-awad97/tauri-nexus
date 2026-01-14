@@ -3,8 +3,8 @@
 // =============================================================================
 // Test reconnection logic with exponential backoff, jitter, and max retries.
 
-import { describe, it, expect, beforeEach } from "vitest";
-import { Effect, Ref, Duration } from "effect";
+import { describe, it, expect } from "vitest";
+import { Effect, Ref } from "effect";
 import {
   createSubscriptionStateRef,
   calculateReconnectDelay,
@@ -14,7 +14,6 @@ import {
   createReconnectSchedule,
   withReconnection,
   incrementReconnectAttempts,
-  type SubscriptionState,
   type ReconnectConfig,
   defaultReconnectConfig,
   createCallError,
@@ -158,13 +157,15 @@ describe("TC004: Reconnection Logic", () => {
       const error = maxReconnectsExceededError("users.stream", 5, 5);
 
       expect(error._tag).toBe("RpcCallError");
-      expect(error.code).toBe("MAX_RECONNECTS_EXCEEDED");
-      expect(error.message).toContain("5");
-      expect(error.details).toEqual({
-        attempts: 5,
-        maxReconnects: 5,
-        path: "users.stream",
-      });
+      if (error._tag === "RpcCallError") {
+        expect(error.code).toBe("MAX_RECONNECTS_EXCEEDED");
+        expect(error.message).toContain("5");
+        expect(error.details).toEqual({
+          attempts: 5,
+          maxReconnects: 5,
+          path: "users.stream",
+        });
+      }
     });
   });
 

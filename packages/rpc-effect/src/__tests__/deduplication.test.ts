@@ -3,7 +3,7 @@
 // =============================================================================
 // Test request deduplication utilities with cache management and key generation.
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { Effect } from "effect";
 import {
   createDedupCache,

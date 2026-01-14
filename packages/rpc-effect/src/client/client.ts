@@ -3,7 +3,7 @@
 // =============================================================================
 
 import type { RpcInterceptor, EventIterator } from "../core/types";
-import { EffectLink, type EffectLinkConfig } from "./link";
+import { EffectLink } from "./link";
 import type { CallOptions, SubscribeOptions } from "../operations";
 
 // =============================================================================

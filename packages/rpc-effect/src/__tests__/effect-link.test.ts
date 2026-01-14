@@ -4,32 +4,51 @@
 // Test high-level EffectLink client integration with layers and interceptors.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Effect, Layer } from "effect";
+import { Effect } from "effect";
 import {
   EffectLink,
   createEffectClient,
   createEffectClientWithTransport,
   type EffectClient,
   type RpcInterceptor,
+  type EventIterator,
   RpcConfigService,
   RpcTransportService,
   RpcInterceptorService,
   RpcLoggerService,
 } from "../index";
 
-describe("TC009: EffectLink Client Integration", () => {
-  const createMockTransport = () => ({
-    call: vi.fn(async <T>(path: string, input: unknown): Promise<T> => {
-      return { path, input, result: "success" } as T;
-    }),
-    callBatch: vi.fn(async () => ({ results: [] })),
-    subscribe: vi.fn(async () => ({
-      [Symbol.asyncIterator]: () => ({
-        next: async () => ({ done: true, value: undefined }),
-      }),
-    })),
-  });
+// Helper to create a properly typed mock transport
+const createMockTransport = () => {
+  const callSpy = vi.fn();
+  const subscribeSpy = vi.fn();
+  return {
+    callSpy,
+    subscribeSpy,
+    call: async <T>(_path: string, _input: unknown): Promise<T> => {
+      callSpy(_path, _input);
+      return { path: _path, input: _input, result: "success" } as T;
+    },
+    callBatch: async () => ({ results: [] }) as any,
+    subscribe: async <T>(): Promise<EventIterator<T>> => {
+      subscribeSpy();
+      return {
+        return: async () => {},
+        [Symbol.asyncIterator]: () => ({
+          next: async () => ({ done: true as const, value: undefined as T }),
+        }),
+      };
+    },
+  };
+};
 
+// Helper to create a properly typed mock interceptor
+const createMockInterceptor = (name: string): RpcInterceptor => ({
+  name,
+  intercept: async <T>(_ctx: unknown, next: () => Promise<T>) => next(),
+});
+
+describe("TC009: EffectLink Client Integration", () => {
   describe("EffectLink", () => {
     it("should create link with default config", () => {
       const link = new EffectLink();
@@ -56,7 +75,7 @@ describe("TC009: EffectLink Client Integration", () => {
       });
 
       expect(result.path).toBe("users.get");
-      expect(transport.call).toHaveBeenCalledWith("users.get", { id: 1 });
+      expect(transport.callSpy).toHaveBeenCalledWith("users.get", { id: 1 });
     });
 
     it("should throw when transport not configured", () => {
@@ -89,9 +108,7 @@ describe("TC009: EffectLink Client Integration", () => {
 
     it("should create new link with additional interceptors", () => {
       const transport = createMockTransport();
-      const interceptor: RpcInterceptor = {
-        intercept: async (ctx, next) => next(),
-      };
+      const interceptor = createMockInterceptor("test");
 
       const link = new EffectLink();
       link.setTransport(() => transport);
@@ -130,9 +147,7 @@ describe("TC009: EffectLink Client Integration", () => {
     });
 
     it("should create client with interceptors", () => {
-      const interceptor: RpcInterceptor = {
-        intercept: async (ctx, next) => next(),
-      };
+      const interceptor = createMockInterceptor("test");
 
       const client = createEffectClient({
         interceptors: [interceptor],
@@ -155,7 +170,7 @@ describe("TC009: EffectLink Client Integration", () => {
       });
 
       expect(result.path).toBe("users.get");
-      expect(transport.call).toHaveBeenCalled();
+      expect(transport.callSpy).toHaveBeenCalled();
     });
 
     it("should support subscription paths", () => {
@@ -181,20 +196,17 @@ describe("TC009: EffectLink Client Integration", () => {
     });
 
     it("should make call requests", async () => {
-      const result = await client.call("users.get", { id: 1 });
-      expect(transport.call).toHaveBeenCalledWith("users.get", { id: 1 });
+      await client.call("users.get", { id: 1 });
+      expect(transport.callSpy).toHaveBeenCalledWith("users.get", { id: 1 });
     });
 
     it("should make subscribe requests", async () => {
-      const iterator = await client.subscribe("events.stream", {});
-      expect(transport.subscribe).toHaveBeenCalled();
+      await client.subscribe("events.stream", {});
+      expect(transport.subscribeSpy).toHaveBeenCalled();
     });
 
     it("should create new client with interceptors", () => {
-      const interceptor: RpcInterceptor = {
-        intercept: async (ctx, next) => next(),
-      };
-
+      const interceptor = createMockInterceptor("test");
       const newClient = client.withInterceptors([interceptor]);
       expect(newClient).not.toBe(client);
     });
@@ -210,7 +222,8 @@ describe("TC009: EffectLink Client Integration", () => {
       const order: string[] = [];
 
       const interceptor1: RpcInterceptor = {
-        intercept: async (ctx, next) => {
+        name: "interceptor1",
+        intercept: async (_ctx, next) => {
           order.push("before-1");
           const result = await next();
           order.push("after-1");
@@ -219,7 +232,8 @@ describe("TC009: EffectLink Client Integration", () => {
       };
 
       const interceptor2: RpcInterceptor = {
-        intercept: async (ctx, next) => {
+        name: "interceptor2",
+        intercept: async (_ctx, next) => {
           order.push("before-2");
           const result = await next();
           order.push("after-2");
@@ -235,7 +249,6 @@ describe("TC009: EffectLink Client Integration", () => {
 
       await client.call("users.get", {});
 
-      // Interceptors wrap the call, so order is: before-1, before-2, call, after-2, after-1
       expect(order).toEqual(["before-1", "before-2", "after-2", "after-1"]);
     });
 
@@ -243,6 +256,7 @@ describe("TC009: EffectLink Client Integration", () => {
       let capturedPath: string | undefined;
 
       const interceptor: RpcInterceptor = {
+        name: "pathCapture",
         intercept: async (ctx, next) => {
           capturedPath = ctx.path;
           return next();
@@ -323,7 +337,6 @@ describe("TC009: EffectLink Client Integration", () => {
 
       const program = Effect.gen(function* () {
         const logger = yield* RpcLoggerService;
-        // Noop logger should not throw
         logger.debug("test");
         logger.info("test");
         return true;
@@ -340,14 +353,19 @@ describe("TC009: EffectLink Client Integration", () => {
   describe("Error Handling", () => {
     it("should propagate transport errors", async () => {
       const transport = {
-        call: vi.fn(async () => {
+        call: async () => {
           throw new Error("Network error");
+        },
+        callBatch: async () => ({ results: [] }),
+        subscribe: async () => ({
+          return: async () => {},
+          [Symbol.asyncIterator]: () => ({
+            next: async () => ({ done: true, value: undefined }),
+          }),
         }),
-        callBatch: vi.fn(),
-        subscribe: vi.fn(),
       };
 
-      const client = createEffectClientWithTransport({ transport });
+      const client = createEffectClientWithTransport({ transport } as any);
 
       await expect(client.call("users.get", {})).rejects.toThrow();
     });
