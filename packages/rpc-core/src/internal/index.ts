@@ -2,6 +2,7 @@
 // @tauri-nexus/rpc-core - Internal Bridge to rpc-effect
 // =============================================================================
 // Re-exports from rpc-effect with Tauri-specific transport layer.
+// NO duplication - everything comes from rpc-effect.
 
 import { Layer } from "effect";
 import { invoke } from "@tauri-apps/api/core";
@@ -10,18 +11,11 @@ import {
   makeTransportLayer,
   makeInterceptorLayer,
   makeLoggerLayer,
-  matchError,
+  fromTransportError,
   type RpcConfig,
   type RpcTransport,
-  type RpcEffectError,
-  RpcCallError,
-  RpcTimeoutError,
-  RpcCancelledError,
-  RpcValidationError,
 } from "@tauri-nexus/rpc-effect";
 import { createEventIterator } from "../subscription";
-import { fromTransportError } from "../core/errors";
-import type { RpcError } from "../core/types";
 
 // =============================================================================
 // Tauri Transport
@@ -86,7 +80,7 @@ export const makeDebugLayer = (config?: Partial<RpcConfig>) =>
   );
 
 // =============================================================================
-// Re-exports from rpc-effect
+// Re-exports from rpc-effect (single source of truth)
 // =============================================================================
 
 export {
@@ -104,6 +98,9 @@ export {
   type InterceptorOptions,
   type RetryInterceptorOptions,
   type AuthInterceptorOptions,
+  // Public Error Types
+  type PublicRpcError,
+  type RpcErrorCode,
   // Error classes
   RpcCallError,
   RpcTimeoutError,
@@ -128,6 +125,7 @@ export {
   isRpcCancelledError,
   isRpcValidationError,
   isRpcNetworkError,
+  isPublicRpcError,
   // Code utilities
   getErrorCode,
   hasCode,
@@ -141,10 +139,28 @@ export {
   failWithValidation,
   failWithNetwork,
   failWithCancelled,
+  // Error conversion (single source of truth)
+  toPublicError,
+  fromPublicError,
+  // Error parsing
+  type RpcErrorShape,
+  type ErrorParserOptions,
+  isRpcErrorShape,
+  parseJsonError,
+  makeCallErrorFromShape,
+  parseToEffectError,
+  fromTransportError,
+  parseEffectError,
+  parseToPublicError,
+  // Rate limit helpers
+  isRateLimitError,
+  getRateLimitRetryAfter,
   // Validation
   validatePath,
   validatePaths,
   isValidPath,
+  validatePathPure,
+  isValidPathPure,
   // Runtime
   makeConfigLayer,
   makeTransportLayer,
@@ -184,98 +200,3 @@ export {
   EffectLink,
   type EffectLinkConfig,
 } from "@tauri-nexus/rpc-effect";
-
-// Export error utilities from local errors module
-export {
-  type RpcErrorShape,
-  type ErrorParserOptions,
-  isRpcErrorShape,
-  parseJsonError,
-  makeCallErrorFromShape,
-  parseToEffectError,
-  parseEffectError,
-  fromTransportError,
-} from "../core/errors";
-
-// =============================================================================
-// Error Conversion to Public Format
-// =============================================================================
-
-/**
- * Convert Effect error to public RpcError format.
- */
-export const toPublicError = (error: RpcEffectError): RpcError =>
-  matchError(error, {
-    onCallError: (e) => ({
-      code: e.code,
-      message: e.message,
-      details: e.details,
-      cause: e.cause,
-    }),
-    onTimeoutError: (e) => ({
-      code: "TIMEOUT",
-      message: `Request to '${e.path}' timed out after ${e.timeoutMs}ms`,
-      details: { timeoutMs: e.timeoutMs, path: e.path },
-      cause: undefined,
-    }),
-    onCancelledError: (e) => ({
-      code: "CANCELLED",
-      message: e.reason ?? `Request to '${e.path}' was cancelled`,
-      details: { path: e.path },
-      cause: undefined,
-    }),
-    onValidationError: (e) => ({
-      code: "VALIDATION_ERROR",
-      message:
-        e.issues.length > 0
-          ? e.issues[0].message
-          : `Validation failed for '${e.path}'`,
-      details: { issues: e.issues },
-      cause: undefined,
-    }),
-    onNetworkError: (e) => ({
-      code: "INTERNAL_ERROR",
-      message: `Network error calling '${e.path}'`,
-      details: { originalError: String(e.originalError) },
-      cause: undefined,
-    }),
-  });
-
-/**
- * Convert public RpcError to Effect error.
- */
-export const fromPublicError = (
-  error: RpcError,
-  path: string
-): RpcEffectError => {
-  switch (error.code) {
-    case "TIMEOUT":
-      return new RpcTimeoutError({
-        path,
-        timeoutMs: (error.details as { timeoutMs?: number })?.timeoutMs ?? 0,
-      });
-    case "CANCELLED":
-      return new RpcCancelledError({ path, reason: error.message });
-    case "VALIDATION_ERROR":
-      return new RpcValidationError({
-        path,
-        issues:
-          (
-            error.details as {
-              issues?: Array<{
-                path: (string | number)[];
-                message: string;
-                code: string;
-              }>;
-            }
-          )?.issues ?? [],
-      });
-    default:
-      return new RpcCallError({
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        cause: error.cause,
-      });
-  }
-};

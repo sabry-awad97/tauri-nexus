@@ -1,37 +1,30 @@
 // =============================================================================
 // @tauri-nexus/rpc-core - Path Validation (Public API)
 // =============================================================================
-// Simple path validation without Effect dependencies.
+// Simple validation API using pure functions from rpc-effect.
 
-import { validatePathPure, isValidPathPure } from "@tauri-nexus/rpc-effect";
-import { createError } from "../core/errors";
-
-// =============================================================================
-// Public Validation Functions
-// =============================================================================
+import {
+  validatePathPure,
+  isValidPathPure,
+  createPublicError,
+} from "@tauri-nexus/rpc-effect";
 
 /**
  * Validate procedure path format.
  * Throws RpcError if validation fails.
- *
- * Valid paths: "health", "user.get", "api.v1.users.list"
- * Invalid: "", ".path", "path.", "path..name", "path/name"
  */
 export function validatePath(path: string): void {
   const result = validatePathPure(path);
-
   if (!result.valid) {
     const message = result.issues.map((i) => i.message).join("; ");
-    throw createError("VALIDATION_ERROR", message);
+    throw createPublicError("VALIDATION_ERROR", message);
   }
 }
 
 /**
  * Check if a path is valid without throwing.
  */
-export function isValidPath(path: string): boolean {
-  return isValidPathPure(path);
-}
+export const isValidPath = isValidPathPure;
 
 /**
  * Validate and return the path, throwing if invalid.

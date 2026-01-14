@@ -1,19 +1,15 @@
 // =============================================================================
 // @tauri-nexus/rpc-core - Path Validation
 // =============================================================================
-// Re-exports validation from rpc-effect.
-// Provides both pure functions and Effect-based validation.
+// Pure re-exports from rpc-effect (single source of truth).
 
-// Pure validation functions (no Effect dependency)
 export {
+  // Pure validation functions
   validatePathPure,
   isValidPathPure,
   validatePathOrThrow,
   type PathValidationResult,
-} from "@tauri-nexus/rpc-effect";
-
-// Effect-based validation (for internal use)
-export {
+  // Effect-based validation
   validatePath as validatePathEffect,
   validatePaths as validatePathsEffect,
   validateAndNormalizePath as validateAndNormalizePathEffect,

@@ -1,38 +1,50 @@
 // =============================================================================
-// @tauri-nexus/rpc-core - Built-in Interceptors
+// @tauri-nexus/rpc-core - Link Interceptors
 // =============================================================================
-// Common interceptors for logging, retry, error handling, and authentication.
+// Thin wrappers around rpc-effect interceptors for Link-specific types.
+// Core logic lives in rpc-effect - this just adapts the types.
 
-import type { RpcError } from "../core/types";
-import { isRpcError } from "../core/errors";
+import type { PublicRpcError } from "@tauri-nexus/rpc-effect";
+import { isPublicRpcError } from "@tauri-nexus/rpc-effect";
 import type { LinkInterceptor, LinkRequestContext } from "./types";
 
 // =============================================================================
-// Error Handler Interceptor
+// Link-Specific Interceptor Options
 // =============================================================================
 
 /**
- * Create an error handler interceptor.
- *
- * @example
- * ```typescript
- * const link = new TauriLink({
- *   interceptors: [
- *     onError((error) => {
- *       console.error('RPC Error:', error);
- *     }),
- *   ],
- * });
- * ```
+ * Options for the Link auth interceptor.
+ * Different from rpc-effect's AuthInterceptorOptions which uses getToken callback.
+ */
+export interface AuthInterceptorOptions {
+  /** The header name to use for the token. Defaults to "Authorization" */
+  headerName?: string;
+  /** The property name in context that contains the token. Defaults to "token" */
+  tokenProperty?: string;
+  /** The token prefix. Defaults to "Bearer" */
+  prefix?: string;
+}
+
+// =============================================================================
+// Link-Specific Interceptors
+// =============================================================================
+// These adapt rpc-effect interceptors to work with LinkRequestContext
+// which includes client context for type-safe context access.
+
+/**
+ * Create an error handler interceptor for Link.
  */
 export function onError<TClientContext = unknown>(
-  handler: (error: RpcError, ctx: LinkRequestContext<TClientContext>) => void,
+  handler: (
+    error: PublicRpcError,
+    ctx: LinkRequestContext<TClientContext>
+  ) => void
 ): LinkInterceptor<TClientContext> {
   return async (ctx, next) => {
     try {
       return await next();
     } catch (error) {
-      if (isRpcError(error)) {
+      if (isPublicRpcError(error)) {
         handler(error, ctx);
       }
       throw error;
@@ -40,22 +52,11 @@ export function onError<TClientContext = unknown>(
   };
 }
 
-// =============================================================================
-// Logging Interceptor
-// =============================================================================
-
 /**
- * Create a logging interceptor.
- *
- * @example
- * ```typescript
- * const link = new TauriLink({
- *   interceptors: [logging({ prefix: '[RPC]' })],
- * });
- * ```
+ * Create a logging interceptor for Link.
  */
 export function logging<TClientContext = unknown>(
-  options: { prefix?: string } = {},
+  options: { prefix?: string } = {}
 ): LinkInterceptor<TClientContext> {
   const prefix = options.prefix ?? "[RPC]";
   return async (ctx, next) => {
@@ -74,28 +75,15 @@ export function logging<TClientContext = unknown>(
   };
 }
 
-// =============================================================================
-// Retry Interceptor
-// =============================================================================
-
 /**
- * Create a retry interceptor.
- *
- * @example
- * ```typescript
- * const link = new TauriLink({
- *   interceptors: [
- *     retry({ maxRetries: 3, delay: 1000 }),
- *   ],
- * });
- * ```
+ * Create a retry interceptor for Link.
  */
 export function retry<TClientContext = unknown>(
   options: {
     maxRetries?: number;
     delay?: number;
-    shouldRetry?: (error: RpcError) => boolean;
-  } = {},
+    shouldRetry?: (error: PublicRpcError) => boolean;
+  } = {}
 ): LinkInterceptor<TClientContext> {
   const maxRetries = options.maxRetries ?? 3;
   const delay = options.delay ?? 1000;
@@ -105,14 +93,14 @@ export function retry<TClientContext = unknown>(
       error.code === "SERVICE_UNAVAILABLE" || error.code === "TIMEOUT");
 
   return async (_ctx, next) => {
-    let lastError: RpcError | undefined;
+    let lastError: PublicRpcError | undefined;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await next();
       } catch (error) {
         if (
-          !isRpcError(error) ||
+          !isPublicRpcError(error) ||
           !shouldRetry(error) ||
           attempt === maxRetries
         ) {
@@ -120,7 +108,7 @@ export function retry<TClientContext = unknown>(
         }
         lastError = error;
         await new Promise((resolve) =>
-          setTimeout(resolve, delay * (attempt + 1)),
+          setTimeout(resolve, delay * (attempt + 1))
         );
       }
     }
@@ -129,38 +117,26 @@ export function retry<TClientContext = unknown>(
   };
 }
 
-// =============================================================================
-// Authentication Interceptor
-// =============================================================================
-
 /**
- * Configuration options for the auth interceptor.
- */
-export interface AuthInterceptorOptions {
-  /** The header name to use for the token. Defaults to "Authorization" */
-  headerName?: string;
-  /** The property name in context that contains the token. Defaults to "token" */
-  tokenProperty?: string;
-  /** The token prefix. Defaults to "Bearer" */
-  prefix?: string;
-}
-
-/**
- * Create an authentication interceptor that adds Bearer tokens to requests.
+ * Create an authentication interceptor for Link.
+ * Adds Bearer token from client context to request metadata.
  *
  * @example
  * ```typescript
  * const link = new TauriLink<{ token?: string }>({
  *   interceptors: [authInterceptor()],
  * });
- *
- * const client = createClientFromLink<AppContract, { token?: string }>(link);
- * const user = await client.user.get({ id: 1 }, { context: { token: 'jwt' } });
  * ```
  */
 export function authInterceptor<
-  TClientContext extends Record<string, unknown> = Record<string, unknown>,
->(options: AuthInterceptorOptions = {}): LinkInterceptor<TClientContext> {
+  TClientContext extends Record<string, unknown> = Record<string, unknown>
+>(
+  options: {
+    headerName?: string;
+    tokenProperty?: string;
+    prefix?: string;
+  } = {}
+): LinkInterceptor<TClientContext> {
   const headerName = options.headerName ?? "Authorization";
   const tokenProperty = options.tokenProperty ?? "token";
   const prefix = options.prefix ?? "Bearer";

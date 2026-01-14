@@ -70,6 +70,27 @@ export {
   failWithValidation,
   failWithNetwork,
   failWithCancelled,
+  // Public Error Types (for rpc-core)
+  type PublicRpcError,
+  type RpcErrorCode,
+  toPublicError,
+  fromPublicError,
+  isPublicRpcError,
+  hasPublicErrorCode,
+  createPublicError,
+  // Rate Limit Helpers
+  isRateLimitError,
+  getRateLimitRetryAfter,
+  // Error Parsing
+  type RpcErrorShape,
+  type ErrorParserOptions,
+  isRpcErrorShape,
+  parseJsonError,
+  makeCallErrorFromShape,
+  parseToEffectError,
+  fromTransportError,
+  parseEffectError,
+  parseToPublicError,
 } from "./errors";
 
 // =============================================================================
