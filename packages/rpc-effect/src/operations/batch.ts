@@ -2,7 +2,7 @@
 // Batch Operations
 // =============================================================================
 
-import { Effect } from "effect";
+import { Effect, Either } from "effect";
 import type { RpcEffectError } from "../core/errors";
 import {
   RpcTransportService,
@@ -10,7 +10,7 @@ import {
   type RpcServices,
 } from "../services";
 import { validatePath } from "../validation";
-import { defaultParseError } from "./call";
+import { defaultParseError, call } from "./call";
 
 // =============================================================================
 // Types
@@ -78,3 +78,103 @@ export const batchCall = <T = unknown>(
 
     return response as BatchResponse<T>;
   });
+
+// =============================================================================
+// Parallel Batch Operations with Effect.all
+// =============================================================================
+
+/**
+ * Execute batch requests in parallel using Effect.all with concurrency control.
+ * This is more idiomatic than sequential execution when requests are independent.
+ *
+ * @param requests - Array of batch request items
+ * @param concurrency - Maximum number of concurrent requests (default: 5)
+ * @returns Array of results with Either for success/failure per request
+ */
+export const batchCallParallel = <T = unknown>(
+  requests: readonly BatchRequestItem[],
+  concurrency: number = 5,
+): Effect.Effect<
+  readonly Either.Either<T, RpcEffectError>[],
+  never,
+  RpcServices
+> =>
+  Effect.all(
+    requests.map((req) =>
+      call<T>(req.path, req.input).pipe(
+        Effect.either,
+        Effect.map((result) =>
+          Either.isRight(result)
+            ? Either.right(result.right)
+            : Either.left(result.left),
+        ),
+      ),
+    ),
+    { concurrency },
+  );
+
+/**
+ * Execute batch requests in parallel and collect successful results.
+ * Failed requests are logged but don't fail the entire batch.
+ *
+ * @param requests - Array of batch request items
+ * @param concurrency - Maximum number of concurrent requests (default: 5)
+ * @returns BatchResponse with results for each request
+ */
+export const batchCallParallelCollect = <T = unknown>(
+  requests: readonly BatchRequestItem[],
+  concurrency: number = 5,
+): Effect.Effect<BatchResponse<T>, never, RpcServices> =>
+  Effect.gen(function* () {
+    const logger = yield* RpcLoggerService;
+    logger.debug(
+      `Executing parallel batch with ${requests.length} requests (concurrency: ${concurrency})`,
+    );
+
+    const results = yield* batchCallParallel<T>(requests, concurrency);
+
+    const batchResults: BatchResultItem<T>[] = requests.map((req, index) => {
+      const result = results[index];
+      if (Either.isRight(result)) {
+        return { id: req.id, data: result.right };
+      } else {
+        const error = result.left;
+        return {
+          id: req.id,
+          error: {
+            code: error._tag === "RpcCallError" ? error.code : error._tag,
+            message: error.message,
+            details: "details" in error ? error.details : undefined,
+          },
+        };
+      }
+    });
+
+    return { results: batchResults };
+  });
+
+/**
+ * Execute batch requests in parallel, failing fast on first error.
+ * Use this when all requests must succeed.
+ *
+ * @param requests - Array of batch request items
+ * @param concurrency - Maximum number of concurrent requests (default: 5)
+ * @returns Array of successful results, or fails with first error
+ */
+export const batchCallParallelFailFast = <T = unknown>(
+  requests: readonly BatchRequestItem[],
+  concurrency: number = 5,
+): Effect.Effect<readonly T[], RpcEffectError, RpcServices> =>
+  Effect.all(
+    requests.map((req) => call<T>(req.path, req.input)),
+    { concurrency },
+  );
+
+/**
+ * Execute batch requests sequentially (one at a time).
+ * Useful when order matters or to avoid overwhelming the server.
+ */
+export const batchCallSequential = <T = unknown>(
+  requests: readonly BatchRequestItem[],
+): Effect.Effect<BatchResponse<T>, never, RpcServices> =>
+  batchCallParallelCollect<T>(requests, 1);

@@ -20,7 +20,7 @@ import { shouldReconnect, maxReconnectsExceededError } from "./reconnect";
  */
 export const processDataEvent = <T, S extends SubscriptionState>(
   stateRef: Ref.Ref<S>,
-  event: Event<T>
+  event: Event<T>,
 ): Effect.Effect<T> =>
   Effect.gen(function* () {
     if (event.id) {
@@ -37,7 +37,7 @@ export const processErrorEvent = <T, S extends SubscriptionState>(
   _queue: Queue.Queue<QueueItem<T>>,
   error: SubscriptionError,
   config: ReconnectConfig,
-  path: string
+  path: string,
 ): Effect.Effect<
   { shouldRetry: boolean; error: RpcEffectError },
   RpcEffectError
@@ -55,7 +55,7 @@ export const processErrorEvent = <T, S extends SubscriptionState>(
           error: maxReconnectsExceededError(
             path,
             state.reconnectAttempts,
-            config.maxReconnects
+            config.maxReconnects,
           ),
         };
       }

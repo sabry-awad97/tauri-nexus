@@ -18,4 +18,9 @@ export {
   type BatchResponse,
   validateBatchRequests,
   batchCall,
+  // Parallel batch operations with Effect.all
+  batchCallParallel,
+  batchCallParallelCollect,
+  batchCallParallelFailFast,
+  batchCallSequential,
 } from "./batch";

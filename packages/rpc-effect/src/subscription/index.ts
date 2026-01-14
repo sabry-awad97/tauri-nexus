@@ -24,11 +24,22 @@ export {
   resetForReconnect,
   incrementReconnectAttempts,
   resetReconnectAttempts,
+  // Atomic operations using Ref.modify
+  incrementAndGetConsumers,
+  decrementAndGetConsumers,
+  incrementAndGetReconnectAttempts,
+  markCompletedOnce,
+  updateAndGetLastEventId,
+  getState,
 } from "./state";
 
 export { offerEvent, sendShutdownSentinels, takeFromQueue } from "./queue";
 
 export {
+  // Schedule-based reconnection
+  createReconnectSchedule,
+  withReconnection,
+  // Legacy functions (still supported)
   calculateReconnectDelay,
   shouldReconnect,
   prepareReconnect,
@@ -54,4 +65,12 @@ export {
   runStreamWithCallbacks,
   runStreamInterruptible,
   createAsyncIterator,
+  // Resource management
+  withSubscription,
+  // PubSub for multi-consumer
+  type BroadcastSubscription,
+  createBroadcastSubscription,
+  createScopedBroadcastSubscription,
+  // Stream from async iterable
+  createEventSourceStream,
 } from "./stream";

@@ -54,7 +54,7 @@ interface TauriSubscriptionState extends SubscriptionState {
 const subscribeToBackend = (
   request: SubscribeRequest,
   path: string,
-  cleanup: () => void
+  cleanup: () => void,
 ): Effect.Effect<void, RpcEffectError> =>
   Effect.tryPromise({
     try: () => invoke("plugin:rpc|rpc_subscribe", { request }),
@@ -69,7 +69,7 @@ const subscribeToBackend = (
  */
 const unsubscribeFromBackend = (id: string): Effect.Effect<void> =>
   Effect.tryPromise(() =>
-    invoke("plugin:rpc|rpc_unsubscribe", { id: `sub_${id}` })
+    invoke("plugin:rpc|rpc_unsubscribe", { id: `sub_${id}` }),
   ).pipe(Effect.catchAll(() => Effect.void));
 
 // =============================================================================
@@ -83,7 +83,7 @@ const createConnectEffect = <T>(
   stateRef: Ref.Ref<TauriSubscriptionState>,
   path: string,
   input: unknown,
-  eventQueue: Queue.Queue<QueueItem<T>>
+  eventQueue: Queue.Queue<QueueItem<T>>,
 ): Effect.Effect<void, RpcEffectError> =>
   Effect.gen(function* () {
     const state = yield* Ref.get(stateRef);
@@ -114,7 +114,7 @@ const createConnectEffect = <T>(
  */
 const createDisconnectEffect = <T>(
   stateRef: Ref.Ref<TauriSubscriptionState>,
-  eventQueue: Queue.Queue<QueueItem<T>>
+  eventQueue: Queue.Queue<QueueItem<T>>,
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     const state = yield* Ref.get(stateRef);
@@ -140,7 +140,7 @@ const createReconnectEffect =
     stateRef: Ref.Ref<TauriSubscriptionState>,
     path: string,
     input: unknown,
-    eventQueue: Queue.Queue<QueueItem<T>>
+    eventQueue: Queue.Queue<QueueItem<T>>,
   ) =>
   (newId: string): Effect.Effect<void, RpcEffectError> =>
     Effect.gen(function* () {
@@ -161,7 +161,7 @@ const createReconnectEffect =
 const createEventIteratorEffect = <T>(
   path: string,
   input: unknown = null,
-  options: SubscriptionOptions = {}
+  options: SubscriptionOptions = {},
 ): Effect.Effect<EventIterator<T>, RpcEffectError> =>
   Effect.gen(function* () {
     const subscriptionId = yield* generateSubscriptionId;
@@ -230,7 +230,7 @@ const createEventIteratorEffect = <T>(
 export async function createEventIterator<T>(
   path: string,
   input: unknown = null,
-  options: SubscriptionOptions = {}
+  options: SubscriptionOptions = {},
 ): Promise<EventIterator<T>> {
   return Effect.runPromise(createEventIteratorEffect<T>(path, input, options));
 }
@@ -251,7 +251,7 @@ export interface ConsumeOptions<T> {
  */
 export function consumeEventIterator<T>(
   iteratorPromise: Promise<EventIterator<T>>,
-  options: ConsumeOptions<T>
+  options: ConsumeOptions<T>,
 ): () => Promise<void> {
   let cancelled = false;
   let iterator: EventIterator<T> | null = null;

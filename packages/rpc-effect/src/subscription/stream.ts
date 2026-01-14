@@ -2,7 +2,17 @@
 // Subscription Stream - Effect-idiomatic streaming primitives
 // =============================================================================
 
-import { Effect, Stream, Ref, Queue, Scope, Option, Fiber } from "effect";
+import {
+  Effect,
+  Stream,
+  Ref,
+  Queue,
+  Scope,
+  Option,
+  Fiber,
+  Cause,
+  PubSub,
+} from "effect";
 import type { RpcEffectError } from "../core/errors";
 import { createCallError } from "../core/error-utils";
 import {
@@ -51,7 +61,7 @@ export interface SubscriptionStreamConfig<T, S extends SubscriptionState> {
  */
 const processQueueItem = <T, S extends SubscriptionState>(
   item: QueueItem<T>,
-  config: SubscriptionStreamConfig<T, S>
+  config: SubscriptionStreamConfig<T, S>,
 ): Effect.Effect<Option.Option<T>, RpcEffectError> =>
   Effect.gen(function* () {
     if (item === SHUTDOWN_SENTINEL) {
@@ -74,7 +84,7 @@ const processQueueItem = <T, S extends SubscriptionState>(
 
         const canReconnect = yield* shouldReconnect(
           config.stateRef,
-          config.reconnectConfig
+          config.reconnectConfig,
         );
 
         if (canReconnect) {
@@ -88,8 +98,8 @@ const processQueueItem = <T, S extends SubscriptionState>(
           maxReconnectsExceededError(
             config.path,
             state.reconnectAttempts,
-            config.reconnectConfig.maxReconnects
-          )
+            config.reconnectConfig.maxReconnects,
+          ),
         );
       }
 
@@ -107,12 +117,12 @@ const processQueueItem = <T, S extends SubscriptionState>(
  * Handle reconnection logic.
  */
 const handleReconnection = <T, S extends SubscriptionState>(
-  config: SubscriptionStreamConfig<T, S>
+  config: SubscriptionStreamConfig<T, S>,
 ): Effect.Effect<void, RpcEffectError> =>
   Effect.gen(function* () {
     const delay = yield* prepareReconnect(
       config.stateRef,
-      config.reconnectConfig
+      config.reconnectConfig,
     );
     yield* waitForReconnect(delay);
 
@@ -140,7 +150,7 @@ const handleReconnection = <T, S extends SubscriptionState>(
  * - Properly manages consumer count for graceful shutdown
  */
 export const createSubscriptionStream = <T, S extends SubscriptionState>(
-  config: SubscriptionStreamConfig<T, S>
+  config: SubscriptionStreamConfig<T, S>,
 ): Stream.Stream<T, RpcEffectError> =>
   Stream.unwrap(
     Effect.gen(function* () {
@@ -157,7 +167,7 @@ export const createSubscriptionStream = <T, S extends SubscriptionState>(
           yield* decrementConsumers(config.stateRef);
 
           const result = yield* processQueueItem(item, config).pipe(
-            Effect.mapError(Option.some)
+            Effect.mapError(Option.some),
           );
 
           if (Option.isNone(result)) {
@@ -171,9 +181,9 @@ export const createSubscriptionStream = <T, S extends SubscriptionState>(
           }
 
           return result.value;
-        })
+        }),
       );
-    })
+    }),
   );
 
 // =============================================================================
@@ -187,7 +197,7 @@ export const createSubscriptionStream = <T, S extends SubscriptionState>(
  * even if the stream is interrupted or fails.
  */
 export const scopedConnection = <T, S extends SubscriptionState>(
-  config: SubscriptionStreamConfig<T, S>
+  config: SubscriptionStreamConfig<T, S>,
 ): Effect.Effect<void, RpcEffectError, Scope.Scope> =>
   Effect.acquireRelease(config.connect, () => config.disconnect);
 
@@ -200,13 +210,13 @@ export const scopedConnection = <T, S extends SubscriptionState>(
  * - Proper consumer tracking
  */
 export const createManagedSubscriptionStream = <T, S extends SubscriptionState>(
-  config: SubscriptionStreamConfig<T, S>
+  config: SubscriptionStreamConfig<T, S>,
 ): Stream.Stream<T, RpcEffectError> =>
   Stream.unwrapScoped(
     Effect.gen(function* () {
       yield* scopedConnection(config);
       return createSubscriptionStream(config);
-    })
+    }),
   );
 
 // =============================================================================
@@ -218,7 +228,7 @@ export const createManagedSubscriptionStream = <T, S extends SubscriptionState>(
  * Useful for testing or when you need all values at once.
  */
 export const collectStream = <T, E>(
-  stream: Stream.Stream<T, E>
+  stream: Stream.Stream<T, E>,
 ): Effect.Effect<T[], E> =>
   Stream.runCollect(stream).pipe(Effect.map((chunk) => [...chunk]));
 
@@ -230,7 +240,7 @@ export const runStreamWithCallbacks = <T, E>(
   stream: Stream.Stream<T, E>,
   onData: (value: T) => void,
   onError?: (error: E) => void,
-  onComplete?: () => void
+  onComplete?: () => void,
 ): Effect.Effect<void, E> =>
   stream.pipe(
     Stream.tap((value) => Effect.sync(() => onData(value))),
@@ -238,9 +248,11 @@ export const runStreamWithCallbacks = <T, E>(
     Effect.tapError((error) =>
       Effect.sync(() => {
         onError?.(error);
-      })
+      }),
     ),
-    Effect.tap(() => Effect.sync(() => onComplete?.()))
+    Effect.tap(() => Effect.sync(() => onComplete?.())),
+    // Use ensuring for guaranteed cleanup
+    Effect.ensuring(Effect.sync(() => onComplete?.())),
   );
 
 /**
@@ -251,7 +263,7 @@ export const runStreamInterruptible = <T, E>(
   stream: Stream.Stream<T, E>,
   onData: (value: T) => void,
   onError?: (error: E) => void,
-  onComplete?: () => void
+  onComplete?: () => void,
 ): Effect.Effect<Fiber.RuntimeFiber<void, E>> =>
   Effect.fork(runStreamWithCallbacks(stream, onData, onError, onComplete));
 
@@ -271,6 +283,26 @@ export interface AsyncIteratorConfig<T, S extends SubscriptionState> {
   readonly reconnect: (newId: string) => Effect.Effect<void, RpcEffectError>;
 }
 
+// =============================================================================
+// Cause Utilities
+// =============================================================================
+
+/**
+ * Extract error from Cause using idiomatic Effect utilities.
+ */
+const extractErrorFromCause = (
+  cause: Cause.Cause<RpcEffectError>,
+): RpcEffectError | null => Option.getOrNull(Cause.failureOption(cause));
+
+/**
+ * Convert RpcEffectError to plain SubscriptionError for throwing.
+ */
+const toSubscriptionError = (error: RpcEffectError): SubscriptionError => ({
+  code: error._tag === "RpcCallError" ? error.code : error._tag,
+  message: error.message,
+  details: "details" in error ? error.details : undefined,
+});
+
 /**
  * Create an AsyncIterator from subscription configuration.
  *
@@ -278,7 +310,7 @@ export interface AsyncIteratorConfig<T, S extends SubscriptionState> {
  * for consumers who don't want to use Effect directly.
  */
 export const createAsyncIterator = <T, S extends SubscriptionState>(
-  config: AsyncIteratorConfig<T, S>
+  config: AsyncIteratorConfig<T, S>,
 ): AsyncIterator<T> => {
   const processNext = (): Effect.Effect<IteratorResult<T>, RpcEffectError> =>
     Effect.gen(function* () {
@@ -313,13 +345,13 @@ export const createAsyncIterator = <T, S extends SubscriptionState>(
 
           const canReconnect = yield* shouldReconnect(
             config.stateRef,
-            config.reconnectConfig
+            config.reconnectConfig,
           );
 
           if (canReconnect) {
             const delay = yield* prepareReconnect(
               config.stateRef,
-              config.reconnectConfig
+              config.reconnectConfig,
             );
             yield* waitForReconnect(delay);
 
@@ -333,15 +365,15 @@ export const createAsyncIterator = <T, S extends SubscriptionState>(
                   const r = (Math.random() * 16) | 0;
                   const v = c === "x" ? r : (r & 0x3) | 0x8;
                   return v.toString(16);
-                }
+                },
               );
             });
 
-            // Try to reconnect, but if it fails, send error events to pending consumers and propagate the error
+            // Try to reconnect with idiomatic error handling
             const sendErrorToPendingConsumers = (
               code: string,
               message: string,
-              details?: unknown
+              details?: unknown,
             ) =>
               Effect.gen(function* () {
                 const state = yield* Ref.get(config.stateRef);
@@ -361,17 +393,17 @@ export const createAsyncIterator = <T, S extends SubscriptionState>(
                 sendErrorToPendingConsumers(
                   error.code,
                   error.message,
-                  error.details
-                ).pipe(Effect.flatMap(() => Effect.fail(error)))
+                  error.details,
+                ).pipe(Effect.flatMap(() => Effect.fail(error))),
               ),
               // Handle all other RPC errors with their tag as the code
               Effect.catchAll((error) =>
                 sendErrorToPendingConsumers(
                   error._tag,
                   error.message,
-                  "details" in error ? error.details : undefined
-                ).pipe(Effect.flatMap(() => Effect.fail(error)))
-              )
+                  "details" in error ? error.details : undefined,
+                ).pipe(Effect.flatMap(() => Effect.fail(error))),
+              ),
             );
 
             if (reconnectResult) {
@@ -388,8 +420,8 @@ export const createAsyncIterator = <T, S extends SubscriptionState>(
               createCallError(
                 errorPayload.code,
                 errorPayload.message,
-                errorPayload.details
-              )
+                errorPayload.details,
+              ),
             );
           }
 
@@ -400,8 +432,8 @@ export const createAsyncIterator = <T, S extends SubscriptionState>(
             maxReconnectsExceededError(
               config.path,
               currentState.reconnectAttempts,
-              config.reconnectConfig.maxReconnects
-            )
+              config.reconnectConfig.maxReconnects,
+            ),
           );
         }
 
@@ -415,21 +447,14 @@ export const createAsyncIterator = <T, S extends SubscriptionState>(
       }
     });
 
-  // Convert RpcEffectError to plain SubscriptionError for throwing
-  const toSubscriptionError = (error: RpcEffectError): SubscriptionError => ({
-    code: error._tag === "RpcCallError" ? error.code : error._tag,
-    message: error.message,
-    details: "details" in error ? error.details : undefined,
-  });
-
   return {
     async next(): Promise<IteratorResult<T>> {
       const exit = await Effect.runPromiseExit(processNext());
       if (exit._tag === "Success") {
         return exit.value;
       }
-      // Extract error from Cause and convert to SubscriptionError
-      const error = exit.cause._tag === "Fail" ? exit.cause.error : null;
+      // Extract error from Cause using idiomatic utilities
+      const error = extractErrorFromCause(exit.cause);
       if (error) {
         throw toSubscriptionError(error);
       }
@@ -442,3 +467,97 @@ export const createAsyncIterator = <T, S extends SubscriptionState>(
     },
   };
 };
+
+// =============================================================================
+// Resource Management - acquireUseRelease Pattern
+// =============================================================================
+
+/**
+ * Execute a function with a managed subscription iterator.
+ * Uses Effect.acquireUseRelease for idiomatic resource management.
+ */
+export const withSubscription = <T, A, S extends SubscriptionState>(
+  config: AsyncIteratorConfig<T, S>,
+  use: (iterator: AsyncIterator<T>) => Effect.Effect<A, RpcEffectError>,
+): Effect.Effect<A, RpcEffectError> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => createAsyncIterator(config)),
+    use,
+    () => config.disconnect,
+  );
+
+// =============================================================================
+// PubSub for Multi-Consumer Subscriptions
+// =============================================================================
+
+/**
+ * Broadcast subscription for multiple consumers.
+ * Uses Effect's PubSub for idiomatic multi-consumer patterns.
+ */
+export interface BroadcastSubscription<T> {
+  readonly publish: (
+    event: SubscriptionEvent<T>,
+  ) => Effect.Effect<boolean, never>;
+  readonly subscribe: () => Effect.Effect<
+    Queue.Dequeue<SubscriptionEvent<T>>,
+    never,
+    Scope.Scope
+  >;
+  readonly subscriberCount: Effect.Effect<number, never>;
+}
+
+/**
+ * Create a broadcast subscription that can have multiple consumers.
+ * Each consumer receives all events published after they subscribe.
+ */
+export const createBroadcastSubscription = <T>(): Effect.Effect<
+  BroadcastSubscription<T>
+> =>
+  Effect.gen(function* () {
+    const pubsub = yield* PubSub.unbounded<SubscriptionEvent<T>>();
+
+    return {
+      publish: (event: SubscriptionEvent<T>) => PubSub.publish(pubsub, event),
+      subscribe: () => PubSub.subscribe(pubsub),
+      subscriberCount: PubSub.size(pubsub),
+    };
+  });
+
+/**
+ * Create a scoped broadcast subscription with automatic cleanup.
+ */
+export const createScopedBroadcastSubscription = <T>(): Effect.Effect<
+  BroadcastSubscription<T>,
+  never,
+  Scope.Scope
+> =>
+  Effect.acquireRelease(
+    createBroadcastSubscription<T>(),
+    () =>
+      // PubSub cleanup is automatic when scope closes
+      Effect.void,
+  );
+
+// =============================================================================
+// Stream from AsyncIterable (asyncScoped pattern)
+// =============================================================================
+
+/**
+ * Create a stream from an async iterable source.
+ * Uses Stream.fromAsyncIterable for idiomatic event source handling.
+ */
+export const createEventSourceStream = <T>(
+  eventSource: Effect.Effect<AsyncIterable<T>, RpcEffectError>,
+): Stream.Stream<T, RpcEffectError> =>
+  Stream.unwrap(
+    eventSource.pipe(
+      Effect.map((source) =>
+        Stream.fromAsyncIterable(source, (error) =>
+          createCallError(
+            "STREAM_ERROR",
+            error instanceof Error ? error.message : String(error),
+          ),
+        ),
+      ),
+    ),
+  );

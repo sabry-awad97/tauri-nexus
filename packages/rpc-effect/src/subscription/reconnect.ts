@@ -2,14 +2,29 @@
 // Subscription Reconnection Logic
 // =============================================================================
 
-import { Effect, Ref, Duration } from "effect";
+import { Effect, Ref, Duration, Schedule } from "effect";
 import type { RpcEffectError } from "../core/errors";
 import { createCallError } from "../core/error-utils";
 import type { SubscriptionState, ReconnectConfig } from "./types";
 import { incrementReconnectAttempts } from "./state";
 
+// =============================================================================
+// Schedule-Based Reconnection
+// =============================================================================
+
+/**
+ * Create a reconnection schedule with exponential backoff and jitter.
+ * Uses Effect's Schedule for idiomatic retry behavior.
+ */
+export const createReconnectSchedule = (config: ReconnectConfig) =>
+  Schedule.exponential(Duration.millis(config.reconnectDelay)).pipe(
+    Schedule.jittered,
+    Schedule.intersect(Schedule.recurs(config.maxReconnects)),
+  );
+
 /**
  * Calculate reconnection delay with exponential backoff and jitter.
+ * @deprecated Use createReconnectSchedule for idiomatic Effect usage
  */
 export const calculateReconnectDelay = (
   attempt: number,
@@ -68,3 +83,16 @@ export const maxReconnectsExceededError = (
     `Maximum reconnection attempts (${maxReconnects}) exceeded`,
     { attempts, maxReconnects, path },
   );
+
+/**
+ * Execute an effect with automatic reconnection using Schedule.
+ * This is the idiomatic way to handle reconnection in Effect.
+ */
+export const withReconnection = <A, E extends RpcEffectError>(
+  effect: Effect.Effect<A, E>,
+  config: ReconnectConfig,
+): Effect.Effect<A, E> => {
+  if (!config.autoReconnect) return effect;
+
+  return effect.pipe(Effect.retry(createReconnectSchedule(config)));
+};

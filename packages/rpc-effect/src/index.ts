@@ -133,6 +133,11 @@ export {
   type BatchResponse,
   validateBatchRequests,
   batchCall,
+  // Parallel batch operations with Effect.all
+  batchCallParallel,
+  batchCallParallelCollect,
+  batchCallParallelFailFast,
+  batchCallSequential,
 } from "./operations";
 
 // =============================================================================
@@ -198,9 +203,19 @@ export {
   resetForReconnect,
   incrementReconnectAttempts,
   resetReconnectAttempts,
+  // Atomic operations using Ref.modify
+  incrementAndGetConsumers,
+  decrementAndGetConsumers,
+  incrementAndGetReconnectAttempts,
+  markCompletedOnce,
+  updateAndGetLastEventId,
+  getState,
   offerEvent,
   sendShutdownSentinels,
   takeFromQueue,
+  // Schedule-based reconnection
+  createReconnectSchedule,
+  withReconnection,
   calculateReconnectDelay,
   shouldReconnect,
   prepareReconnect,
@@ -220,6 +235,14 @@ export {
   runStreamWithCallbacks,
   runStreamInterruptible,
   createAsyncIterator,
+  // Resource management
+  withSubscription,
+  // PubSub for multi-consumer
+  type BroadcastSubscription,
+  createBroadcastSubscription,
+  createScopedBroadcastSubscription,
+  // Stream from async iterable
+  createEventSourceStream,
 } from "./subscription";
 
 // =============================================================================

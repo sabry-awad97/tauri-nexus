@@ -2,7 +2,7 @@
 // RPC Logger Service
 // =============================================================================
 
-import { Context, Layer } from "effect";
+import { Effect, Layer } from "effect";
 import type { RpcLogger } from "../core/types";
 
 const noopLogger: RpcLogger = {
@@ -22,6 +22,7 @@ export const consoleLogger: RpcLogger = {
 
 /**
  * Logger service for debugging and monitoring.
+ * Uses Effect.Service for idiomatic service definition with default.
  *
  * @example
  * ```ts
@@ -35,13 +36,12 @@ export const consoleLogger: RpcLogger = {
  * Effect.provide(program, RpcLoggerService.layer(myLogger))
  * ```
  */
-export class RpcLoggerService extends Context.Tag("RpcLoggerService")<
-  RpcLoggerService,
-  RpcLogger
->() {
-  /** Default layer with noop logger */
-  static Default = Layer.succeed(RpcLoggerService, noopLogger);
-
+export class RpcLoggerService extends Effect.Service<RpcLoggerService>()(
+  "RpcLoggerService",
+  {
+    succeed: noopLogger,
+  },
+) {
   /** Create a layer with custom logger */
   static layer(logger: RpcLogger) {
     return Layer.succeed(RpcLoggerService, logger);

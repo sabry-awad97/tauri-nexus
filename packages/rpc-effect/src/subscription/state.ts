@@ -113,3 +113,66 @@ export const resetReconnectAttempts = <S extends SubscriptionState>(
   stateRef: Ref.Ref<S>,
 ): Effect.Effect<void> =>
   Ref.update(stateRef, (s) => ({ ...s, reconnectAttempts: 0 }));
+
+// =============================================================================
+// Atomic State Operations using Ref.modify
+// =============================================================================
+
+/**
+ * Increment consumers and return the previous count atomically.
+ * Uses Ref.modify for idiomatic atomic read-modify-write.
+ */
+export const incrementAndGetConsumers = <S extends SubscriptionState>(
+  stateRef: Ref.Ref<S>,
+): Effect.Effect<number> =>
+  Ref.modify(stateRef, (s) => [
+    s.pendingConsumers,
+    { ...s, pendingConsumers: s.pendingConsumers + 1 },
+  ]);
+
+/**
+ * Decrement consumers and return the new count atomically.
+ */
+export const decrementAndGetConsumers = <S extends SubscriptionState>(
+  stateRef: Ref.Ref<S>,
+): Effect.Effect<number> =>
+  Ref.modify(stateRef, (s) => {
+    const newCount = Math.max(0, s.pendingConsumers - 1);
+    return [newCount, { ...s, pendingConsumers: newCount }];
+  });
+
+/**
+ * Increment reconnect attempts and return the new count atomically.
+ */
+export const incrementAndGetReconnectAttempts = <S extends SubscriptionState>(
+  stateRef: Ref.Ref<S>,
+): Effect.Effect<number> =>
+  Ref.modify(stateRef, (s) => {
+    const newCount = s.reconnectAttempts + 1;
+    return [newCount, { ...s, reconnectAttempts: newCount }];
+  });
+
+/**
+ * Mark completed and return whether it was already completed atomically.
+ * Useful for ensuring cleanup only happens once.
+ */
+export const markCompletedOnce = <S extends SubscriptionState>(
+  stateRef: Ref.Ref<S>,
+): Effect.Effect<boolean> =>
+  Ref.modify(stateRef, (s) => [s.completed, { ...s, completed: true }]);
+
+/**
+ * Update last event ID and return the previous ID atomically.
+ */
+export const updateAndGetLastEventId = <S extends SubscriptionState>(
+  stateRef: Ref.Ref<S>,
+  eventId: string,
+): Effect.Effect<string | undefined> =>
+  Ref.modify(stateRef, (s) => [s.lastEventId, { ...s, lastEventId: eventId }]);
+
+/**
+ * Get current state snapshot.
+ */
+export const getState = <S extends SubscriptionState>(
+  stateRef: Ref.Ref<S>,
+): Effect.Effect<S> => Ref.get(stateRef);
