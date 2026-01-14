@@ -99,6 +99,11 @@ export {
   type RpcServices,
   type ValidationIssue,
   type ErrorHandlers,
+  type VirtualErrorCode,
+  type InterceptorHandler,
+  type InterceptorOptions,
+  type RetryInterceptorOptions,
+  type AuthInterceptorOptions,
   // Error classes
   RpcCallError,
   RpcTimeoutError,
@@ -123,7 +128,11 @@ export {
   isRpcCancelledError,
   isRpcValidationError,
   isRpcNetworkError,
+  // Code utilities
+  getErrorCode,
   hasCode,
+  hasAnyCode,
+  isRetryableError,
   // Pattern matching
   matchError,
   // Effect combinators
@@ -147,6 +156,7 @@ export {
   callWithTimeout,
   subscribe as subscribeEffect,
   batchCall as batchCallEffect,
+  defaultParseError,
   type CallOptions as CallEffectOptions,
   type SubscribeOptions as SubscribeEffectOptions,
   // Utils
@@ -160,6 +170,16 @@ export {
   sleep,
   calculateBackoff,
   type RetryConfig,
+  // Interceptors
+  createInterceptorFactory,
+  createSimpleInterceptor,
+  composeInterceptors,
+  loggingInterceptor,
+  retryInterceptor,
+  errorHandlerInterceptor,
+  authInterceptor,
+  timingInterceptor,
+  dedupeInterceptor,
   // Link
   EffectLink,
   type EffectLinkConfig,
@@ -168,9 +188,11 @@ export {
 // Export error utilities from local errors module
 export {
   type RpcErrorShape,
+  type ErrorParserOptions,
   isRpcErrorShape,
   parseJsonError,
   makeCallErrorFromShape,
+  parseToEffectError,
   parseEffectError,
   fromTransportError,
 } from "../core/errors";

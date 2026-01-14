@@ -16,6 +16,9 @@ import {
   isRpcValidationError,
   isRpcNetworkError,
   hasCode,
+  hasAnyCode,
+  getErrorCode,
+  isRetryableError,
   matchError,
   failWithCallError,
   failWithTimeout,
@@ -148,9 +151,80 @@ describe("hasCode", () => {
     expect(hasCode(error, "VALIDATION_ERROR")).toBe(true);
   });
 
-  it("should return INTERNAL_ERROR for RpcNetworkError", () => {
+  it("should return NETWORK_ERROR for RpcNetworkError", () => {
     const error = makeNetworkError("path", new Error());
-    expect(hasCode(error, "INTERNAL_ERROR")).toBe(true);
+    expect(hasCode(error, "NETWORK_ERROR")).toBe(true);
+  });
+});
+
+describe("getErrorCode", () => {
+  it("should return code for RpcCallError", () => {
+    expect(getErrorCode(makeCallError("NOT_FOUND", "Not found"))).toBe(
+      "NOT_FOUND"
+    );
+  });
+
+  it("should return TIMEOUT for RpcTimeoutError", () => {
+    expect(getErrorCode(makeTimeoutError("path", 1000))).toBe("TIMEOUT");
+  });
+
+  it("should return CANCELLED for RpcCancelledError", () => {
+    expect(getErrorCode(makeCancelledError("path"))).toBe("CANCELLED");
+  });
+
+  it("should return VALIDATION_ERROR for RpcValidationError", () => {
+    expect(getErrorCode(makeValidationError("path", []))).toBe(
+      "VALIDATION_ERROR"
+    );
+  });
+
+  it("should return NETWORK_ERROR for RpcNetworkError", () => {
+    expect(getErrorCode(makeNetworkError("path", new Error()))).toBe(
+      "NETWORK_ERROR"
+    );
+  });
+});
+
+describe("hasAnyCode", () => {
+  it("should match any of the given codes", () => {
+    const error = makeCallError("NOT_FOUND", "Not found");
+    expect(hasAnyCode(error, ["NOT_FOUND", "BAD_REQUEST"])).toBe(true);
+    expect(hasAnyCode(error, ["BAD_REQUEST", "FORBIDDEN"])).toBe(false);
+  });
+
+  it("should work with virtual codes", () => {
+    const timeout = makeTimeoutError("path", 1000);
+    expect(hasAnyCode(timeout, ["TIMEOUT", "CANCELLED"])).toBe(true);
+  });
+});
+
+describe("isRetryableError", () => {
+  it("should return false for non-retryable errors", () => {
+    expect(isRetryableError(makeValidationError("path", []))).toBe(false);
+    expect(isRetryableError(makeCancelledError("path"))).toBe(false);
+    expect(
+      isRetryableError(makeCallError("UNAUTHORIZED", "Unauthorized"))
+    ).toBe(false);
+    expect(isRetryableError(makeCallError("FORBIDDEN", "Forbidden"))).toBe(
+      false
+    );
+    expect(isRetryableError(makeCallError("BAD_REQUEST", "Bad request"))).toBe(
+      false
+    );
+    expect(isRetryableError(makeCallError("NOT_FOUND", "Not found"))).toBe(
+      false
+    );
+  });
+
+  it("should return true for retryable errors", () => {
+    expect(isRetryableError(makeTimeoutError("path", 1000))).toBe(true);
+    expect(isRetryableError(makeNetworkError("path", new Error()))).toBe(true);
+    expect(
+      isRetryableError(makeCallError("INTERNAL_ERROR", "Internal error"))
+    ).toBe(true);
+    expect(
+      isRetryableError(makeCallError("SERVICE_UNAVAILABLE", "Unavailable"))
+    ).toBe(true);
   });
 });
 

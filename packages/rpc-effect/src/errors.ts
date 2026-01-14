@@ -95,15 +95,47 @@ export const isRpcValidationError = (
 export const isRpcNetworkError = (error: unknown): error is RpcNetworkError =>
   error instanceof RpcNetworkError;
 
-/** Check if an Effect error has a specific code */
-export const hasCode = (error: RpcEffectError, code: string): boolean =>
+/** Virtual codes for non-call errors */
+export type VirtualErrorCode =
+  | "TIMEOUT"
+  | "CANCELLED"
+  | "VALIDATION_ERROR"
+  | "NETWORK_ERROR";
+
+/** Get the effective code from any RPC error */
+export const getErrorCode = (error: RpcEffectError): string =>
   matchError(error, {
-    onCallError: (e) => e.code === code,
-    onTimeoutError: () => code === "TIMEOUT",
-    onCancelledError: () => code === "CANCELLED",
-    onValidationError: () => code === "VALIDATION_ERROR",
-    onNetworkError: () => code === "INTERNAL_ERROR",
+    onCallError: (e) => e.code,
+    onTimeoutError: () => "TIMEOUT",
+    onCancelledError: () => "CANCELLED",
+    onValidationError: () => "VALIDATION_ERROR",
+    onNetworkError: () => "NETWORK_ERROR",
   });
+
+/** Check if an Effect error has a specific code (type-safe) */
+export const hasCode = <C extends string>(
+  error: RpcEffectError,
+  code: C
+): boolean => getErrorCode(error) === code;
+
+/** Check if error matches any of the given codes */
+export const hasAnyCode = (
+  error: RpcEffectError,
+  codes: readonly string[]
+): boolean => codes.includes(getErrorCode(error));
+
+/** Check if error is retryable (not a client error) */
+export const isRetryableError = (error: RpcEffectError): boolean => {
+  const nonRetryable = [
+    "VALIDATION_ERROR",
+    "UNAUTHORIZED",
+    "FORBIDDEN",
+    "CANCELLED",
+    "BAD_REQUEST",
+    "NOT_FOUND",
+  ];
+  return !hasAnyCode(error, nonRetryable);
+};
 
 // =============================================================================
 // Pattern Matching

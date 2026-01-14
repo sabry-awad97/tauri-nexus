@@ -93,7 +93,7 @@ export function createError(
 }
 
 // =============================================================================
-// Error Parsing
+// Error Parsing (Public RpcError format)
 // =============================================================================
 
 /**
@@ -138,8 +138,11 @@ export function parseError(error: unknown, timeoutMs?: number): RpcError {
 }
 
 // =============================================================================
-// Effect Error Parsing (comprehensive)
+// Unified Effect Error Parser
 // =============================================================================
+
+/** Symbol for Effect's FiberFailure cause */
+const FiberFailureCauseId = Symbol.for("effect/Runtime/FiberFailure/Cause");
 
 /**
  * Extract failures from Effect's Cause structure.
@@ -149,13 +152,8 @@ function extractFailuresFromCause(cause: unknown): unknown[] {
 
   const c = cause as Record<string, unknown>;
 
-  if (c._tag === "Fail") {
-    return [c.error];
-  }
-
-  if (c._tag === "Die") {
-    return [c.defect];
-  }
+  if (c._tag === "Fail") return [c.error];
+  if (c._tag === "Die") return [c.defect];
 
   if (c._tag === "Sequential" || c._tag === "Parallel") {
     return [
@@ -168,129 +166,141 @@ function extractFailuresFromCause(cause: unknown): unknown[] {
 }
 
 /**
- * Parse an unknown error into an Effect RPC error.
- * Handles complex cases like JSON parsing, FiberFailure extraction, and nested errors.
+ * Error parser options for customizing behavior.
  */
-export const parseEffectError = (
+export interface ErrorParserOptions {
+  /** Enable JSON string parsing (for Tauri transport) */
+  readonly parseJson?: boolean;
+  /** Enable FiberFailure extraction (for complex Effect scenarios) */
+  readonly extractFiberFailure?: boolean;
+  /** Enable nested error unwrapping */
+  readonly unwrapNested?: boolean;
+}
+
+/** Default options for transport error parsing */
+const defaultParserOptions: ErrorParserOptions = {
+  parseJson: true,
+  extractFiberFailure: false,
+  unwrapNested: false,
+};
+
+/** Full options for comprehensive error parsing */
+const fullParserOptions: ErrorParserOptions = {
+  parseJson: true,
+  extractFiberFailure: true,
+  unwrapNested: true,
+};
+
+/**
+ * Unified error parser that converts any error to RpcEffectError.
+ * Configurable via options for different use cases.
+ */
+export const parseToEffectError = (
   error: unknown,
   path: string,
-  timeoutMs?: number
+  timeoutMs?: number,
+  options: ErrorParserOptions = defaultParserOptions
 ): RpcEffectError => {
-  // Already an Effect error
-  if (isEffectRpcError(error)) {
-    return error;
-  }
+  // 1. Passthrough Effect errors
+  if (isEffectRpcError(error)) return error;
 
-  // AbortError handling
+  // 2. AbortError → Timeout or Cancelled
   if (error instanceof Error && error.name === "AbortError") {
     return timeoutMs !== undefined
       ? makeTimeoutError(path, timeoutMs)
       : makeCancelledError(path);
   }
 
-  // Handle Effect FiberFailure
-  const FiberFailureCauseId = Symbol.for("effect/Runtime/FiberFailure/Cause");
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    FiberFailureCauseId in error
-  ) {
-    const cause = (error as Record<symbol, unknown>)[FiberFailureCauseId];
-    if (cause && typeof cause === "object") {
-      const failures = extractFailuresFromCause(cause);
-      if (failures.length > 0) {
-        return parseEffectError(failures[0], path, timeoutMs);
+  // 3. FiberFailure extraction (optional)
+  if (options.extractFiberFailure) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      FiberFailureCauseId in error
+    ) {
+      const cause = (error as Record<symbol, unknown>)[FiberFailureCauseId];
+      if (cause && typeof cause === "object") {
+        const failures = extractFailuresFromCause(cause);
+        if (failures.length > 0) {
+          return parseToEffectError(failures[0], path, timeoutMs, options);
+        }
       }
     }
   }
 
-  // Handle nested error objects
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "error" in error &&
-    (error as { error: unknown }).error !== undefined
-  ) {
-    return parseEffectError(
-      (error as { error: unknown }).error,
-      path,
-      timeoutMs
-    );
+  // 4. Nested error unwrapping (optional)
+  if (options.unwrapNested) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "error" in error &&
+      (error as { error: unknown }).error !== undefined
+    ) {
+      return parseToEffectError(
+        (error as { error: unknown }).error,
+        path,
+        timeoutMs,
+        options
+      );
+    }
   }
 
-  // Handle JSON string errors
-  if (typeof error === "string") {
+  // 5. RPC error shape from transport
+  if (isRpcErrorShape(error)) {
+    return makeCallErrorFromShape(error);
+  }
+
+  // 6. JSON string parsing (optional, for Tauri)
+  if (options.parseJson && typeof error === "string") {
     const parsed = parseJsonError(error);
     return parsed
       ? makeCallErrorFromShape(parsed)
       : makeCallError("UNKNOWN", error);
   }
 
-  // Handle RPC error shape objects
-  if (isRpcErrorShape(error)) {
-    return makeCallErrorFromShape(error);
+  // 7. String error (no JSON parsing)
+  if (typeof error === "string") {
+    return makeCallError("UNKNOWN", error);
   }
 
-  // Handle Error objects with JSON message
+  // 8. Standard Error (may have JSON message)
   if (error instanceof Error) {
-    const parsed = parseJsonError(error.message);
-    return parsed
-      ? makeCallErrorFromShape(parsed)
-      : makeCallError("UNKNOWN", error.message, undefined, error.stack);
+    if (options.parseJson) {
+      const parsed = parseJsonError(error.message);
+      if (parsed) return makeCallErrorFromShape(parsed);
+    }
+    return makeCallError("UNKNOWN", error.message, undefined, error.stack);
   }
 
-  // Fallback
+  // 9. Fallback
   return makeCallError("UNKNOWN", String(error));
 };
 
 // =============================================================================
-// Transport Error Conversion
+// Convenience Aliases (backward compatible)
 // =============================================================================
 
 /**
  * Convert a transport error to an Effect RPC error.
- * This is the standard error converter for Tauri transport.
- * Handles: Effect errors (passthrough), AbortError, RPC shape, JSON strings, Error, string.
+ * Standard error converter for Tauri transport with JSON parsing.
  */
 export const fromTransportError = (
   error: unknown,
   path: string,
   timeoutMs?: number
-): RpcEffectError => {
-  // Passthrough Effect errors
-  if (isEffectRpcError(error)) return error;
+): RpcEffectError =>
+  parseToEffectError(error, path, timeoutMs, defaultParserOptions);
 
-  // AbortError → Timeout or Cancelled
-  if (error instanceof Error && error.name === "AbortError") {
-    return timeoutMs !== undefined
-      ? makeTimeoutError(path, timeoutMs)
-      : makeCancelledError(path);
-  }
-
-  // RPC error shape from transport
-  if (isRpcErrorShape(error)) {
-    return makeCallErrorFromShape(error);
-  }
-
-  // JSON string error (common from Tauri)
-  if (typeof error === "string") {
-    const parsed = parseJsonError(error);
-    return parsed
-      ? makeCallErrorFromShape(parsed)
-      : makeCallError("UNKNOWN", error);
-  }
-
-  // Standard Error (may have JSON message)
-  if (error instanceof Error) {
-    const parsed = parseJsonError(error.message);
-    return parsed
-      ? makeCallErrorFromShape(parsed)
-      : makeCallError("UNKNOWN", error.message, undefined, error.stack);
-  }
-
-  // Fallback
-  return makeCallError("UNKNOWN", String(error));
-};
+/**
+ * Parse an unknown error into an Effect RPC error.
+ * Comprehensive parser with FiberFailure extraction and nested unwrapping.
+ */
+export const parseEffectError = (
+  error: unknown,
+  path: string,
+  timeoutMs?: number
+): RpcEffectError =>
+  parseToEffectError(error, path, timeoutMs, fullParserOptions);
 
 // =============================================================================
 // Rate Limit Helpers

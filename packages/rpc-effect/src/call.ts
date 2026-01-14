@@ -27,10 +27,10 @@ import type { RpcServices } from "./runtime";
 // =============================================================================
 
 /**
- * Default error converter for when transport doesn't provide one.
- * Handles basic cases: Effect errors, AbortError, Error, string.
+ * Minimal error converter for when transport doesn't provide one.
+ * Handles basic cases only - transport should provide parseError for full support.
  */
-const defaultParseError = (
+export const defaultParseError = (
   error: unknown,
   path: string,
   timeoutMs?: number
@@ -58,6 +58,12 @@ const defaultParseError = (
   // Fallback
   return makeCallError("UNKNOWN", String(error));
 };
+
+/**
+ * Get the error parser from transport or use default.
+ */
+const getParseError = (transport: { parseError?: typeof defaultParseError }) =>
+  transport.parseError ?? defaultParseError;
 
 // =============================================================================
 // Interceptor Execution
@@ -145,7 +151,7 @@ export const call = <T>(
 
         return transport.call<T>(path, input);
       },
-      transport.parseError ?? defaultParseError
+      getParseError(transport)
     );
 
     const durationMs = Date.now() - startTime;
@@ -203,8 +209,7 @@ export const subscribe = <T>(
           lastEventId: options.lastEventId,
           signal: options.signal,
         }),
-      catch: (error) =>
-        (transport.parseError ?? defaultParseError)(error, path),
+      catch: (error) => getParseError(transport)(error, path),
     });
 
     return iterator;
@@ -267,8 +272,7 @@ export const batchCall = <T = unknown>(
 
     const response = yield* Effect.tryPromise({
       try: () => transport.callBatch<T>(requests),
-      catch: (error) =>
-        (transport.parseError ?? defaultParseError)(error, "batch"),
+      catch: (error) => getParseError(transport)(error, "batch"),
     });
 
     return response as BatchResponse<T>;

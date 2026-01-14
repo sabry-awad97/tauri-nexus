@@ -55,7 +55,12 @@ export {
   isRpcCancelledError,
   isRpcValidationError,
   isRpcNetworkError,
+  // Code utilities
+  type VirtualErrorCode,
+  getErrorCode,
   hasCode,
+  hasAnyCode,
+  isRetryableError,
   // Pattern Matching
   type ErrorHandlers,
   matchError,
@@ -119,6 +124,7 @@ export {
   subscribe,
   validateBatchRequests,
   batchCall,
+  defaultParseError,
   type CallOptions,
   type SubscribeOptions,
   type BatchRequestItem,
@@ -150,6 +156,12 @@ export {
 // =============================================================================
 
 export {
+  // Generic factory
+  createInterceptorFactory,
+  createSimpleInterceptor,
+  composeInterceptors,
+  type InterceptorHandler,
+  // Pre-built interceptors
   loggingInterceptor,
   retryInterceptor,
   errorHandlerInterceptor,

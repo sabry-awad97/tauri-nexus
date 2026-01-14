@@ -27,6 +27,94 @@ export interface AuthInterceptorOptions extends InterceptorOptions {
 }
 
 // =============================================================================
+// Generic Interceptor Factory
+// =============================================================================
+
+/**
+ * Handler function type for interceptor logic.
+ */
+export type InterceptorHandler<TOptions> = (
+  options: TOptions
+) => <T>(ctx: InterceptorContext, next: () => Promise<T>) => Promise<T>;
+
+/**
+ * Create an interceptor factory with typed options.
+ * Reduces boilerplate when creating custom interceptors.
+ *
+ * @example
+ * const myInterceptor = createInterceptorFactory(
+ *   "myInterceptor",
+ *   (options: { prefix: string }) => async (ctx, next) => {
+ *     console.log(options.prefix, ctx.path);
+ *     return next();
+ *   }
+ * );
+ *
+ * const interceptor = myInterceptor({ prefix: "[API]" });
+ */
+export function createInterceptorFactory<TOptions extends InterceptorOptions>(
+  defaultName: string,
+  handler: InterceptorHandler<TOptions>
+): (options: TOptions) => RpcInterceptor {
+  return (options: TOptions): RpcInterceptor => ({
+    name: options.name ?? defaultName,
+    intercept: handler(options),
+  });
+}
+
+/**
+ * Create a simple interceptor without options.
+ */
+export function createSimpleInterceptor(
+  name: string,
+  intercept: <T>(ctx: InterceptorContext, next: () => Promise<T>) => Promise<T>
+): RpcInterceptor {
+  return { name, intercept };
+}
+
+/**
+ * Compose multiple interceptors into a single interceptor.
+ */
+export function composeInterceptors(
+  name: string,
+  interceptors: readonly RpcInterceptor[]
+): RpcInterceptor {
+  return {
+    name,
+    intercept: async <T>(ctx: InterceptorContext, next: () => Promise<T>) => {
+      let current = next;
+      for (let i = interceptors.length - 1; i >= 0; i--) {
+        const interceptor = interceptors[i];
+        const prev = current;
+        current = () => interceptor.intercept(ctx, prev);
+      }
+      return current();
+    },
+  };
+}
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export interface InterceptorOptions {
+  readonly name?: string;
+}
+
+export interface RetryInterceptorOptions extends InterceptorOptions {
+  readonly maxRetries?: number;
+  readonly delay?: number;
+  readonly backoff?: "linear" | "exponential";
+  readonly retryOn?: (error: unknown) => boolean;
+}
+
+export interface AuthInterceptorOptions extends InterceptorOptions {
+  readonly getToken: () => string | null | Promise<string | null>;
+  readonly headerName?: string;
+  readonly prefix?: string;
+}
+
+// =============================================================================
 // Helpers (Internal)
 // =============================================================================
 
