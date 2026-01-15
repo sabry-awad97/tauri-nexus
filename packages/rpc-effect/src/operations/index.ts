@@ -1,14 +1,27 @@
 // =============================================================================
-// Operations Module Exports
+// Operations Module
 // =============================================================================
 
 export {
-  defaultParseError,
+  // Types
+  type ResilienceServices,
+  type ResilienceErrors,
+  type SchemaConfig,
+  type ResilienceConfig,
   type CallOptions,
-  call,
-  callWithTimeout,
   type SubscribeOptions,
+  // Error handling
+  defaultParseError,
+  // Call
+  call,
+  createCall,
+  createResilientCall,
+  // Subscribe
   subscribe,
+  subscribeStream,
+  subscribeCollect,
+  subscribeForEach,
+  createSubscribe,
 } from "./call";
 
 export {
@@ -18,7 +31,6 @@ export {
   type BatchResponse,
   validateBatchRequests,
   batchCall,
-  // Parallel batch operations with Effect.all
   batchCallParallel,
   batchCallParallelCollect,
   batchCallParallelFailFast,

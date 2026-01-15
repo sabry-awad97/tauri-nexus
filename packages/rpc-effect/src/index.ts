@@ -2,6 +2,8 @@
 // @tauri-nexus/rpc-effect - Effect-Based RPC Library
 // =============================================================================
 // Pure Effect-based RPC implementation with clean architecture.
+// Includes idiomatic Effect patterns: Schema validation, Context services,
+// Metrics, Circuit Breaker, Rate Limiting, Caching, and Request Batching.
 
 // =============================================================================
 // Core Types & Errors
@@ -121,19 +123,32 @@ export {
 // =============================================================================
 
 export {
-  defaultParseError,
+  // Types
+  type ResilienceServices,
+  type ResilienceErrors,
+  type SchemaConfig,
+  type ResilienceConfig,
   type CallOptions,
-  call,
-  callWithTimeout,
   type SubscribeOptions,
+  // Error handling
+  defaultParseError,
+  // Call
+  call,
+  createCall,
+  createResilientCall,
+  // Subscribe
   subscribe,
+  subscribeStream,
+  subscribeCollect,
+  subscribeForEach,
+  createSubscribe,
+  // Batch
   type BatchRequestItem,
   type BatchResultItem,
   type BatchRequest,
   type BatchResponse,
   validateBatchRequests,
   batchCall,
-  // Parallel batch operations with Effect.all
   batchCallParallel,
   batchCallParallelCollect,
   batchCallParallelFailFast,
@@ -267,3 +282,117 @@ export {
   getInterceptors,
   getLogger,
 } from "./client";
+
+// =============================================================================
+// Schema Validation (Effect Schema)
+// =============================================================================
+// Note: Schema-validated calls are available via callWithSchema and
+// resilientCallWithSchema in the operations module. These functions
+// accept Effect Schema definitions for input/output validation.
+
+export {
+  // Error schema utilities (used internally)
+  createSchemaValidationError,
+  mapSchemaError,
+  schemaIssueToValidationIssue,
+} from "./schema";
+
+// =============================================================================
+// Request Context (Effect Context)
+// =============================================================================
+// Core context types used internally by call(). Additional context utilities
+// (ResponseContext, TimingContext, etc.) are available in the context module.
+
+export {
+  // Request context (used by call.ts)
+  RequestContext,
+  type RequestContextData,
+  createRequestContext,
+  // Trace context (used by call.ts)
+  TraceContext,
+  type TraceContextData,
+  createTraceContext,
+  generateTraceId,
+  generateSpanId,
+  // Span management (used by resilience)
+  SpanContext,
+  withSpan,
+} from "./context";
+
+// =============================================================================
+// Metrics (Effect Metric)
+// =============================================================================
+
+export {
+  // Core metrics
+  rpcCallCounter,
+  rpcErrorCounter,
+  rpcLatencyHistogram,
+  rpcActiveCallsGauge,
+  rpcRetryCounter,
+  rpcCacheHitCounter,
+  rpcCacheMissCounter,
+  // Metric combinators
+  withMetrics,
+  withLatencyTracking,
+  withErrorCounting,
+  withActiveCallTracking,
+  // Metric tags
+  type MetricTags,
+  createMetricTags,
+  // Metric service
+  MetricsService,
+  type MetricsConfig,
+  createMetricsLayer,
+  // Metric snapshots
+  getMetricSnapshot,
+  type MetricSnapshot,
+  // Configuration
+  defaultLatencyBoundaries,
+  createLatencyBoundaries,
+  createMetricName,
+  type MetricNamespace,
+} from "./metrics";
+
+// =============================================================================
+// Resilience (Circuit Breaker, Bulkhead, Rate Limiting)
+// =============================================================================
+// Core resilience services and combinators used by call(). Additional utilities
+// (getCircuitState, resetCircuit, createTokenBucket, hedging) are available
+// in the resilience module directly.
+
+export {
+  // Circuit breaker
+  CircuitBreakerService,
+  type CircuitBreakerConfig,
+  createCircuitBreaker,
+  withCircuitBreaker,
+  CircuitOpenError,
+  // Bulkhead
+  BulkheadService,
+  type BulkheadConfig,
+  createBulkhead,
+  withBulkhead,
+  BulkheadFullError,
+  // Rate limiting
+  RateLimiterService,
+  type RateLimiterConfig,
+  createRateLimiter,
+  withRateLimit,
+  RateLimitExceededError,
+} from "./resilience";
+
+// =============================================================================
+// Cache (Effect Cache)
+// =============================================================================
+// Core cache types used internally by call(). Additional cache utilities
+// (invalidation, SWR, warming) are available in the cache module.
+
+export {
+  // Cache service (used by call.ts)
+  RpcCacheService,
+  type RpcCacheConfig,
+  createRpcCacheLayer,
+  // Cache combinator (used by call.ts)
+  withCache,
+} from "./cache";

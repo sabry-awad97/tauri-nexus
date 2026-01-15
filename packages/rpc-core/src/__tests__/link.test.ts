@@ -185,7 +185,10 @@ describe("TauriLink", () => {
 
       await link.call("test", null);
 
-      expect(finalMeta).toEqual({ interceptor1: true, interceptor2: true });
+      expect(finalMeta).toMatchObject({
+        interceptor1: true,
+        interceptor2: true,
+      });
     });
 
     it("should allow interceptors to transform result", async () => {
@@ -222,7 +225,7 @@ describe("TauriLink", () => {
           path: "test.path",
           input: { foo: "bar" },
           type: "query",
-        }),
+        })
       );
     });
 
@@ -237,13 +240,13 @@ describe("TauriLink", () => {
 
       expect(onResponse).toHaveBeenCalledWith(
         { data: "test" },
-        expect.objectContaining({ path: "test" }),
+        expect.objectContaining({ path: "test" })
       );
     });
 
     it("should call onError on failure", async () => {
       mockInvoke.mockRejectedValue(
-        JSON.stringify({ code: "NOT_FOUND", message: "Not found" }),
+        JSON.stringify({ code: "NOT_FOUND", message: "Not found" })
       );
 
       const onError = vi.fn();
@@ -256,7 +259,7 @@ describe("TauriLink", () => {
 
       expect(onError).toHaveBeenCalledWith(
         expect.objectContaining({ code: "NOT_FOUND" }),
-        expect.objectContaining({ path: "test" }),
+        expect.objectContaining({ path: "test" })
       );
     });
   });
@@ -291,7 +294,7 @@ describe("TauriLink", () => {
       expect(mockCreateEventIterator).toHaveBeenCalledWith(
         "stream.counter",
         { start: 0 },
-        expect.any(Object),
+        expect.any(Object)
       );
       expect(result).toBe(mockIterator);
     });
@@ -402,7 +405,7 @@ describe("interceptor helpers", () => {
       const error = { code: "NOT_FOUND", message: "Not found" };
 
       await expect(
-        interceptor(ctx, () => Promise.reject(error)),
+        interceptor(ctx, () => Promise.reject(error))
       ).rejects.toEqual(error);
 
       expect(handler).toHaveBeenCalledWith(error, ctx);
@@ -421,7 +424,7 @@ describe("interceptor helpers", () => {
       };
 
       await expect(
-        interceptor(ctx, () => Promise.reject(new Error("plain error"))),
+        interceptor(ctx, () => Promise.reject(new Error("plain error")))
       ).rejects.toThrow("plain error");
 
       expect(handler).not.toHaveBeenCalled();
@@ -446,7 +449,7 @@ describe("interceptor helpers", () => {
 
       expect(consoleSpy).toHaveBeenCalledWith("[TEST] user.get", { id: 1 });
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[TEST] user.get completed in"),
+        expect.stringContaining("[TEST] user.get completed in")
       );
 
       consoleSpy.mockRestore();
@@ -469,12 +472,12 @@ describe("interceptor helpers", () => {
       };
 
       await expect(
-        interceptor(ctx, () => Promise.reject(new Error("fail"))),
+        interceptor(ctx, () => Promise.reject(new Error("fail")))
       ).rejects.toThrow("fail");
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining("[RPC] test failed in"),
-        expect.any(Error),
+        expect.any(Error)
       );
 
       consoleSpy.mockRestore();
@@ -525,7 +528,7 @@ describe("interceptor helpers", () => {
         interceptor(ctx, async () => {
           attempts++;
           throw { code: "NOT_FOUND", message: "Not found" };
-        }),
+        })
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
 
       expect(attempts).toBe(1);
@@ -665,7 +668,7 @@ describe("Rate Limit Helpers", () => {
       fc.constant("SERIALIZATION_ERROR"),
       fc.constant("TIMEOUT"),
       fc.constant("CANCELLED"),
-      fc.constant("UNKNOWN"),
+      fc.constant("UNKNOWN")
     );
 
     // Arbitrary for generating rate limit details
@@ -682,9 +685,9 @@ describe("Rate Limit Helpers", () => {
         fc.oneof(
           rateLimitDetailsArb,
           fc.record({ other: fc.string() }),
-          fc.constant(null),
+          fc.constant(null)
         ),
-        { nil: undefined },
+        { nil: undefined }
       ),
     });
 
@@ -711,14 +714,14 @@ describe("Rate Limit Helpers", () => {
           if (isRateLimited && hasValidDetails) {
             // Should return the retry_after_ms value
             expect(result).toBe(
-              (error.details as { retry_after_ms: number }).retry_after_ms,
+              (error.details as { retry_after_ms: number }).retry_after_ms
             );
           } else {
             // Should return undefined
             expect(result).toBeUndefined();
           }
         }),
-        { numRuns: 100 },
+        { numRuns: 100 }
       );
     });
 
@@ -734,7 +737,7 @@ describe("Rate Limit Helpers", () => {
           const expected = error.code === "RATE_LIMITED";
           expect(result).toBe(expected);
         }),
-        { numRuns: 100 },
+        { numRuns: 100 }
       );
     });
 
@@ -749,13 +752,13 @@ describe("Rate Limit Helpers", () => {
             fc.constant(null),
             fc.constant(undefined),
             fc.array(fc.anything()),
-            fc.record({ notCode: fc.string(), notMessage: fc.string() }),
+            fc.record({ notCode: fc.string(), notMessage: fc.string() })
           ),
           (value) => {
             expect(isRateLimitError(value)).toBe(false);
-          },
+          }
         ),
-        { numRuns: 100 },
+        { numRuns: 100 }
       );
     });
   });
@@ -944,9 +947,9 @@ describe("authInterceptor", () => {
             } else {
               expect(ctx.meta["Authorization"]).toBeUndefined();
             }
-          },
+          }
         ),
-        { numRuns: 100 },
+        { numRuns: 100 }
       );
     });
 
@@ -987,9 +990,9 @@ describe("authInterceptor", () => {
             await interceptor(ctx, () => Promise.resolve("result"));
 
             expect(ctx.meta[actualHeaderName]).toBe(`${actualPrefix} ${token}`);
-          },
+          }
         ),
-        { numRuns: 100 },
+        { numRuns: 100 }
       );
     });
   });

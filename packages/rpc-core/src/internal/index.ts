@@ -163,7 +163,6 @@ export {
   consoleLogger,
   // Call effects
   call as callEffect,
-  callWithTimeout,
   subscribe as subscribeEffect,
   batchCall as batchCallEffect,
   defaultParseError,
