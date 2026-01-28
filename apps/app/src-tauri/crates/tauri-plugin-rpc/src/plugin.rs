@@ -72,11 +72,15 @@ pub fn validate_input_size(input: &serde_json::Value, config: &RpcConfig) -> Res
 }
 
 /// Validate subscription ID format when provided by client.
+///
+/// This function accepts both formats for backward compatibility:
+/// - With prefix: "sub_01234567-89ab-7cde-8f01-234567890abc"
+/// - Without prefix: "01234567-89ab-7cde-8f01-234567890abc"
 pub fn validate_subscription_id(id: &str) -> Result<SubscriptionId, RpcError> {
     if id.is_empty() {
         return Err(RpcError::validation("Subscription ID cannot be empty"));
     }
-    SubscriptionId::parse(id)
+    SubscriptionId::parse_lenient(id)
         .map_err(|e| RpcError::validation(format!("Invalid subscription ID '{}': {}", id, e)))
 }
 

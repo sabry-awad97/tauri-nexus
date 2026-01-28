@@ -22,12 +22,14 @@
 
 mod errors;
 mod metrics;
+mod retry_delay;
 
 pub use errors::{ManagerError, ParseError, PublishResult, ValidationError};
 pub use metrics::{
     MetricsSnapshot, PublisherMetrics, PublisherMetricsSnapshot, SubscriberMetrics,
     SubscriberMetricsSnapshot, SubscriptionMetrics,
 };
+pub use retry_delay::RetryDelay;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -85,12 +87,47 @@ impl SubscriptionId {
 
     /// Parse a subscription ID from a string.
     ///
-    /// Accepts both formats:
+    /// This method requires the "sub_" prefix for consistency.
+    /// Use `parse_lenient()` if you need to accept both formats.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// // Valid - with prefix
+    /// let id = SubscriptionId::parse("sub_01234567-89ab-7cde-8f01-234567890abc")?;
+    ///
+    /// // Invalid - without prefix
+    /// let result = SubscriptionId::parse("01234567-89ab-7cde-8f01-234567890abc");
+    /// assert!(result.is_err());
+    /// ```
+    pub fn parse(s: &str) -> Result<Self, ParseError> {
+        if let Some(uuid_str) = s.strip_prefix("sub_") {
+            Uuid::parse_str(uuid_str)
+                .map(Self)
+                .map_err(ParseError::InvalidUuid)
+        } else {
+            Err(ParseError::MissingPrefix)
+        }
+    }
+
+    /// Parse a subscription ID from a string, accepting both formats.
+    ///
+    /// This lenient version accepts:
     /// - With prefix: "sub_01234567-89ab-7cde-8f01-234567890abc"
     /// - Without prefix: "01234567-89ab-7cde-8f01-234567890abc"
-    pub fn parse(s: &str) -> Result<Self, uuid::Error> {
+    ///
+    /// Use this for backward compatibility when migrating existing code.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// // Both formats work
+    /// let id1 = SubscriptionId::parse_lenient("sub_01234567-89ab-7cde-8f01-234567890abc")?;
+    /// let id2 = SubscriptionId::parse_lenient("01234567-89ab-7cde-8f01-234567890abc")?;
+    /// ```
+    pub fn parse_lenient(s: &str) -> Result<Self, ParseError> {
         let uuid_str = s.strip_prefix("sub_").unwrap_or(s);
-        Uuid::parse_str(uuid_str).map(Self)
+        Uuid::parse_str(uuid_str)
+            .map(Self)
+            .map_err(ParseError::InvalidUuid)
     }
 }
 
