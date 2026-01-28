@@ -519,6 +519,21 @@ impl SubscriptionHandle {
         }
     }
 
+    /// Create a builder for constructing a subscription handle
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let handle = SubscriptionHandle::builder()
+    ///     .id(subscription_id)
+    ///     .path("chat.messages")
+    ///     .signal(signal)
+    ///     .task(task_handle)
+    ///     .build();
+    /// ```
+    pub fn builder() -> SubscriptionHandleBuilder {
+        SubscriptionHandleBuilder::new()
+    }
+
     /// Set the task handle
     pub fn with_task(mut self, handle: tokio::task::JoinHandle<()>) -> Self {
         self.task_handle = Some(handle);
@@ -547,6 +562,75 @@ impl Drop for SubscriptionHandle {
         if let Some(handle) = self.task_handle.take() {
             handle.abort();
         }
+    }
+}
+
+// =============================================================================
+// Subscription Handle Builder
+// =============================================================================
+
+/// Builder for constructing a SubscriptionHandle
+#[derive(Debug)]
+pub struct SubscriptionHandleBuilder {
+    id: Option<SubscriptionId>,
+    path: Option<String>,
+    signal: Option<Arc<CancellationSignal>>,
+    task_handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl SubscriptionHandleBuilder {
+    /// Create a new builder
+    pub fn new() -> Self {
+        Self {
+            id: None,
+            path: None,
+            signal: None,
+            task_handle: None,
+        }
+    }
+
+    /// Set the subscription ID
+    pub fn id(mut self, id: SubscriptionId) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Set the subscription path
+    pub fn path(mut self, path: impl Into<String>) -> Self {
+        self.path = Some(path.into());
+        self
+    }
+
+    /// Set the cancellation signal
+    pub fn signal(mut self, signal: Arc<CancellationSignal>) -> Self {
+        self.signal = Some(signal);
+        self
+    }
+
+    /// Set the task handle
+    pub fn task(mut self, handle: tokio::task::JoinHandle<()>) -> Self {
+        self.task_handle = Some(handle);
+        self
+    }
+
+    /// Build the subscription handle
+    ///
+    /// # Panics
+    /// Panics if required fields (id, path, signal) are not set
+    pub fn build(self) -> SubscriptionHandle {
+        SubscriptionHandle {
+            id: self.id.expect("id is required"),
+            path: self.path.expect("path is required"),
+            signal: self.signal.expect("signal is required"),
+            task_handle: self.task_handle,
+            created_at: std::time::Instant::now(),
+        }
+    }
+}
+
+impl Default for SubscriptionHandleBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
