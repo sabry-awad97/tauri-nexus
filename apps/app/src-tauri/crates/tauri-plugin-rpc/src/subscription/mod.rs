@@ -503,6 +503,8 @@ pub struct SubscriptionHandle {
     signal: Arc<CancellationSignal>,
     /// Task handle for cleanup
     task_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Creation timestamp for duration tracking
+    created_at: std::time::Instant,
 }
 
 impl SubscriptionHandle {
@@ -513,6 +515,7 @@ impl SubscriptionHandle {
             path,
             signal,
             task_handle: None,
+            created_at: std::time::Instant::now(),
         }
     }
 
@@ -520,6 +523,11 @@ impl SubscriptionHandle {
     pub fn with_task(mut self, handle: tokio::task::JoinHandle<()>) -> Self {
         self.task_handle = Some(handle);
         self
+    }
+
+    /// Get the duration since creation
+    pub fn duration(&self) -> Duration {
+        self.created_at.elapsed()
     }
 
     /// Cancel the subscription
@@ -539,6 +547,40 @@ impl Drop for SubscriptionHandle {
         if let Some(handle) = self.task_handle.take() {
             handle.abort();
         }
+    }
+}
+
+// =============================================================================
+// Health Status
+// =============================================================================
+
+/// Health status of the subscription manager
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HealthStatus {
+    /// Number of active subscriptions
+    pub active_subscriptions: usize,
+    /// Number of tracked tasks
+    pub active_tasks: usize,
+    /// Number of completed tasks
+    pub completed_tasks: usize,
+    /// Manager uptime in seconds
+    pub uptime_seconds: u64,
+}
+
+impl HealthStatus {
+    /// Check if the manager is healthy
+    pub fn is_healthy(&self) -> bool {
+        // Manager is healthy if it's operational (has been created)
+        // We could add more sophisticated health checks here
+        true
+    }
+
+    /// Get a human-readable status message
+    pub fn status_message(&self) -> String {
+        format!(
+            "Active: {} subscriptions, {} tasks | Completed: {} tasks | Uptime: {}s",
+            self.active_subscriptions, self.active_tasks, self.completed_tasks, self.uptime_seconds
+        )
     }
 }
 
@@ -574,6 +616,10 @@ pub struct SubscriptionManager {
     completed_tasks: Arc<std::sync::atomic::AtomicUsize>,
     /// Configuration for manager operations
     config: ManagerConfig,
+    /// Creation time for uptime calculation
+    created_at: std::time::Instant,
+    /// Subscription lifecycle metrics
+    metrics: Arc<SubscriptionMetrics>,
 }
 
 impl Default for SubscriptionManager {
@@ -596,6 +642,8 @@ impl SubscriptionManager {
             task_tracker: RwLock::new(tokio::task::JoinSet::new()),
             completed_tasks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             config,
+            created_at: std::time::Instant::now(),
+            metrics: Arc::new(SubscriptionMetrics::new()),
         }
     }
 
@@ -603,6 +651,10 @@ impl SubscriptionManager {
     pub fn subscribe(&self, handle: SubscriptionHandle) -> SubscriptionId {
         let id = handle.id;
         let path = handle.path.clone();
+
+        // Record subscription creation in metrics
+        self.metrics.record_created();
+
         self.subscriptions.insert(id, handle);
 
         tracing::debug!(
@@ -737,12 +789,20 @@ impl SubscriptionManager {
     /// Unsubscribe by ID
     pub fn unsubscribe(&self, id: &SubscriptionId) -> bool {
         if let Some((_, handle)) = self.subscriptions.remove(id) {
+            let duration = handle.duration();
+
             tracing::debug!(
                 subscription_id = %id,
                 path = %handle.path,
+                duration_ms = %duration.as_millis(),
                 "Subscription unsubscribed"
             );
+
             handle.cancel();
+
+            // Record cancellation in metrics
+            self.metrics.record_cancelled(duration);
+
             true
         } else {
             tracing::trace!(
@@ -805,14 +865,21 @@ impl SubscriptionManager {
     pub fn cancel_all(&self) {
         let count = self.subscriptions.len();
 
-        // Iterate and cancel all
+        // Iterate, cancel all, and record metrics
         for entry in self.subscriptions.iter() {
             let (id, handle) = entry.pair();
+            let duration = handle.duration();
+
             tracing::trace!(
                 subscription_id = %id,
+                duration_ms = %duration.as_millis(),
                 "Cancelling subscription"
             );
+
             handle.cancel();
+
+            // Record cancellation in metrics
+            self.metrics.record_cancelled(duration);
         }
 
         // Clear all subscriptions
@@ -963,6 +1030,48 @@ impl SubscriptionManager {
                 }
             }
         })
+    }
+
+    /// Get the current health status of the subscription manager.
+    ///
+    /// Returns a `HealthStatus` struct containing information about active
+    /// subscriptions, tasks, and uptime.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let health = manager.health().await;
+    /// println!("Manager status: {}", health.status_message());
+    /// println!("Active subscriptions: {}", health.active_subscriptions);
+    /// println!("Uptime: {}s", health.uptime_seconds);
+    /// ```
+    pub async fn health(&self) -> HealthStatus {
+        let active_subscriptions = self.subscriptions.len();
+        let active_tasks = self.task_tracker.read().await.len();
+        let completed_tasks = self
+            .completed_tasks
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let uptime_seconds = self.created_at.elapsed().as_secs();
+
+        HealthStatus {
+            active_subscriptions,
+            active_tasks,
+            completed_tasks,
+            uptime_seconds,
+        }
+    }
+
+    /// Get the subscription lifecycle metrics.
+    ///
+    /// Returns an Arc to the metrics, allowing for efficient sharing and monitoring.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let metrics = manager.metrics();
+    /// let snapshot = metrics.snapshot();
+    /// println!("Created: {}, Active: {}", snapshot.created, snapshot.active);
+    /// ```
+    pub fn metrics(&self) -> Arc<SubscriptionMetrics> {
+        Arc::clone(&self.metrics)
     }
 }
 

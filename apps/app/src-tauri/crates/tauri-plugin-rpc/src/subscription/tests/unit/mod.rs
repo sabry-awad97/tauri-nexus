@@ -3,6 +3,7 @@
 
 pub mod backpressure_tests;
 pub mod event_tests;
+pub mod health_tests;
 pub mod id_tests;
 pub mod manager_tests;
 pub mod publisher_tests;
