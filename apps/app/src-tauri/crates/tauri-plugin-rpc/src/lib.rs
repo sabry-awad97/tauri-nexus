@@ -296,7 +296,7 @@ pub mod middleware;
 mod plugin;
 pub mod procedure;
 pub mod rate_limit;
-mod router;
+pub mod router;
 pub mod schema;
 pub mod subscription;
 pub mod types;

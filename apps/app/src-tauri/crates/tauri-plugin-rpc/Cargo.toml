@@ -26,5 +26,9 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "auth"
 harness = false
 
+[[bench]]
+name = "router_bench"
+harness = false
+
 [build-dependencies]
 tauri-plugin.workspace = true
