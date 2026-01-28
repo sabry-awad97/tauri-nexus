@@ -19,7 +19,14 @@ pub enum ParseError {
 pub enum ValidationError {
     /// Retry delay is out of valid range
     #[error("Retry delay must be between {min}ms and {max}ms, got {actual}ms")]
-    RetryDelayOutOfRange { min: u64, max: u64, actual: u64 },
+    RetryDelayOutOfRange {
+        /// Minimum allowed value in milliseconds
+        min: u64,
+        /// Maximum allowed value in milliseconds
+        max: u64,
+        /// Actual value provided in milliseconds
+        actual: u64,
+    },
 
     /// Generic validation error
     #[error("Validation failed: {0}")]

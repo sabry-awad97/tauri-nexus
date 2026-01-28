@@ -21,8 +21,13 @@
 //! ```
 
 mod errors;
+mod metrics;
 
 pub use errors::{ManagerError, ParseError, PublishResult, ValidationError};
+pub use metrics::{
+    MetricsSnapshot, PublisherMetrics, PublisherMetricsSnapshot, SubscriberMetrics,
+    SubscriberMetricsSnapshot, SubscriptionMetrics,
+};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -31,6 +36,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tokio::sync::{RwLock, broadcast, mpsc};
 use uuid::Uuid;
 
@@ -369,8 +375,21 @@ where
             tokio::spawn(async move {
                 let mut stream = stream;
                 while let Some(event) = stream.recv().await {
+                    // Properly handle serialization errors instead of silently converting to Null
+                    let data = match serde_json::to_value(&event.data) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                "Failed to serialize subscription event data"
+                            );
+                            // Stop the stream on serialization error
+                            break;
+                        }
+                    };
+
                     let json_event = Event {
-                        data: serde_json::to_value(&event.data).unwrap_or(serde_json::Value::Null),
+                        data,
                         id: event.id,
                         retry: event.retry,
                     };
@@ -467,6 +486,8 @@ pub struct SubscriptionManager {
     subscriptions: RwLock<HashMap<SubscriptionId, SubscriptionHandle>>,
     /// Task tracker for cleanup - tracks all spawned subscription tasks
     task_tracker: RwLock<tokio::task::JoinSet<()>>,
+    /// Counter for completed tasks (for monitoring memory leaks)
+    completed_tasks: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Default for SubscriptionManager {
@@ -482,6 +503,7 @@ impl SubscriptionManager {
         Self {
             subscriptions: RwLock::new(HashMap::new()),
             task_tracker: RwLock::new(tokio::task::JoinSet::new()),
+            completed_tasks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
 
@@ -668,6 +690,99 @@ impl SubscriptionManager {
     pub async fn task_count(&self) -> usize {
         self.task_tracker.read().await.len()
     }
+
+    /// Get the number of completed tasks that haven't been cleaned up yet
+    pub fn completed_task_count(&self) -> usize {
+        self.completed_tasks
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Clean up completed tasks from the JoinSet.
+    ///
+    /// This method polls the JoinSet for completed tasks and removes them,
+    /// preventing memory leaks from accumulated finished tasks.
+    ///
+    /// Returns the number of tasks that were cleaned up.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let removed = manager.cleanup_completed().await;
+    /// tracing::debug!("Cleaned up {} completed tasks", removed);
+    /// ```
+    pub async fn cleanup_completed(&self) -> usize {
+        let mut tracker = self.task_tracker.write().await;
+        let mut removed = 0;
+
+        // Poll for completed tasks without blocking
+        while let Some(result) = tracker.try_join_next() {
+            match result {
+                Ok(_) => {
+                    removed += 1;
+                    self.completed_tasks
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                Err(e) if e.is_cancelled() => {
+                    // Task was cancelled, count it as completed
+                    removed += 1;
+                    self.completed_tasks
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                Err(e) if e.is_panic() => {
+                    // Task panicked, log and count it
+                    tracing::error!("Subscription task panicked");
+                    removed += 1;
+                    self.completed_tasks
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                Err(_) => {
+                    // Other error, count it
+                    removed += 1;
+                    self.completed_tasks
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        }
+
+        if removed > 0 {
+            tracing::debug!(removed_count = removed, "Cleaned up completed tasks");
+        }
+
+        removed
+    }
+
+    /// Start periodic cleanup of completed tasks.
+    ///
+    /// Spawns a background task that periodically calls `cleanup_completed()`
+    /// to prevent memory leaks from accumulated finished tasks.
+    ///
+    /// This method requires the manager to be wrapped in an Arc.
+    ///
+    /// Returns a JoinHandle that can be used to stop the cleanup task.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let manager = Arc::new(SubscriptionManager::new());
+    /// let cleanup_handle = manager.start_periodic_cleanup();
+    /// // Later, to stop cleanup:
+    /// cleanup_handle.abort();
+    /// ```
+    pub fn start_periodic_cleanup(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
+        let manager = Arc::clone(self);
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let removed = manager.cleanup_completed().await;
+                if removed > 0 {
+                    tracing::trace!(
+                        removed_count = removed,
+                        "Periodic cleanup removed completed tasks"
+                    );
+                }
+            }
+        })
+    }
 }
 
 // =============================================================================
@@ -719,6 +834,7 @@ impl<T: Clone + Send + 'static> EventPublisher<T> {
     pub fn subscribe(&self) -> EventSubscriber<T> {
         EventSubscriber {
             receiver: self.sender.subscribe(),
+            metrics: Arc::new(SubscriberMetrics::new()),
         }
     }
 
@@ -746,29 +862,43 @@ impl<T: Clone + Send + 'static> Clone for EventPublisher<T> {
 /// A subscriber to an event publisher
 pub struct EventSubscriber<T: Clone + Send + 'static> {
     receiver: broadcast::Receiver<Event<T>>,
+    metrics: Arc<SubscriberMetrics>,
 }
 
 impl<T: Clone + Send + 'static> EventSubscriber<T> {
     /// Receive the next event.
     ///
     /// This method handles lagged messages gracefully by skipping them and
-    /// continuing to receive the most recent available messages. A trace-level
-    /// log is emitted when messages are skipped due to lag.
+    /// continuing to receive the most recent available messages. A warning-level
+    /// log is emitted when messages are skipped due to lag, and metrics are tracked.
     ///
     /// Returns `Some(event)` when an event is received, or `None` when the
     /// channel is closed.
     pub async fn recv(&mut self) -> Option<Event<T>> {
         loop {
             match self.receiver.recv().await {
-                Ok(event) => return Some(event),
+                Ok(event) => {
+                    self.metrics.record_received();
+                    return Some(event);
+                }
                 Err(broadcast::error::RecvError::Lagged(count)) => {
-                    // Skip lagged messages and continue receiving
-                    tracing::trace!("EventSubscriber lagged behind, skipped {} messages", count);
+                    // Record lag in metrics and log at warn level
+                    self.metrics.record_lagged(count);
+                    tracing::warn!(
+                        lagged_messages = count,
+                        "EventSubscriber lagged behind, skipped {} messages",
+                        count
+                    );
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => return None,
             }
         }
+    }
+
+    /// Get the total number of lagged messages
+    pub fn lag_count(&self) -> u64 {
+        self.metrics.lag_count()
     }
 
     /// Convert to an event stream
