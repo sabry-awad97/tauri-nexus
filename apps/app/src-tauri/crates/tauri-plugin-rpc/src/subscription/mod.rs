@@ -20,6 +20,10 @@
 //!     });
 //! ```
 
+mod errors;
+
+pub use errors::{ManagerError, ParseError, PublishResult, ValidationError};
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -688,17 +692,18 @@ impl<T: Clone + Send + 'static> EventPublisher<T> {
 
     /// Publish an event to all subscribers.
     ///
-    /// Returns `Ok(count)` with the number of subscribers that received the event,
-    /// or `Err` if there are no active subscribers.
+    /// Returns `Published(count)` with the number of subscribers that received the event,
+    /// or `NoSubscribers` if there are no active subscribers.
     ///
-    /// This method handles the case of no subscribers gracefully by returning an
-    /// error instead of panicking. A trace-level log is emitted when publish fails.
-    pub fn publish(&self, event: Event<T>) -> Result<usize, RpcError> {
+    /// This method handles the case of no subscribers gracefully by returning
+    /// `NoSubscribers` instead of an error. Having no subscribers is a normal
+    /// operational state, not an error condition.
+    pub fn publish(&self, event: Event<T>) -> PublishResult {
         match self.sender.send(event) {
-            Ok(count) => Ok(count),
+            Ok(count) => PublishResult::Published(count),
             Err(_) => {
-                tracing::trace!("EventPublisher::publish failed: no active subscribers");
-                Err(RpcError::internal("No active subscribers"))
+                tracing::trace!("EventPublisher::publish: no active subscribers");
+                PublishResult::NoSubscribers
             }
         }
     }
@@ -706,7 +711,7 @@ impl<T: Clone + Send + 'static> EventPublisher<T> {
     /// Publish data as an event.
     ///
     /// This is a convenience method that wraps the data in an [`Event`] and publishes it.
-    pub fn publish_data(&self, data: T) -> Result<usize, RpcError> {
+    pub fn publish_data(&self, data: T) -> PublishResult {
         self.publish(Event::new(data))
     }
 
@@ -806,10 +811,10 @@ impl<T: Clone + Send + 'static> ChannelPublisher<T> {
     }
 
     /// Publish to a specific channel
-    pub async fn publish(&self, channel: &str, event: Event<T>) -> Result<usize, RpcError> {
+    pub async fn publish(&self, channel: &str, event: Event<T>) -> Result<PublishResult, RpcError> {
         let channels = self.channels.read().await;
         if let Some(publisher) = channels.get(channel) {
-            publisher.publish(event)
+            Ok(publisher.publish(event))
         } else {
             Err(RpcError::not_found(format!(
                 "Channel '{}' not found",
@@ -819,7 +824,7 @@ impl<T: Clone + Send + 'static> ChannelPublisher<T> {
     }
 
     /// Publish data to a channel
-    pub async fn publish_data(&self, channel: &str, data: T) -> Result<usize, RpcError> {
+    pub async fn publish_data(&self, channel: &str, data: T) -> Result<PublishResult, RpcError> {
         self.publish(channel, Event::new(data)).await
     }
 
@@ -943,4 +948,15 @@ impl SubscriptionEvent {
     pub fn completed() -> Self {
         Self::Completed
     }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    mod integration;
+    mod property;
+    mod unit;
 }

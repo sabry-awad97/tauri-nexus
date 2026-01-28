@@ -8,9 +8,9 @@
 //! - Rule lookup with different numbers of rules
 //! - Config creation
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use tauri_plugin_rpc::auth::rules::CompiledPattern;
-use tauri_plugin_rpc::auth::{AuthConfig, AuthResult, AuthRule};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
+use tauri_plugin_rpc::auth::{AuthConfig, AuthResult, AuthRule, rules::CompiledPattern};
 
 // =============================================================================
 // Pattern Matching Benchmarks

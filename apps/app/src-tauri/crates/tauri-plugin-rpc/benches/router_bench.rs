@@ -5,8 +5,9 @@
 //! - Procedures with middleware
 //! - Compiled vs non-compiled router
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use serde::{Deserialize, Serialize};
+use std::hint::black_box;
 use tauri_plugin_rpc::{Context, Router, RpcResult};
 
 #[derive(Clone, Default)]

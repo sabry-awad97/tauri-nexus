@@ -13,8 +13,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::subscription::{
-    CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, SubscriptionContext,
-    SubscriptionId, SubscriptionManager, generate_subscription_id,
+    CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, PublishResult,
+    SubscriptionContext, SubscriptionId, SubscriptionManager, generate_subscription_id,
 };
 
 // =============================================================================
@@ -478,7 +478,7 @@ proptest! {
             for i in 0..buffer_size {
                 let result = publisher.publish_data(i as i32);
                 prop_assert!(
-                    result.is_ok(),
+                    result.is_published(),
                     "Publishing event {} should succeed within buffer capacity {}",
                     i, buffer_size
                 );
@@ -517,25 +517,17 @@ proptest! {
         // Verify no subscribers
         prop_assert_eq!(publisher.subscriber_count(), 0);
 
-        // Publishing should return an error, not panic
+        // Publishing should return NoSubscribers, not an error
         let result = publisher.publish_data(data);
 
-        prop_assert!(
-            result.is_err(),
-            "Publishing to empty publisher should return error"
+        prop_assert_eq!(
+            result,
+            PublishResult::NoSubscribers,
+            "Publishing to empty publisher should return NoSubscribers"
         );
-
-        // Verify the error message indicates no subscribers
-        if let Err(err) = result {
-            prop_assert!(
-                err.message.contains("subscriber") || err.message.contains("No active"),
-                "Error message should indicate no subscribers: {}",
-                err.message
-            );
-        }
     }
 
-    /// Test that publish returns error after all subscribers are dropped
+    /// Test that publish returns NoSubscribers after all subscribers are dropped
     #[test]
     fn prop_empty_publisher_after_drop(
         buffer_size in 1usize..64,
@@ -552,11 +544,12 @@ proptest! {
         // After subscriber is dropped, count should be 0
         prop_assert_eq!(publisher.subscriber_count(), 0);
 
-        // Publishing should now return an error
+        // Publishing should now return NoSubscribers
         let result = publisher.publish_data(data);
-        prop_assert!(
-            result.is_err(),
-            "Publishing after all subscribers dropped should return error"
+        prop_assert_eq!(
+            result,
+            PublishResult::NoSubscribers,
+            "Publishing after all subscribers dropped should return NoSubscribers"
         );
     }
 }
