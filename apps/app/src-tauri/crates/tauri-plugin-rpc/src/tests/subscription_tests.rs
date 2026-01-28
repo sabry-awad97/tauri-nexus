@@ -83,20 +83,20 @@ proptest! {
                     format!("path.{}", i),
                     signal.clone(),
                 );
-                manager.subscribe(handle).await;
+                manager.subscribe(handle);
                 handles.push(id);
                 signals.push(signal);
             }
 
             // Verify all subscriptions exist
-            prop_assert_eq!(manager.count().await, subscription_count);
+            prop_assert_eq!(manager.count(), subscription_count);
 
             // Unsubscribe some
             let mut unsubscribed = HashSet::new();
             for idx in unsubscribe_indices {
                 if idx < subscription_count && !unsubscribed.contains(&idx) {
                     let id = &handles[idx];
-                    let result = manager.unsubscribe(id).await;
+                    let result = manager.unsubscribe(id);
                     prop_assert!(result, "Unsubscribe should succeed for existing subscription");
 
                     // Signal should be cancelled
@@ -108,11 +108,11 @@ proptest! {
 
             // Verify remaining count
             let expected_remaining = subscription_count - unsubscribed.len();
-            prop_assert_eq!(manager.count().await, expected_remaining);
+            prop_assert_eq!(manager.count(), expected_remaining);
 
             // Verify unsubscribed IDs no longer exist
             for idx in &unsubscribed {
-                prop_assert!(!manager.exists(&handles[*idx]).await, "Unsubscribed ID should not exist");
+                prop_assert!(!manager.exists(&handles[*idx]), "Unsubscribed ID should not exist");
             }
 
             Ok(())
@@ -150,7 +150,7 @@ proptest! {
                     format!("test.path.{}", i),
                     signal.clone(),
                 );
-                manager.subscribe(handle).await;
+                manager.subscribe(handle);
 
                 // Spawn a tracked task that runs until cancelled
                 let signal_clone = signal.clone();
@@ -169,7 +169,7 @@ proptest! {
             }
 
             // Verify all subscriptions exist
-            prop_assert_eq!(manager.count().await, subscription_count);
+            prop_assert_eq!(manager.count(), subscription_count);
 
             // Cancel some subscriptions via unsubscribe
             let mut cancelled = HashSet::new();
@@ -178,7 +178,7 @@ proptest! {
                     let id = &subscription_ids[idx];
 
                     // Unsubscribe should cancel the signal and remove from manager
-                    let result = manager.unsubscribe(id).await;
+                    let result = manager.unsubscribe(id);
                     prop_assert!(result, "Unsubscribe should succeed for existing subscription");
 
                     // Signal should be cancelled immediately
@@ -189,7 +189,7 @@ proptest! {
 
                     // Subscription should be removed from manager
                     prop_assert!(
-                        !manager.exists(id).await,
+                        !manager.exists(id),
                         "Subscription should be removed from manager after unsubscribe"
                     );
 
@@ -199,13 +199,13 @@ proptest! {
 
             // Verify remaining count
             let expected_remaining = subscription_count - cancelled.len();
-            prop_assert_eq!(manager.count().await, expected_remaining);
+            prop_assert_eq!(manager.count(), expected_remaining);
 
             // Test shutdown - should cancel all remaining subscriptions
             manager.shutdown().await;
 
             // After shutdown, all subscriptions should be removed
-            prop_assert_eq!(manager.count().await, 0, "All subscriptions should be removed after shutdown");
+            prop_assert_eq!(manager.count(), 0, "All subscriptions should be removed after shutdown");
 
             // All signals should be cancelled after shutdown
             for signal in &signals {
@@ -236,7 +236,7 @@ proptest! {
                     format!("task.{}", i),
                     signal.clone(),
                 );
-                manager.subscribe(handle).await;
+                manager.subscribe(handle);
 
                 let task_started_clone = task_started.clone();
                 let signal_clone = signal.clone();
@@ -268,7 +268,7 @@ proptest! {
             );
 
             // After shutdown, no subscriptions should remain
-            prop_assert_eq!(manager.count().await, 0, "No subscriptions should remain after shutdown");
+            prop_assert_eq!(manager.count(), 0, "No subscriptions should remain after shutdown");
 
             Ok(())
         })?;
@@ -356,7 +356,7 @@ proptest! {
             // Subscribe to all channels
             let mut subscribers = Vec::new();
             for name in &channel_names {
-                let sub = publisher.subscribe(name).await;
+                let sub = publisher.subscribe(name);
                 subscribers.push((name.clone(), sub));
             }
 
@@ -364,7 +364,7 @@ proptest! {
             for name in channel_names.iter() {
                 for j in 0..events_per_channel {
                     let data = format!("{}_{}", name, j);
-                    let _ = publisher.publish_data(name, data).await;
+                    let _ = publisher.publish_data(name, data);
                 }
             }
 
@@ -372,7 +372,7 @@ proptest! {
             // events from their channel. This is a simplified structural test.
 
             // Verify channels exist
-            let channels = publisher.channels().await;
+            let channels = publisher.channels();
             for name in &channel_names {
                 prop_assert!(channels.contains(name), "Channel {} should exist", name);
             }
@@ -768,11 +768,11 @@ proptest! {
                     format!("test.path.{}", i),
                     ctx.signal(),
                 );
-                manager.subscribe(handle).await;
+                manager.subscribe(handle);
             }
 
             // Verify all subscriptions exist before shutdown
-            prop_assert_eq!(manager.count().await, sub_count);
+            prop_assert_eq!(manager.count(), sub_count);
 
             // Verify no signals are cancelled before shutdown
             for signal in &signals {
@@ -796,7 +796,7 @@ proptest! {
 
             // Verify all subscriptions are removed
             prop_assert_eq!(
-                manager.count().await,
+                manager.count(),
                 0,
                 "All subscriptions should be removed after shutdown"
             );
@@ -832,7 +832,7 @@ proptest! {
                     format!("task.{}", i),
                     signal.clone(),
                 );
-                manager.subscribe(handle).await;
+                manager.subscribe(handle);
 
                 let completed_clone = completed.clone();
                 let signal_clone = signal.clone();
@@ -863,7 +863,7 @@ proptest! {
 
             // Verify all subscriptions are removed
             prop_assert_eq!(
-                manager.count().await,
+                manager.count(),
                 0,
                 "All subscriptions should be removed after shutdown"
             );
@@ -1000,7 +1000,7 @@ mod shutdown_timeout_tests {
             "stuck.task".to_string(),
             signal.clone(),
         );
-        manager.subscribe(handle).await;
+        manager.subscribe(handle);
 
         // Spawn a task that ignores the cancellation signal (simulating a stuck task)
         // Note: In reality, the JoinSet will abort this task during shutdown
@@ -1036,7 +1036,7 @@ mod shutdown_timeout_tests {
 
         // All subscriptions should be removed
         assert_eq!(
-            manager.count().await,
+            manager.count(),
             0,
             "All subscriptions should be removed after shutdown"
         );
@@ -1048,7 +1048,7 @@ mod shutdown_timeout_tests {
         let manager = SubscriptionManager::new();
 
         // Verify no subscriptions
-        assert_eq!(manager.count().await, 0);
+        assert_eq!(manager.count(), 0);
 
         // Shutdown should complete immediately
         let shutdown_result =
@@ -1075,7 +1075,7 @@ mod shutdown_timeout_tests {
                 format!("stuck.task.{}", i),
                 signal.clone(),
             );
-            manager.subscribe(handle).await;
+            manager.subscribe(handle);
 
             // Spawn a stuck task
             manager
@@ -1105,6 +1105,7 @@ mod shutdown_timeout_tests {
 
         // All tasks and subscriptions should be cleaned up
         assert_eq!(manager.task_count().await, 0);
-        assert_eq!(manager.count().await, 0);
+        assert_eq!(manager.count(), 0);
     }
 }
+

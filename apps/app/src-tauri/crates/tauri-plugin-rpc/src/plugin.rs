@@ -333,7 +333,7 @@ async fn rpc_subscribe<R: Runtime>(
     let signal = sub_ctx.signal();
     let handle =
         crate::subscription::SubscriptionHandle::new(subscription_id, path.clone(), signal.clone());
-    sub_state.0.subscribe(handle).await;
+    sub_state.0.subscribe(handle);
 
     let event_name = format!("rpc:subscription:{}", subscription_id);
     let router = router_state.0.clone();
@@ -390,7 +390,7 @@ async fn rpc_subscribe<R: Runtime>(
                     let _ = app.emit(&event_name, &SubscriptionEvent::error(err));
                 }
             }
-            sub_manager.unsubscribe(&subscription_id).await;
+            sub_manager.unsubscribe(&subscription_id);
         })
         .await;
 
@@ -405,7 +405,7 @@ async fn rpc_unsubscribe(
     let subscription_id = validate_subscription_id(&id)
         .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
 
-    let result = sub_state.0.unsubscribe(&subscription_id).await;
+    let result = sub_state.0.unsubscribe(&subscription_id);
 
     if result {
         info!(
@@ -424,7 +424,7 @@ async fn rpc_unsubscribe(
 
 #[tauri::command]
 async fn rpc_subscription_count(sub_state: State<'_, SubscriptionState>) -> Result<usize, String> {
-    Ok(sub_state.0.count().await)
+    Ok(sub_state.0.count())
 }
 
 // =============================================================================

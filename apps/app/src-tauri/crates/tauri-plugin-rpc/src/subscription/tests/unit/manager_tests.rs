@@ -7,7 +7,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_new() {
         let manager = SubscriptionManager::new();
-        assert_eq!(manager.count().await, 0);
+        assert_eq!(manager.count(), 0);
     }
 
     #[tokio::test]
@@ -17,10 +17,10 @@ mod tests {
         let signal = std::sync::Arc::new(CancellationSignal::new());
         let handle = SubscriptionHandle::new(id, "test.path".to_string(), signal);
 
-        let registered_id = manager.subscribe(handle).await;
+        let registered_id = manager.subscribe(handle);
         assert_eq!(registered_id, id);
-        assert_eq!(manager.count().await, 1);
-        assert!(manager.exists(&id).await);
+        assert_eq!(manager.count(), 1);
+        assert!(manager.exists(&id));
     }
 
     #[tokio::test]
@@ -30,11 +30,11 @@ mod tests {
         let signal = std::sync::Arc::new(CancellationSignal::new());
         let handle = SubscriptionHandle::new(id, "test.path".to_string(), signal);
 
-        manager.subscribe(handle).await;
-        let removed = manager.unsubscribe(&id).await;
+        manager.subscribe(handle);
+        let removed = manager.unsubscribe(&id);
 
         assert!(removed);
-        assert_eq!(manager.count().await, 0);
-        assert!(!manager.exists(&id).await);
+        assert_eq!(manager.count(), 0);
+        assert!(!manager.exists(&id));
     }
 }

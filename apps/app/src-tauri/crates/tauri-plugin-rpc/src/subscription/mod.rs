@@ -32,7 +32,6 @@ pub use metrics::{
 pub use retry_delay::RetryDelay;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -519,8 +518,8 @@ impl Drop for SubscriptionHandle {
 /// ```
 #[derive(Debug)]
 pub struct SubscriptionManager {
-    /// Active subscriptions by ID
-    subscriptions: RwLock<HashMap<SubscriptionId, SubscriptionHandle>>,
+    /// Active subscriptions by ID (using DashMap for better concurrent performance)
+    subscriptions: dashmap::DashMap<SubscriptionId, SubscriptionHandle>,
     /// Task tracker for cleanup - tracks all spawned subscription tasks
     task_tracker: RwLock<tokio::task::JoinSet<()>>,
     /// Counter for completed tasks (for monitoring memory leaks)
@@ -538,17 +537,17 @@ impl SubscriptionManager {
     pub fn new() -> Self {
         tracing::trace!("SubscriptionManager created");
         Self {
-            subscriptions: RwLock::new(HashMap::new()),
+            subscriptions: dashmap::DashMap::new(),
             task_tracker: RwLock::new(tokio::task::JoinSet::new()),
             completed_tasks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
 
     /// Register a new subscription
-    pub async fn subscribe(&self, handle: SubscriptionHandle) -> SubscriptionId {
+    pub fn subscribe(&self, handle: SubscriptionHandle) -> SubscriptionId {
         let id = handle.id;
         let path = handle.path.clone();
-        self.subscriptions.write().await.insert(id, handle);
+        self.subscriptions.insert(id, handle);
 
         tracing::debug!(
             subscription_id = %id,
@@ -608,22 +607,20 @@ impl SubscriptionManager {
     /// manager.shutdown().await;
     /// ```
     pub async fn shutdown(&self) {
-        let sub_count = self.subscriptions.read().await.len();
+        let sub_count = self.count();
         tracing::info!(
             active_subscriptions = %sub_count,
             "SubscriptionManager shutdown initiated"
         );
 
         // Cancel all subscription signals first
-        {
-            let subs = self.subscriptions.read().await;
-            for (id, handle) in subs.iter() {
-                tracing::trace!(
-                    subscription_id = %id,
-                    "Cancelling subscription"
-                );
-                handle.cancel();
-            }
+        for entry in self.subscriptions.iter() {
+            let (id, handle) = entry.pair();
+            tracing::trace!(
+                subscription_id = %id,
+                "Cancelling subscription"
+            );
+            handle.cancel();
         }
 
         // Abort all tracked tasks and wait for them to complete
@@ -641,17 +638,14 @@ impl SubscriptionManager {
         }
 
         // Clear the subscriptions
-        {
-            let mut subs = self.subscriptions.write().await;
-            subs.clear();
-        }
+        self.subscriptions.clear();
 
         tracing::info!("SubscriptionManager shutdown complete");
     }
 
     /// Unsubscribe by ID
-    pub async fn unsubscribe(&self, id: &SubscriptionId) -> bool {
-        if let Some(handle) = self.subscriptions.write().await.remove(id) {
+    pub fn unsubscribe(&self, id: &SubscriptionId) -> bool {
+        if let Some((_, handle)) = self.subscriptions.remove(id) {
             tracing::debug!(
                 subscription_id = %id,
                 path = %handle.path,
@@ -669,26 +663,32 @@ impl SubscriptionManager {
     }
 
     /// Get subscription count
-    pub async fn count(&self) -> usize {
-        self.subscriptions.read().await.len()
+    pub fn count(&self) -> usize {
+        self.subscriptions.len()
     }
 
     /// Check if a subscription exists
-    pub async fn exists(&self, id: &SubscriptionId) -> bool {
-        self.subscriptions.read().await.contains_key(id)
+    pub fn exists(&self, id: &SubscriptionId) -> bool {
+        self.subscriptions.contains_key(id)
     }
 
     /// Cancel all subscriptions
-    pub async fn cancel_all(&self) {
-        let mut subs = self.subscriptions.write().await;
-        let count = subs.len();
-        for (id, handle) in subs.drain() {
+    pub fn cancel_all(&self) {
+        let count = self.subscriptions.len();
+
+        // Iterate and cancel all
+        for entry in self.subscriptions.iter() {
+            let (id, handle) = entry.pair();
             tracing::trace!(
                 subscription_id = %id,
                 "Cancelling subscription"
             );
             handle.cancel();
         }
+
+        // Clear all subscriptions
+        self.subscriptions.clear();
+
         tracing::debug!(
             cancelled_count = %count,
             "All subscriptions cancelled"
@@ -696,25 +696,38 @@ impl SubscriptionManager {
     }
 
     /// Get all subscription IDs
-    pub async fn subscription_ids(&self) -> Vec<SubscriptionId> {
-        self.subscriptions.read().await.keys().copied().collect()
+    pub fn subscription_ids(&self) -> Vec<SubscriptionId> {
+        self.subscriptions
+            .iter()
+            .map(|entry| *entry.key())
+            .collect()
     }
 
     /// Clean up completed subscriptions
-    pub async fn cleanup(&self) {
-        let mut subs = self.subscriptions.write().await;
-        let before_count = subs.len();
-        subs.retain(|id, handle| {
-            let keep = !handle.is_cancelled();
-            if !keep {
+    pub fn cleanup(&self) {
+        let _before_count = self.subscriptions.len();
+
+        // Collect IDs of cancelled subscriptions
+        let to_remove: Vec<SubscriptionId> = self
+            .subscriptions
+            .iter()
+            .filter(|entry| entry.value().is_cancelled())
+            .map(|entry| {
+                let id = *entry.key();
                 tracing::trace!(
                     subscription_id = %id,
                     "Cleaning up cancelled subscription"
                 );
-            }
-            keep
-        });
-        let removed = before_count - subs.len();
+                id
+            })
+            .collect();
+
+        // Remove them
+        for id in &to_remove {
+            self.subscriptions.remove(id);
+        }
+
+        let removed = to_remove.len();
         if removed > 0 {
             tracing::debug!(
                 removed_count = %removed,
@@ -962,8 +975,8 @@ impl<T: Clone + Send + 'static> EventSubscriber<T> {
 /// A multi-channel event publisher for pub/sub patterns
 #[derive(Debug)]
 pub struct ChannelPublisher<T: Clone + Send + 'static> {
-    /// Publishers by channel name
-    channels: RwLock<HashMap<String, EventPublisher<T>>>,
+    /// Publishers by channel name (using DashMap for better concurrent performance)
+    channels: dashmap::DashMap<String, EventPublisher<T>>,
     /// Default channel capacity
     capacity: usize,
 }
@@ -972,15 +985,14 @@ impl<T: Clone + Send + 'static> ChannelPublisher<T> {
     /// Create a new channel publisher
     pub fn new(capacity: usize) -> Self {
         Self {
-            channels: RwLock::new(HashMap::new()),
+            channels: dashmap::DashMap::new(),
             capacity,
         }
     }
 
     /// Publish to a specific channel
-    pub async fn publish(&self, channel: &str, event: Event<T>) -> Result<PublishResult, RpcError> {
-        let channels = self.channels.read().await;
-        if let Some(publisher) = channels.get(channel) {
+    pub fn publish(&self, channel: &str, event: Event<T>) -> Result<PublishResult, RpcError> {
+        if let Some(publisher) = self.channels.get(channel) {
             Ok(publisher.publish(event))
         } else {
             Err(RpcError::not_found(format!(
@@ -991,36 +1003,38 @@ impl<T: Clone + Send + 'static> ChannelPublisher<T> {
     }
 
     /// Publish data to a channel
-    pub async fn publish_data(&self, channel: &str, data: T) -> Result<PublishResult, RpcError> {
-        self.publish(channel, Event::new(data)).await
+    pub fn publish_data(&self, channel: &str, data: T) -> Result<PublishResult, RpcError> {
+        self.publish(channel, Event::new(data))
     }
 
     /// Subscribe to a channel (creates channel if it doesn't exist)
-    pub async fn subscribe(&self, channel: &str) -> EventSubscriber<T> {
-        let mut channels = self.channels.write().await;
-        let publisher = channels
+    pub fn subscribe(&self, channel: &str) -> EventSubscriber<T> {
+        let publisher = self
+            .channels
             .entry(channel.to_string())
             .or_insert_with(|| EventPublisher::new(self.capacity));
         publisher.subscribe()
     }
 
     /// Get or create a channel
-    pub async fn get_or_create(&self, channel: &str) -> EventPublisher<T> {
-        let mut channels = self.channels.write().await;
-        channels
+    pub fn get_or_create(&self, channel: &str) -> EventPublisher<T> {
+        self.channels
             .entry(channel.to_string())
             .or_insert_with(|| EventPublisher::new(self.capacity))
             .clone()
     }
 
     /// Remove a channel
-    pub async fn remove_channel(&self, channel: &str) -> bool {
-        self.channels.write().await.remove(channel).is_some()
+    pub fn remove_channel(&self, channel: &str) -> bool {
+        self.channels.remove(channel).is_some()
     }
 
     /// List all channels
-    pub async fn channels(&self) -> Vec<String> {
-        self.channels.read().await.keys().cloned().collect()
+    pub fn channels(&self) -> Vec<String> {
+        self.channels
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect()
     }
 }
 

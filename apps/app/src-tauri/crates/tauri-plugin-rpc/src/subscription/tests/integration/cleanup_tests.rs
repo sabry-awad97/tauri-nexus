@@ -11,14 +11,14 @@ mod tests {
         let signal = std::sync::Arc::new(CancellationSignal::new());
         let handle = SubscriptionHandle::new(id, "test.cleanup".to_string(), signal.clone());
 
-        manager.subscribe(handle).await;
-        assert_eq!(manager.count().await, 1);
+        manager.subscribe(handle);
+        assert_eq!(manager.count(), 1);
 
         // Cancel and cleanup
         signal.cancel();
-        manager.unsubscribe(&id).await;
+        manager.unsubscribe(&id);
 
-        assert_eq!(manager.count().await, 0);
+        assert_eq!(manager.count(), 0);
     }
 
     #[tokio::test]
@@ -30,14 +30,15 @@ mod tests {
             let id = SubscriptionId::new();
             let signal = std::sync::Arc::new(CancellationSignal::new());
             let handle = SubscriptionHandle::new(id, format!("test.{}", i), signal);
-            manager.subscribe(handle).await;
+            manager.subscribe(handle);
         }
 
-        assert_eq!(manager.count().await, 5);
+        assert_eq!(manager.count(), 5);
 
         // Shutdown should clean everything
         manager.shutdown().await;
 
-        assert_eq!(manager.count().await, 0);
+        assert_eq!(manager.count(), 0);
     }
 }
+
