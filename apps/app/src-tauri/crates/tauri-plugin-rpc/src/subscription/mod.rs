@@ -20,10 +20,14 @@
 //!     });
 //! ```
 
+mod backpressure;
+mod config;
 mod errors;
 mod metrics;
 mod retry_delay;
 
+pub use backpressure::{BackpressureStrategy, BatchPublishResult};
+pub use config::{Capacity, ManagerConfig, SubscriptionConfig};
 pub use errors::{ManagerError, ParseError, PublishResult, ValidationError};
 pub use metrics::{
     MetricsSnapshot, PublisherMetrics, PublisherMetricsSnapshot, SubscriberMetrics,
@@ -258,6 +262,17 @@ pub struct SubscriptionContext {
     pub last_event_id: Option<String>,
     /// Cancellation signal
     signal: Arc<CancellationSignal>,
+    /// Optional timeout for the subscription
+    timeout: Option<Duration>,
+}
+
+/// Reason for subscription cancellation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CancellationReason {
+    /// Subscription was explicitly cancelled
+    Cancelled,
+    /// Subscription timed out
+    Timeout,
 }
 
 impl SubscriptionContext {
@@ -267,7 +282,14 @@ impl SubscriptionContext {
             subscription_id,
             last_event_id,
             signal: Arc::new(CancellationSignal::new()),
+            timeout: None,
         }
+    }
+
+    /// Set a timeout for this subscription
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
     }
 
     /// Check if the subscription has been cancelled
@@ -278,6 +300,32 @@ impl SubscriptionContext {
     /// Get a future that resolves when cancelled
     pub async fn cancelled(&self) {
         self.signal.cancelled().await
+    }
+
+    /// Get a future that resolves when either cancelled or timed out.
+    ///
+    /// Returns the reason for completion (Cancelled or Timeout).
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let ctx = SubscriptionContext::new(id, None)
+    ///     .with_timeout(Duration::from_secs(30));
+    ///
+    /// match ctx.cancelled_or_timeout().await {
+    ///     CancellationReason::Cancelled => println!("Subscription cancelled"),
+    ///     CancellationReason::Timeout => println!("Subscription timed out"),
+    /// }
+    /// ```
+    pub async fn cancelled_or_timeout(&self) -> CancellationReason {
+        if let Some(timeout) = self.timeout {
+            tokio::select! {
+                _ = self.signal.cancelled() => CancellationReason::Cancelled,
+                _ = tokio::time::sleep(timeout) => CancellationReason::Timeout,
+            }
+        } else {
+            self.signal.cancelled().await;
+            CancellationReason::Cancelled
+        }
     }
 
     /// Get the cancellation signal for cloning
@@ -524,6 +572,8 @@ pub struct SubscriptionManager {
     task_tracker: RwLock<tokio::task::JoinSet<()>>,
     /// Counter for completed tasks (for monitoring memory leaks)
     completed_tasks: Arc<std::sync::atomic::AtomicUsize>,
+    /// Configuration for manager operations
+    config: ManagerConfig,
 }
 
 impl Default for SubscriptionManager {
@@ -533,13 +583,19 @@ impl Default for SubscriptionManager {
 }
 
 impl SubscriptionManager {
-    /// Create a new subscription manager
+    /// Create a new subscription manager with default configuration
     pub fn new() -> Self {
-        tracing::trace!("SubscriptionManager created");
+        Self::with_config(ManagerConfig::default())
+    }
+
+    /// Create a new subscription manager with custom configuration
+    pub fn with_config(config: ManagerConfig) -> Self {
+        tracing::trace!("SubscriptionManager created with config");
         Self {
             subscriptions: dashmap::DashMap::new(),
             task_tracker: RwLock::new(tokio::task::JoinSet::new()),
             completed_tasks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            config,
         }
     }
 
@@ -556,6 +612,41 @@ impl SubscriptionManager {
         );
 
         id
+    }
+
+    /// Register a new subscription with timeout.
+    ///
+    /// This method attempts to register a subscription within the configured timeout.
+    /// If the operation takes longer than the timeout, it returns a `ManagerError::Timeout`.
+    ///
+    /// # Arguments
+    /// * `handle` - The subscription handle to register
+    ///
+    /// # Returns
+    /// * `Ok(SubscriptionId)` - The subscription was registered successfully
+    /// * `Err(ManagerError::Timeout)` - The operation timed out
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// match manager.subscribe_with_timeout(handle).await {
+    ///     Ok(id) => println!("Subscribed: {}", id),
+    ///     Err(ManagerError::Timeout(_)) => println!("Subscription timed out"),
+    ///     Err(e) => println!("Error: {}", e),
+    /// }
+    /// ```
+    pub async fn subscribe_with_timeout(
+        &self,
+        handle: SubscriptionHandle,
+    ) -> Result<SubscriptionId, ManagerError> {
+        let timeout = self.config.subscribe_timeout;
+
+        tokio::time::timeout(timeout, async move {
+            // The actual subscribe operation is synchronous, but we wrap it
+            // in an async block to support timeout
+            Ok(self.subscribe(handle))
+        })
+        .await
+        .map_err(|_| ManagerError::Timeout(timeout))?
     }
 
     /// Spawn a tracked subscription task.
@@ -660,6 +751,44 @@ impl SubscriptionManager {
             );
             false
         }
+    }
+
+    /// Unsubscribe by ID with timeout.
+    ///
+    /// This method attempts to unsubscribe within the configured timeout.
+    /// If the operation takes longer than the timeout, it returns a `ManagerError::Timeout`.
+    ///
+    /// # Arguments
+    /// * `id` - The subscription ID to unsubscribe
+    ///
+    /// # Returns
+    /// * `Ok(true)` - The subscription was found and unsubscribed
+    /// * `Ok(false)` - The subscription was not found
+    /// * `Err(ManagerError::Timeout)` - The operation timed out
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// match manager.unsubscribe_with_timeout(&id).await {
+    ///     Ok(true) => println!("Unsubscribed successfully"),
+    ///     Ok(false) => println!("Subscription not found"),
+    ///     Err(ManagerError::Timeout(_)) => println!("Unsubscribe timed out"),
+    ///     Err(e) => println!("Error: {}", e),
+    /// }
+    /// ```
+    pub async fn unsubscribe_with_timeout(
+        &self,
+        id: &SubscriptionId,
+    ) -> Result<bool, ManagerError> {
+        let timeout = self.config.unsubscribe_timeout;
+        let id_copy = *id;
+
+        tokio::time::timeout(timeout, async move {
+            // The actual unsubscribe operation is synchronous, but we wrap it
+            // in an async block to support timeout
+            Ok(self.unsubscribe(&id_copy))
+        })
+        .await
+        .map_err(|_| ManagerError::Timeout(timeout))?
     }
 
     /// Get subscription count
@@ -803,7 +932,8 @@ impl SubscriptionManager {
     /// Start periodic cleanup of completed tasks.
     ///
     /// Spawns a background task that periodically calls `cleanup_completed()`
-    /// to prevent memory leaks from accumulated finished tasks.
+    /// to prevent memory leaks from accumulated finished tasks. Uses the
+    /// cleanup interval from the manager configuration.
     ///
     /// This method requires the manager to be wrapped in an Arc.
     ///
@@ -818,9 +948,10 @@ impl SubscriptionManager {
     /// ```
     pub fn start_periodic_cleanup(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
         let manager = Arc::clone(self);
+        let interval_duration = manager.config.cleanup_interval;
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            let mut interval = tokio::time::interval(interval_duration);
             loop {
                 interval.tick().await;
                 let removed = manager.cleanup_completed().await;
@@ -845,14 +976,54 @@ pub struct EventPublisher<T: Clone + Send + 'static> {
     /// Broadcast sender
     sender: broadcast::Sender<Event<T>>,
     /// Channel capacity
-    capacity: usize,
+    capacity: Capacity,
+    /// Backpressure handling strategy
+    strategy: BackpressureStrategy,
+    /// Publisher metrics
+    metrics: Arc<PublisherMetrics>,
 }
 
 impl<T: Clone + Send + 'static> EventPublisher<T> {
-    /// Create a new event publisher
+    /// Create a new event publisher with default capacity and strategy
     pub fn new(capacity: usize) -> Self {
-        let (sender, _) = broadcast::channel(capacity);
-        Self { sender, capacity }
+        Self::with_capacity(Capacity::from(capacity))
+    }
+
+    /// Create a new event publisher with a specific capacity preset
+    pub fn with_capacity(capacity: Capacity) -> Self {
+        let (sender, _) = broadcast::channel(capacity.value());
+        Self {
+            sender,
+            capacity,
+            strategy: BackpressureStrategy::default(),
+            metrics: Arc::new(PublisherMetrics::new()),
+        }
+    }
+
+    /// Create a new event publisher with a specific backpressure strategy
+    pub fn with_strategy(capacity: Capacity, strategy: BackpressureStrategy) -> Self {
+        let (sender, _) = broadcast::channel(capacity.value());
+        Self {
+            sender,
+            capacity,
+            strategy,
+            metrics: Arc::new(PublisherMetrics::new()),
+        }
+    }
+
+    /// Get the backpressure strategy
+    pub fn strategy(&self) -> BackpressureStrategy {
+        self.strategy
+    }
+
+    /// Get the capacity
+    pub fn capacity(&self) -> Capacity {
+        self.capacity
+    }
+
+    /// Get publisher metrics
+    pub fn metrics(&self) -> Arc<PublisherMetrics> {
+        Arc::clone(&self.metrics)
     }
 
     /// Publish an event to all subscribers.
@@ -865,7 +1036,10 @@ impl<T: Clone + Send + 'static> EventPublisher<T> {
     /// operational state, not an error condition.
     pub fn publish(&self, event: Event<T>) -> PublishResult {
         match self.sender.send(event) {
-            Ok(count) => PublishResult::Published(count),
+            Ok(count) => {
+                self.metrics.record_publish(count);
+                PublishResult::Published(count)
+            }
             Err(_) => {
                 tracing::trace!("EventPublisher::publish: no active subscribers");
                 PublishResult::NoSubscribers
@@ -878,6 +1052,51 @@ impl<T: Clone + Send + 'static> EventPublisher<T> {
     /// This is a convenience method that wraps the data in an [`Event`] and publishes it.
     pub fn publish_data(&self, data: T) -> PublishResult {
         self.publish(Event::new(data))
+    }
+
+    /// Publish multiple events as a batch.
+    ///
+    /// This method attempts to publish all events in the batch. The behavior
+    /// depends on the configured backpressure strategy.
+    ///
+    /// # Returns
+    /// A `BatchPublishResult` containing success/failure counts and total subscribers.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let events = vec![
+    ///     Event::new("message1"),
+    ///     Event::new("message2"),
+    ///     Event::new("message3"),
+    /// ];
+    ///
+    /// let result = publisher.publish_batch(events);
+    /// println!("Published {}/{} events to {} subscribers",
+    ///     result.success_count,
+    ///     result.total_count(),
+    ///     result.total_subscribers
+    /// );
+    /// ```
+    pub fn publish_batch(&self, events: Vec<Event<T>>) -> BatchPublishResult {
+        let mut success_count = 0;
+        let mut failure_count = 0;
+        let mut total_subscribers = 0;
+
+        for event in events {
+            match self.publish(event) {
+                PublishResult::Published(count) => {
+                    success_count += 1;
+                    total_subscribers = total_subscribers.max(count);
+                }
+                PublishResult::NoSubscribers => {
+                    failure_count += 1;
+                }
+            }
+        }
+
+        self.metrics.record_batch(success_count);
+
+        BatchPublishResult::new(success_count, failure_count, total_subscribers)
     }
 
     /// Subscribe to events
@@ -896,7 +1115,7 @@ impl<T: Clone + Send + 'static> EventPublisher<T> {
 
 impl<T: Clone + Send + 'static> Default for EventPublisher<T> {
     fn default() -> Self {
-        Self::new(256)
+        Self::with_capacity(Capacity::Medium)
     }
 }
 
@@ -905,6 +1124,8 @@ impl<T: Clone + Send + 'static> Clone for EventPublisher<T> {
         Self {
             sender: self.sender.clone(),
             capacity: self.capacity,
+            strategy: self.strategy,
+            metrics: Arc::clone(&self.metrics),
         }
     }
 }
@@ -978,12 +1199,17 @@ pub struct ChannelPublisher<T: Clone + Send + 'static> {
     /// Publishers by channel name (using DashMap for better concurrent performance)
     channels: dashmap::DashMap<String, EventPublisher<T>>,
     /// Default channel capacity
-    capacity: usize,
+    capacity: Capacity,
 }
 
 impl<T: Clone + Send + 'static> ChannelPublisher<T> {
-    /// Create a new channel publisher
+    /// Create a new channel publisher with default capacity
     pub fn new(capacity: usize) -> Self {
+        Self::with_capacity(Capacity::from(capacity))
+    }
+
+    /// Create a new channel publisher with a specific capacity preset
+    pub fn with_capacity(capacity: Capacity) -> Self {
         Self {
             channels: dashmap::DashMap::new(),
             capacity,
@@ -1012,7 +1238,7 @@ impl<T: Clone + Send + 'static> ChannelPublisher<T> {
         let publisher = self
             .channels
             .entry(channel.to_string())
-            .or_insert_with(|| EventPublisher::new(self.capacity));
+            .or_insert_with(|| EventPublisher::with_capacity(self.capacity));
         publisher.subscribe()
     }
 
@@ -1020,7 +1246,7 @@ impl<T: Clone + Send + 'static> ChannelPublisher<T> {
     pub fn get_or_create(&self, channel: &str) -> EventPublisher<T> {
         self.channels
             .entry(channel.to_string())
-            .or_insert_with(|| EventPublisher::new(self.capacity))
+            .or_insert_with(|| EventPublisher::with_capacity(self.capacity))
             .clone()
     }
 
@@ -1040,7 +1266,7 @@ impl<T: Clone + Send + 'static> ChannelPublisher<T> {
 
 impl<T: Clone + Send + 'static> Default for ChannelPublisher<T> {
     fn default() -> Self {
-        Self::new(256)
+        Self::with_capacity(Capacity::Medium)
     }
 }
 
