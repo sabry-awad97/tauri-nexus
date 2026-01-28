@@ -1,23 +1,220 @@
 //! Event Iterator and Streaming (SSE-Style) Implementation
 //!
-//! This module provides subscription/streaming support for the RPC framework,
-//! enabling real-time data streaming from backend to frontend using Tauri's
-//! event system.
+//! This module provides comprehensive subscription/streaming support for the RPC framework,
+//! enabling real-time data streaming from backend to frontend using Tauri's event system.
 //!
 //! ## Features
-//! - Async generator-style subscriptions
-//! - Event metadata with IDs for resumption
-//! - Automatic cleanup on disconnect
-//! - Channel-based pub/sub patterns
 //!
-//! ## Example
+//! - **Async generator-style subscriptions** - Stream data asynchronously with full backpressure support
+//! - **Event metadata with IDs** - Support for resumption and retry with event IDs
+//! - **Automatic cleanup** - Graceful shutdown and resource management
+//! - **Channel-based pub/sub** - Multi-channel event broadcasting
+//! - **Health monitoring** - Built-in health checks and lifecycle metrics
+//! - **Configurable timeouts** - Timeout support for all operations
+//! - **Backpressure strategies** - Choose how to handle slow consumers
+//!
+//! ## Quick Start
+//!
+//! ```rust,ignore
+//! use tauri_plugin_rpc::subscription::*;
+//!
+//! // Create a subscription manager
+//! let manager = Arc::new(SubscriptionManager::new());
+//!
+//! // Create an event publisher
+//! let publisher = EventPublisher::<String>::new(256);
+//! let mut subscriber = publisher.subscribe();
+//!
+//! // Publish events
+//! publisher.publish_data("Hello, world!".to_string());
+//!
+//! // Receive events
+//! if let Some(event) = subscriber.recv().await {
+//!     println!("Received: {}", event.data);
+//! }
+//! ```
+//!
+//! ## Configuration
+//!
+//! ### Capacity Recommendations
+//!
+//! Choose the appropriate capacity based on your use case:
+//!
+//! - **Small (32)** - Low-frequency events, minimal memory usage
+//!   - Example: User preference updates, occasional notifications
+//!
+//! - **Medium (256)** - Default for most use cases, balanced performance
+//!   - Example: Chat messages, UI state updates
+//!
+//! - **Large (1024)** - High-frequency events, more memory usage
+//!   - Example: Real-time sensor data, live metrics
+//!
+//! - **XLarge (4096)** - Very high throughput, significant memory usage
+//!   - Example: High-frequency trading data, video streaming metadata
+//!
+//! ```rust,ignore
+//! // Using capacity presets
+//! let publisher = EventPublisher::<Data>::with_capacity(Capacity::Large);
+//! ```
+//!
+//! ### Backpressure Strategies
+//!
+//! Choose the strategy that matches your data semantics:
+//!
+//! - **DropOldest (default)** - Maintains most recent data
+//!   - Use for: Real-time sensor readings, live prices, UI state
+//!   - Trade-off: May lose historical data, but always current
+//!
+//! - **DropNewest** - Maintains message order and completeness
+//!   - Use for: Audit logs, transaction history, sequential commands
+//!   - Trade-off: May deliver stale data, but preserves order
+//!
+//! - **Error** - Fails fast on backpressure
+//!   - Use for: Critical notifications, payment events, security alerts
+//!   - Trade-off: Requires explicit error handling, but guarantees delivery or failure
+//!
+//! ```rust,ignore
+//! let publisher = EventPublisher::<Alert>::with_strategy(
+//!     Capacity::Medium,
+//!     BackpressureStrategy::Error
+//! );
+//! ```
+//!
+//! ### Timeout Configuration
+//!
+//! Configure timeouts to prevent operations from hanging:
+//!
+//! ```rust,ignore
+//! let config = ManagerConfig::new()
+//!     .with_subscribe_timeout(Duration::from_secs(30))
+//!     .with_unsubscribe_timeout(Duration::from_secs(5))
+//!     .with_cleanup_interval(Duration::from_secs(60));
+//!
+//! let manager = SubscriptionManager::with_config(config);
+//! ```
+//!
+//! **Implications:**
+//! - Shorter timeouts = faster failure detection, but may timeout valid operations
+//! - Longer timeouts = more resilient, but slower to detect issues
+//! - Cleanup interval affects memory usage vs. CPU overhead trade-off
+//!
+//! ## Error Handling
+//!
+//! ### PublishResult
+//!
+//! ```rust,ignore
+//! match publisher.publish_data(data) {
+//!     PublishResult::Published(count) => {
+//!         println!("Published to {} subscribers", count);
+//!     }
+//!     PublishResult::NoSubscribers => {
+//!         println!("No active subscribers (not an error)");
+//!     }
+//! }
+//! ```
+//!
+//! ### Timeout Errors
+//!
+//! ```rust,ignore
+//! match manager.subscribe_with_timeout(handle).await {
+//!     Ok(id) => println!("Subscribed: {}", id),
+//!     Err(ManagerError::Timeout(duration)) => {
+//!         println!("Operation timed out after {:?}", duration);
+//!     }
+//!     Err(e) => println!("Error: {}", e),
+//! }
+//! ```
+//!
+//! ### Validation Errors
+//!
+//! ```rust,ignore
+//! match RetryDelay::from_millis(5000) {
+//!     Ok(delay) => println!("Valid delay: {:?}", delay.as_duration()),
+//!     Err(ValidationError::RetryDelayOutOfRange { min, max, actual }) => {
+//!         println!("Delay {}ms out of range [{}, {}]", actual, min, max);
+//!     }
+//!     Err(e) => println!("Validation error: {}", e),
+//! }
+//! ```
+//!
+//! ## Health Monitoring
+//!
+//! ```rust,ignore
+//! let health = manager.health().await;
+//! println!("Status: {}", health.status_message());
+//! println!("Active subscriptions: {}", health.active_subscriptions);
+//! println!("Uptime: {}s", health.uptime_seconds);
+//!
+//! // Get lifecycle metrics
+//! let metrics = manager.metrics();
+//! let snapshot = metrics.snapshot();
+//! println!("Created: {}, Active: {}, Cancelled: {}",
+//!     snapshot.created, snapshot.active, snapshot.cancelled);
+//! ```
+//!
+//! ## Module Organization
+//!
+//! - `backpressure` - Backpressure strategies and batch publishing
+//! - `config` - Configuration types and capacity presets
+//! - `errors` - Error types for the subscription system
+//! - `metrics` - Metrics collection and reporting
+//! - `retry_delay` - Validated retry delay type
+//!
+//! ## Common Patterns
+//!
+//! ### Basic Subscription
+//!
 //! ```rust,ignore
 //! let router = Router::new()
 //!     .subscription("chat.messages", |ctx, input: ChatInput| async move {
-//!         let (tx, rx) = channel();
-//!         // Stream messages...
+//!         let (tx, rx) = event_channel(256);
+//!         
+//!         // Spawn background task to send messages
+//!         tokio::spawn(async move {
+//!             while let Some(msg) = get_next_message().await {
+//!                 if tx.send(Event::new(msg)).await.is_err() {
+//!                     break; // Subscriber disconnected
+//!                 }
+//!             }
+//!         });
+//!         
 //!         Ok(rx)
 //!     });
+//! ```
+//!
+//! ### With Cancellation
+//!
+//! ```rust,ignore
+//! .subscription("live.data", |ctx, sub_ctx, input| async move {
+//!     let (tx, rx) = event_channel(256);
+//!     
+//!     tokio::spawn(async move {
+//!         loop {
+//!             tokio::select! {
+//!                 _ = sub_ctx.cancelled() => break,
+//!                 data = fetch_data() => {
+//!                     if tx.send(Event::new(data)).await.is_err() {
+//!                         break;
+//!                     }
+//!                 }
+//!             }
+//!         }
+//!     });
+//!     
+//!     Ok(rx)
+//! })
+//! ```
+//!
+//! ### With Timeout
+//!
+//! ```rust,ignore
+//! let ctx = SubscriptionContext::new(id, None)
+//!     .with_timeout(Duration::from_secs(300)); // 5 minute timeout
+//!
+//! match ctx.cancelled_or_timeout().await {
+//!     CancellationReason::Cancelled => println!("User cancelled"),
+//!     CancellationReason::Timeout => println!("Subscription timed out"),
+//! }
 //! ```
 
 mod backpressure;
@@ -244,7 +441,36 @@ impl EventMeta {
     }
 }
 
-/// Helper function to create event metadata
+/// Helper function to create event metadata with an ID.
+///
+/// This is a convenience function for creating `EventMeta` with an event ID,
+/// which is useful for implementing resumable subscriptions (similar to SSE's Last-Event-ID).
+///
+/// # Arguments
+///
+/// * `id` - The event ID (can be any type that converts to String)
+///
+/// # Returns
+///
+/// An `EventMeta` struct with the specified ID
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tauri_plugin_rpc::subscription::*;
+///
+/// let event = Event::new("data".to_string())
+///     .with_meta(with_event_meta("event-123"));
+///
+/// // Client can use this ID to resume from this point
+/// assert_eq!(event.id, Some("event-123".to_string()));
+/// ```
+///
+/// # Use Cases
+///
+/// - **Resumable streams**: Client can reconnect and resume from last received event
+/// - **Deduplication**: Client can detect and skip duplicate events
+/// - **Ordering**: Client can detect out-of-order delivery
 pub fn with_event_meta(id: impl Into<String>) -> EventMeta {
     EventMeta::with_id(id)
 }
@@ -386,7 +612,48 @@ pub type EventStream<T> = mpsc::Receiver<Event<T>>;
 /// Sender for emitting events
 pub type EventSender<T> = mpsc::Sender<Event<T>>;
 
-/// Create a new event channel
+/// Create a new event channel for streaming data.
+///
+/// This function creates a bounded MPSC channel for sending events from a subscription
+/// handler to the frontend. The buffer size determines how many events can be queued
+/// before backpressure is applied.
+///
+/// # Arguments
+///
+/// * `buffer` - The maximum number of events that can be buffered
+///
+/// # Returns
+///
+/// A tuple of `(EventSender<T>, EventStream<T>)` where:
+/// - `EventSender` is used to send events from your subscription handler
+/// - `EventStream` is returned to the RPC framework for delivery to the frontend
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tauri_plugin_rpc::subscription::*;
+///
+/// async fn my_subscription() -> RpcResult<EventStream<String>> {
+///     let (tx, rx) = event_channel(256);
+///     
+///     tokio::spawn(async move {
+///         for i in 0..10 {
+///             let event = Event::new(format!("Message {}", i));
+///             if tx.send(event).await.is_err() {
+///                 break; // Subscriber disconnected
+///             }
+///         }
+///     });
+///     
+///     Ok(rx)
+/// }
+/// ```
+///
+/// # Buffer Size Guidelines
+///
+/// - Small (32-64): Low-frequency events, minimal latency
+/// - Medium (256): Default for most use cases
+/// - Large (1024+): High-frequency events, burst tolerance
 pub fn event_channel<T>(buffer: usize) -> (EventSender<T>, EventStream<T>) {
     mpsc::channel(buffer)
 }
@@ -741,7 +1008,7 @@ impl SubscriptionManager {
 
         self.subscriptions.insert(id, handle);
 
-        tracing::debug!(
+        tracing::info!(
             subscription_id = %id,
             path = %path,
             "Subscription registered"
@@ -875,11 +1142,12 @@ impl SubscriptionManager {
         if let Some((_, handle)) = self.subscriptions.remove(id) {
             let duration = handle.duration();
 
-            tracing::debug!(
+            tracing::info!(
                 subscription_id = %id,
                 path = %handle.path,
                 duration_ms = %duration.as_millis(),
-                "Subscription unsubscribed"
+                reason = "unsubscribed",
+                "Subscription cancelled"
             );
 
             handle.cancel();
@@ -969,8 +1237,9 @@ impl SubscriptionManager {
         // Clear all subscriptions
         self.subscriptions.clear();
 
-        tracing::debug!(
+        tracing::info!(
             cancelled_count = %count,
+            reason = "cancel_all",
             "All subscriptions cancelled"
         );
     }
