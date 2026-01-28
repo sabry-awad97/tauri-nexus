@@ -1,7 +1,9 @@
 //! Tests for context transformation chains
 
 use crate::{
-    Context, RpcError, RpcResult, router::Router, validation::{FieldError, Validate, ValidationResult}
+    Context, RpcError, RpcResult,
+    router::Router,
+    validation::{FieldError, Validate, ValidationResult},
 };
 use serde::{Deserialize, Serialize};
 

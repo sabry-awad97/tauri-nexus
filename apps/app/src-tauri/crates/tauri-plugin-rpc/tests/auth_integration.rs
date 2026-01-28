@@ -1,4 +1,3 @@
-
 //! Integration tests for authentication and authorization
 //!
 //! These tests verify end-to-end behavior of the auth system
@@ -9,7 +8,7 @@ use serde_json::json;
 use std::future::Future;
 use std::pin::Pin;
 use tauri_plugin_rpc::auth::{
-    auth_middleware, auth_with_config, requires_roles, AuthConfig, AuthProvider, AuthResult,
+    AuthConfig, AuthProvider, AuthResult, auth_middleware, auth_with_config, requires_roles,
 };
 use tauri_plugin_rpc::{Context, Router, RpcErrorCode, RpcResult};
 
@@ -352,10 +351,7 @@ async fn test_rule_order_precedence() {
 
     // admin.users should require admin role
     let result = router
-        .call(
-            "admin.users",
-            json!({"token": "secret", "value": "test"}),
-        )
+        .call("admin.users", json!({"token": "secret", "value": "test"}))
         .await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, RpcErrorCode::Forbidden);
@@ -384,26 +380,29 @@ async fn test_complex_config_with_multiple_rules() {
     assert!(router.call("auth.login", json!(null)).await.is_ok());
 
     // User endpoints (requires auth)
-    assert!(router
-        .call("user.profile", json!({"value": "test"}))
-        .await
-        .is_err());
-    assert!(router
-        .call(
-            "user.profile",
-            json!({"token": "secret", "value": "test"})
-        )
-        .await
-        .is_ok());
+    assert!(
+        router
+            .call("user.profile", json!({"value": "test"}))
+            .await
+            .is_err()
+    );
+    assert!(
+        router
+            .call("user.profile", json!({"token": "secret", "value": "test"}))
+            .await
+            .is_ok()
+    );
 
     // Moderator endpoints (requires moderator or admin role)
-    assert!(router
-        .call(
-            "moderator.posts",
-            json!({"token": "secret", "value": "test"})
-        )
-        .await
-        .is_ok());
+    assert!(
+        router
+            .call(
+                "moderator.posts",
+                json!({"token": "secret", "value": "test"})
+            )
+            .await
+            .is_ok()
+    );
 
     // Admin endpoints (requires admin role)
     let result = router
@@ -441,31 +440,31 @@ async fn test_ergonomic_helper_methods() {
     assert!(router.call("health", json!(null)).await.is_ok());
 
     // Authenticated
-    assert!(router
-        .call(
-            "user.profile",
-            json!({"token": "secret", "value": "test"})
-        )
-        .await
-        .is_ok());
+    assert!(
+        router
+            .call("user.profile", json!({"token": "secret", "value": "test"}))
+            .await
+            .is_ok()
+    );
 
     // Admin only
-    assert!(router
-        .call(
-            "admin.users",
-            json!({"token": "secret", "value": "test"})
-        )
-        .await
-        .is_ok());
+    assert!(
+        router
+            .call("admin.users", json!({"token": "secret", "value": "test"}))
+            .await
+            .is_ok()
+    );
 
     // Any role (admin has admin role)
-    assert!(router
-        .call(
-            "moderator.posts",
-            json!({"token": "secret", "value": "test"})
-        )
-        .await
-        .is_ok());
+    assert!(
+        router
+            .call(
+                "moderator.posts",
+                json!({"token": "secret", "value": "test"})
+            )
+            .await
+            .is_ok()
+    );
 
     // All roles (admin lacks superuser role)
     let result = router

@@ -1,4 +1,5 @@
 use crate::subscription::*;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[tokio::test]

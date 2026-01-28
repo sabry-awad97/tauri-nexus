@@ -1,8 +1,8 @@
 //! Subscription context and cancellation types
 
 use crate::subscription::SubscriptionId;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 /// Context provided to subscription handlers

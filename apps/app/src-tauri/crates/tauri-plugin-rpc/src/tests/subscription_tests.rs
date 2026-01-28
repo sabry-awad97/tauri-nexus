@@ -1108,4 +1108,3 @@ mod shutdown_timeout_tests {
         assert_eq!(manager.count(), 0);
     }
 }
-

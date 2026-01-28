@@ -41,4 +41,3 @@ mod tests {
         assert_eq!(manager.count(), 0);
     }
 }
-
