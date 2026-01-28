@@ -232,12 +232,15 @@ impl<
     {
         let output_transformer = self.output_transformer;
         let context_transformer = self.context_transformer;
+        let path = self.path.clone();
+        let input_type_name = std::any::type_name::<Input>();
 
         // Create the core handler with context transformation
         let core_handler: BoxedHandler<OrigCtx> = Arc::new(move |ctx, input_value| {
             let handler = handler.clone();
             let output_transformer = output_transformer.clone();
             let context_transformer = context_transformer.clone();
+            let path = path.clone();
 
             Box::pin(async move {
                 // Transform context
@@ -245,15 +248,22 @@ impl<
                 let new_ctx = Context::new(new_ctx_state);
 
                 // Deserialize input
-                let input: Input = serde_json::from_value(input_value)
-                    .map_err(|e| RpcError::bad_request(format!("Invalid input: {}", e)))?;
+                let input: Input = serde_json::from_value(input_value).map_err(|e| {
+                    RpcError::bad_request(format!(
+                        "Invalid input for procedure '{}': {}. Expected type: {}",
+                        path, e, input_type_name
+                    ))
+                })?;
 
                 // Call handler with transformed context
                 let output = handler(new_ctx, input).await?;
 
                 // Serialize output
                 let mut output_value = serde_json::to_value(output).map_err(|e| {
-                    RpcError::internal(format!("Failed to serialize output: {}", e))
+                    RpcError::internal(format!(
+                        "Failed to serialize output for procedure '{}': {}",
+                        path, e
+                    ))
                 })?;
 
                 // Apply output transformer if present
@@ -353,12 +363,15 @@ impl<
     {
         let output_transformer = self.output_transformer;
         let context_transformer = self.context_transformer;
+        let path = self.path.clone();
+        let input_type_name = std::any::type_name::<Input>();
 
         // Create the core handler with context transformation and validation
         let core_handler: BoxedHandler<OrigCtx> = Arc::new(move |ctx, input_value| {
             let handler = handler.clone();
             let output_transformer = output_transformer.clone();
             let context_transformer = context_transformer.clone();
+            let path = path.clone();
 
             Box::pin(async move {
                 // Transform context
@@ -366,13 +379,21 @@ impl<
                 let new_ctx = Context::new(new_ctx_state);
 
                 // Deserialize input
-                let input: Input = serde_json::from_value(input_value)
-                    .map_err(|e| RpcError::bad_request(format!("Invalid input: {}", e)))?;
+                let input: Input = serde_json::from_value(input_value).map_err(|e| {
+                    RpcError::bad_request(format!(
+                        "Invalid input for procedure '{}': {}. Expected type: {}",
+                        path, e, input_type_name
+                    ))
+                })?;
 
                 // Validate input
                 let validation_result = input.validate();
                 if !validation_result.is_valid() {
-                    return Err(RpcError::validation("Validation failed").with_details(
+                    return Err(RpcError::validation(format!(
+                        "Validation failed for procedure '{}'",
+                        path
+                    ))
+                    .with_details(
                         serde_json::to_value(&validation_result.errors).unwrap_or_default(),
                     ));
                 }
@@ -382,7 +403,10 @@ impl<
 
                 // Serialize output
                 let mut output_value = serde_json::to_value(output).map_err(|e| {
-                    RpcError::internal(format!("Failed to serialize output: {}", e))
+                    RpcError::internal(format!(
+                        "Failed to serialize output for procedure '{}': {}",
+                        path, e
+                    ))
                 })?;
 
                 // Apply output transformer if present

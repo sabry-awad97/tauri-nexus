@@ -91,7 +91,19 @@ impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
 
         let compiled = self.compiled_chains.get(path).ok_or_else(|| {
             tracing::debug!(path = %path, "Procedure not found");
-            RpcError::procedure_not_found(path)
+
+            // Provide helpful error with available procedures
+            let available: Vec<String> = self.compiled_chains.keys().cloned().collect();
+            let mut error = RpcError::procedure_not_found(path);
+
+            if !available.is_empty() {
+                error = error.with_details(serde_json::json!({
+                    "available_procedures": available,
+                    "requested": path
+                }));
+            }
+
+            error
         })?;
 
         let ctx = Context::new(
@@ -125,7 +137,19 @@ impl<Ctx: Clone + Send + Sync + 'static> CompiledRouter<Ctx> {
     ) -> RpcResult<mpsc::Receiver<Event<serde_json::Value>>> {
         let handler = self.subscriptions.get(path).ok_or_else(|| {
             tracing::debug!(path = %path, "Subscription procedure not found");
-            RpcError::procedure_not_found(path)
+
+            // Provide helpful error with available subscriptions
+            let available: Vec<String> = self.subscriptions.keys().cloned().collect();
+            let mut error = RpcError::procedure_not_found(path);
+
+            if !available.is_empty() {
+                error = error.with_details(serde_json::json!({
+                    "available_subscriptions": available,
+                    "requested": path
+                }));
+            }
+
+            error
         })?;
 
         // Check if it's actually a subscription
@@ -694,10 +718,31 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
 
     /// Call a procedure by path
     pub async fn call(&self, path: &str, input: serde_json::Value) -> RpcResult<serde_json::Value> {
-        let procedure = self
-            .procedures
-            .get(path)
-            .ok_or_else(|| RpcError::procedure_not_found(path))?;
+        let procedure = self.procedures.get(path).ok_or_else(|| {
+            // Provide helpful error with available procedures
+            let available: Vec<String> = self
+                .procedures
+                .keys()
+                .filter(|k| {
+                    !matches!(
+                        self.procedures.get(*k),
+                        Some(Procedure::Subscription { .. })
+                    )
+                })
+                .cloned()
+                .collect();
+
+            let mut error = RpcError::procedure_not_found(path);
+
+            if !available.is_empty() {
+                error = error.with_details(serde_json::json!({
+                    "available_procedures": available,
+                    "requested": path
+                }));
+            }
+
+            error
+        })?;
 
         match procedure {
             Procedure::Handler {

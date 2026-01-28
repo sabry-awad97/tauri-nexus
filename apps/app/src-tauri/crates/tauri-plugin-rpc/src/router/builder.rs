@@ -242,23 +242,33 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'stati
         Output: Serialize + Send + 'static,
     {
         let output_transformer = self.output_transformer;
+        let path = self.path.clone();
+        let input_type_name = std::any::type_name::<Input>();
 
         // Create the core handler
         let core_handler: BoxedHandler<Ctx> = Arc::new(move |ctx, input_value| {
             let handler = handler.clone();
             let output_transformer = output_transformer.clone();
+            let path = path.clone();
 
             Box::pin(async move {
                 // Deserialize input
-                let input: Input = serde_json::from_value(input_value)
-                    .map_err(|e| RpcError::bad_request(format!("Invalid input: {}", e)))?;
+                let input: Input = serde_json::from_value(input_value).map_err(|e| {
+                    RpcError::bad_request(format!(
+                        "Invalid input for procedure '{}': {}. Expected type: {}",
+                        path, e, input_type_name
+                    ))
+                })?;
 
                 // Call handler
                 let output = handler(ctx, input).await?;
 
                 // Serialize output
                 let mut output_value = serde_json::to_value(output).map_err(|e| {
-                    RpcError::internal(format!("Failed to serialize output: {}", e))
+                    RpcError::internal(format!(
+                        "Failed to serialize output for procedure '{}': {}",
+                        path, e
+                    ))
                 })?;
 
                 // Apply output transformer if present
@@ -349,21 +359,32 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
         Output: Serialize + Send + 'static,
     {
         let output_transformer = self.output_transformer;
+        let path = self.path.clone();
+        let input_type_name = std::any::type_name::<Input>();
 
         // Create the core handler with validation
         let core_handler: BoxedHandler<Ctx> = Arc::new(move |ctx, input_value| {
             let handler = handler.clone();
             let output_transformer = output_transformer.clone();
+            let path = path.clone();
 
             Box::pin(async move {
                 // Deserialize input
-                let input: Input = serde_json::from_value(input_value)
-                    .map_err(|e| RpcError::bad_request(format!("Invalid input: {}", e)))?;
+                let input: Input = serde_json::from_value(input_value).map_err(|e| {
+                    RpcError::bad_request(format!(
+                        "Invalid input for procedure '{}': {}. Expected type: {}",
+                        path, e, input_type_name
+                    ))
+                })?;
 
                 // Validate input
                 let validation_result = input.validate();
                 if !validation_result.is_valid() {
-                    return Err(RpcError::validation("Validation failed").with_details(
+                    return Err(RpcError::validation(format!(
+                        "Validation failed for procedure '{}'",
+                        path
+                    ))
+                    .with_details(
                         serde_json::to_value(&validation_result.errors).unwrap_or_default(),
                     ));
                 }
@@ -373,7 +394,10 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
 
                 // Serialize output
                 let mut output_value = serde_json::to_value(output).map_err(|e| {
-                    RpcError::internal(format!("Failed to serialize output: {}", e))
+                    RpcError::internal(format!(
+                        "Failed to serialize output for procedure '{}': {}",
+                        path, e
+                    ))
                 })?;
 
                 // Apply output transformer if present
