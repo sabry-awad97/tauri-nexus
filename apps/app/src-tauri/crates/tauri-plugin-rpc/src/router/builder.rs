@@ -232,7 +232,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'stati
     }
 
     fn build_procedure<H, Fut, Output>(
-        mut self,
+        self,
         procedure_type: ProcedureType,
         handler: H,
     ) -> Router<Ctx>
@@ -242,7 +242,6 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'stati
         Output: Serialize + Send + 'static,
     {
         let output_transformer = self.output_transformer;
-        let middleware = self.middleware;
 
         // Create the core handler
         let core_handler: BoxedHandler<Ctx> = Arc::new(move |ctx, input_value| {
@@ -271,40 +270,9 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Send + 'stati
             })
         });
 
-        // Wrap with per-procedure middleware if any
-        let final_handler: BoxedHandler<Ctx> = if middleware.is_empty() {
-            core_handler
-        } else {
-            let handler_as_next: Next<Ctx> = Arc::new(move |ctx, req| {
-                let handler = core_handler.clone();
-                Box::pin(async move { (handler)(ctx, req.input).await })
-            });
-
-            // Use the shared middleware chain builder
-            let final_chain = build_middleware_chain(middleware, handler_as_next);
-
-            Arc::new(move |ctx, input| {
-                let chain = final_chain.clone();
-                Box::pin(async move {
-                    let req = Request {
-                        path: String::new(),
-                        input,
-                        procedure_type,
-                    };
-                    (chain)(ctx, req).await
-                })
-            })
-        };
-
-        let full_path = self.router.make_path(&self.path);
-        self.router.procedures.insert(
-            full_path,
-            Procedure::Handler {
-                handler: final_handler,
-                procedure_type,
-            },
-        );
-        self.router
+        // Wrap with middleware and register
+        let final_handler = wrap_with_middleware(core_handler, self.middleware, procedure_type);
+        register_procedure(self.router, &self.path, final_handler, procedure_type)
     }
 }
 
@@ -371,7 +339,7 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
     }
 
     fn build_validated_procedure<H, Fut, Output>(
-        mut self,
+        self,
         procedure_type: ProcedureType,
         handler: H,
     ) -> Router<Ctx>
@@ -381,7 +349,6 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
         Output: Serialize + Send + 'static,
     {
         let output_transformer = self.output_transformer;
-        let middleware = self.middleware;
 
         // Create the core handler with validation
         let core_handler: BoxedHandler<Ctx> = Arc::new(move |ctx, input_value| {
@@ -418,39 +385,66 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
             })
         });
 
-        // Wrap with per-procedure middleware if any
-        let final_handler: BoxedHandler<Ctx> = if middleware.is_empty() {
-            core_handler
-        } else {
-            let handler_as_next: Next<Ctx> = Arc::new(move |ctx, req| {
-                let handler = core_handler.clone();
-                Box::pin(async move { (handler)(ctx, req.input).await })
-            });
-
-            // Use the shared middleware chain builder
-            let final_chain = build_middleware_chain(middleware, handler_as_next);
-
-            Arc::new(move |ctx, input| {
-                let chain = final_chain.clone();
-                Box::pin(async move {
-                    let req = Request {
-                        path: String::new(),
-                        input,
-                        procedure_type,
-                    };
-                    (chain)(ctx, req).await
-                })
-            })
-        };
-
-        let full_path = self.router.make_path(&self.path);
-        self.router.procedures.insert(
-            full_path,
-            Procedure::Handler {
-                handler: final_handler,
-                procedure_type,
-            },
-        );
-        self.router
+        // Wrap with middleware and register
+        let final_handler = wrap_with_middleware(core_handler, self.middleware, procedure_type);
+        register_procedure(self.router, &self.path, final_handler, procedure_type)
     }
+}
+
+// =============================================================================
+// Helper Functions for Reducing Duplication
+// =============================================================================
+
+/// Wraps a core handler with middleware if any are present.
+///
+/// This helper reduces duplication across all builder chain types by centralizing
+/// the middleware wrapping logic.
+pub(crate) fn wrap_with_middleware<Ctx: Clone + Send + Sync + 'static>(
+    core_handler: BoxedHandler<Ctx>,
+    middleware: Vec<MiddlewareFn<Ctx>>,
+    procedure_type: ProcedureType,
+) -> BoxedHandler<Ctx> {
+    if middleware.is_empty() {
+        core_handler
+    } else {
+        let handler_as_next: Next<Ctx> = Arc::new(move |ctx, req| {
+            let handler = core_handler.clone();
+            Box::pin(async move { (handler)(ctx, req.input).await })
+        });
+
+        // Use the shared middleware chain builder
+        let final_chain = build_middleware_chain(middleware, handler_as_next);
+
+        Arc::new(move |ctx, input| {
+            let chain = final_chain.clone();
+            Box::pin(async move {
+                let req = Request {
+                    path: String::new(),
+                    input,
+                    procedure_type,
+                };
+                (chain)(ctx, req).await
+            })
+        })
+    }
+}
+
+/// Registers a procedure handler in the router.
+///
+/// This helper reduces duplication by centralizing the procedure registration logic.
+pub(crate) fn register_procedure<Ctx: Clone + Send + Sync + 'static>(
+    mut router: Router<Ctx>,
+    path: &str,
+    handler: BoxedHandler<Ctx>,
+    procedure_type: ProcedureType,
+) -> Router<Ctx> {
+    let full_path = router.make_path(path);
+    router.procedures.insert(
+        full_path,
+        Procedure::Handler {
+            handler,
+            procedure_type,
+        },
+    );
+    router
 }

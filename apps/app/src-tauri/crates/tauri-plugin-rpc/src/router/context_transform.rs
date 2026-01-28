@@ -4,7 +4,10 @@
 //! These chains allow you to transform the context type before the handler executes,
 //! enabling type-safe context transformations in your RPC procedures.
 
-use super::{core::Router, middleware_chain::build_middleware_chain, types::Procedure};
+use super::{
+    builder::{register_procedure, wrap_with_middleware},
+    core::Router,
+};
 use crate::{
     Context, RpcError, RpcResult,
     handler::BoxedHandler,
@@ -218,7 +221,7 @@ impl<
     }
 
     fn build_procedure<H, Fut, Output>(
-        mut self,
+        self,
         procedure_type: ProcedureType,
         handler: H,
     ) -> Router<OrigCtx>
@@ -229,7 +232,6 @@ impl<
     {
         let output_transformer = self.output_transformer;
         let context_transformer = self.context_transformer;
-        let middleware = self.middleware;
 
         // Create the core handler with context transformation
         let core_handler: BoxedHandler<OrigCtx> = Arc::new(move |ctx, input_value| {
@@ -263,40 +265,9 @@ impl<
             })
         });
 
-        // Wrap with per-procedure middleware if any
-        let final_handler: BoxedHandler<OrigCtx> = if middleware.is_empty() {
-            core_handler
-        } else {
-            let handler_as_next: Next<OrigCtx> = Arc::new(move |ctx, req| {
-                let handler = core_handler.clone();
-                Box::pin(async move { (handler)(ctx, req.input).await })
-            });
-
-            // Use the shared middleware chain builder
-            let final_chain = build_middleware_chain(middleware, handler_as_next);
-
-            Arc::new(move |ctx, input| {
-                let chain = final_chain.clone();
-                Box::pin(async move {
-                    let req = Request {
-                        path: String::new(),
-                        input,
-                        procedure_type,
-                    };
-                    (chain)(ctx, req).await
-                })
-            })
-        };
-
-        let full_path = self.router.make_path(&self.path);
-        self.router.procedures.insert(
-            full_path,
-            Procedure::Handler {
-                handler: final_handler,
-                procedure_type,
-            },
-        );
-        self.router
+        // Wrap with middleware and register
+        let final_handler = wrap_with_middleware(core_handler, self.middleware, procedure_type);
+        register_procedure(self.router, &self.path, final_handler, procedure_type)
     }
 }
 
@@ -371,7 +342,7 @@ impl<
     }
 
     fn build_validated_procedure<H, Fut, Output>(
-        mut self,
+        self,
         procedure_type: ProcedureType,
         handler: H,
     ) -> Router<OrigCtx>
@@ -382,7 +353,6 @@ impl<
     {
         let output_transformer = self.output_transformer;
         let context_transformer = self.context_transformer;
-        let middleware = self.middleware;
 
         // Create the core handler with context transformation and validation
         let core_handler: BoxedHandler<OrigCtx> = Arc::new(move |ctx, input_value| {
@@ -424,39 +394,8 @@ impl<
             })
         });
 
-        // Wrap with per-procedure middleware if any
-        let final_handler: BoxedHandler<OrigCtx> = if middleware.is_empty() {
-            core_handler
-        } else {
-            let handler_as_next: Next<OrigCtx> = Arc::new(move |ctx, req| {
-                let handler = core_handler.clone();
-                Box::pin(async move { (handler)(ctx, req.input).await })
-            });
-
-            // Use the shared middleware chain builder
-            let final_chain = build_middleware_chain(middleware, handler_as_next);
-
-            Arc::new(move |ctx, input| {
-                let chain = final_chain.clone();
-                Box::pin(async move {
-                    let req = Request {
-                        path: String::new(),
-                        input,
-                        procedure_type,
-                    };
-                    (chain)(ctx, req).await
-                })
-            })
-        };
-
-        let full_path = self.router.make_path(&self.path);
-        self.router.procedures.insert(
-            full_path,
-            Procedure::Handler {
-                handler: final_handler,
-                procedure_type,
-            },
-        );
-        self.router
+        // Wrap with middleware and register
+        let final_handler = wrap_with_middleware(core_handler, self.middleware, procedure_type);
+        register_procedure(self.router, &self.path, final_handler, procedure_type)
     }
 }
