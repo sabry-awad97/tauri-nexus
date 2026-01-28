@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use crate::{
     Context, Router, RpcError, RpcResult,
     middleware::{Next, Request, Response},
+    router::build_middleware_chain,
 };
 
 // =============================================================================
@@ -440,7 +441,6 @@ proptest! {
     /// **Validates: Requirements 1.1, 1.7**
     #[test]
     fn prop_build_middleware_chain_ordering(middleware_count in 1usize..6) {
-        use crate::router::build_middleware_chain;
         use crate::middleware::{Request, ProcedureType};
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -509,7 +509,6 @@ proptest! {
     /// **Validates: Requirements 1.1, 1.7**
     #[test]
     fn prop_build_middleware_chain_empty(_dummy in 0..1) {
-        use crate::router::build_middleware_chain;
         use crate::middleware::{Request, ProcedureType};
 
         let rt = tokio::runtime::Runtime::new().unwrap();
