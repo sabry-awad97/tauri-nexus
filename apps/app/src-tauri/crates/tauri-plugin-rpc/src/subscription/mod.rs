@@ -220,260 +220,31 @@
 mod backpressure;
 mod config;
 mod errors;
+mod event;
+mod id;
 mod metrics;
 mod retry_delay;
 
 pub use backpressure::{BackpressureStrategy, BatchPublishResult};
 pub use config::{Capacity, ManagerConfig, SubscriptionConfig};
 pub use errors::{ManagerError, ParseError, PublishResult, ValidationError};
+pub use event::{Event, EventMeta, SubscriptionEvent, with_event_meta};
+pub use id::{SubscriptionId, generate_subscription_id};
 pub use metrics::{
     MetricsSnapshot, PublisherMetrics, PublisherMetricsSnapshot, SubscriberMetrics,
     SubscriberMetricsSnapshot, SubscriptionMetrics,
 };
 pub use retry_delay::RetryDelay;
 
-use serde::{Deserialize, Serialize};
-use std::fmt;
+use serde::Serialize;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::sync::{RwLock, broadcast, mpsc};
-use uuid::Uuid;
 
 use crate::{Context, RpcError, RpcResult};
-
-// =============================================================================
-// Subscription ID (UUID v7 Newtype)
-// =============================================================================
-
-/// A unique, time-ordered subscription identifier based on UUID v7.
-///
-/// UUID v7 provides:
-/// - Time-ordered IDs (sortable by creation time)
-/// - Cryptographically random bits for uniqueness
-/// - Standard UUID format for interoperability
-///
-/// # Example
-/// ```rust,ignore
-/// let id = SubscriptionId::new();
-/// println!("Subscription: {}", id); // sub_01234567-89ab-7cde-8f01-234567890abc
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct SubscriptionId(Uuid);
-
-impl SubscriptionId {
-    /// Create a new subscription ID using UUID v7.
-    pub fn new() -> Self {
-        Self(Uuid::now_v7())
-    }
-
-    /// Create a subscription ID from an existing UUID.
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    /// Get the underlying UUID.
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
-    }
-
-    /// Convert to the underlying UUID.
-    pub fn into_uuid(self) -> Uuid {
-        self.0
-    }
-
-    /// Parse a subscription ID from a string.
-    ///
-    /// This method requires the "sub_" prefix for consistency.
-    /// Use `parse_lenient()` if you need to accept both formats.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// // Valid - with prefix
-    /// let id = SubscriptionId::parse("sub_01234567-89ab-7cde-8f01-234567890abc")?;
-    ///
-    /// // Invalid - without prefix
-    /// let result = SubscriptionId::parse("01234567-89ab-7cde-8f01-234567890abc");
-    /// assert!(result.is_err());
-    /// ```
-    pub fn parse(s: &str) -> Result<Self, ParseError> {
-        if let Some(uuid_str) = s.strip_prefix("sub_") {
-            Uuid::parse_str(uuid_str)
-                .map(Self)
-                .map_err(ParseError::InvalidUuid)
-        } else {
-            Err(ParseError::MissingPrefix)
-        }
-    }
-
-    /// Parse a subscription ID from a string, accepting both formats.
-    ///
-    /// This lenient version accepts:
-    /// - With prefix: "sub_01234567-89ab-7cde-8f01-234567890abc"
-    /// - Without prefix: "01234567-89ab-7cde-8f01-234567890abc"
-    ///
-    /// Use this for backward compatibility when migrating existing code.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// // Both formats work
-    /// let id1 = SubscriptionId::parse_lenient("sub_01234567-89ab-7cde-8f01-234567890abc")?;
-    /// let id2 = SubscriptionId::parse_lenient("01234567-89ab-7cde-8f01-234567890abc")?;
-    /// ```
-    pub fn parse_lenient(s: &str) -> Result<Self, ParseError> {
-        let uuid_str = s.strip_prefix("sub_").unwrap_or(s);
-        Uuid::parse_str(uuid_str)
-            .map(Self)
-            .map_err(ParseError::InvalidUuid)
-    }
-}
-
-impl Default for SubscriptionId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl fmt::Display for SubscriptionId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "sub_{}", self.0)
-    }
-}
-
-impl From<Uuid> for SubscriptionId {
-    fn from(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-}
-
-impl From<SubscriptionId> for String {
-    fn from(id: SubscriptionId) -> Self {
-        id.to_string()
-    }
-}
-
-/// Generate a unique subscription ID using UUID v7.
-///
-/// This is a convenience function that creates a new [`SubscriptionId`].
-///
-/// # Example
-/// ```rust,ignore
-/// let id = generate_subscription_id();
-/// assert!(id.to_string().starts_with("sub_"));
-/// ```
-pub fn generate_subscription_id() -> SubscriptionId {
-    SubscriptionId::new()
-}
-
-// =============================================================================
-// Event Types
-// =============================================================================
-
-/// Event with optional metadata for streaming
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Event<T> {
-    /// The event data
-    pub data: T,
-    /// Optional event ID for resumption
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    /// Optional retry interval in milliseconds
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub retry: Option<u64>,
-}
-
-impl<T> Event<T> {
-    /// Create a new event with just data
-    pub fn new(data: T) -> Self {
-        Self {
-            data,
-            id: None,
-            retry: None,
-        }
-    }
-
-    /// Create an event with an ID
-    pub fn with_id(data: T, id: impl Into<String>) -> Self {
-        Self {
-            data,
-            id: Some(id.into()),
-            retry: None,
-        }
-    }
-
-    /// Add metadata to an event
-    pub fn with_meta(mut self, meta: EventMeta) -> Self {
-        self.id = meta.id;
-        self.retry = meta.retry;
-        self
-    }
-}
-
-/// Event metadata for SSE-style streaming
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EventMeta {
-    /// Event ID for resumption (Last-Event-ID)
-    pub id: Option<String>,
-    /// Retry interval in milliseconds
-    pub retry: Option<u64>,
-}
-
-impl EventMeta {
-    /// Create new metadata with an ID
-    pub fn with_id(id: impl Into<String>) -> Self {
-        Self {
-            id: Some(id.into()),
-            retry: None,
-        }
-    }
-
-    /// Create metadata with retry interval
-    pub fn with_retry(retry: u64) -> Self {
-        Self {
-            id: None,
-            retry: Some(retry),
-        }
-    }
-}
-
-/// Helper function to create event metadata with an ID.
-///
-/// This is a convenience function for creating `EventMeta` with an event ID,
-/// which is useful for implementing resumable subscriptions (similar to SSE's Last-Event-ID).
-///
-/// # Arguments
-///
-/// * `id` - The event ID (can be any type that converts to String)
-///
-/// # Returns
-///
-/// An `EventMeta` struct with the specified ID
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use tauri_plugin_rpc::subscription::*;
-///
-/// let event = Event::new("data".to_string())
-///     .with_meta(with_event_meta("event-123"));
-///
-/// // Client can use this ID to resume from this point
-/// assert_eq!(event.id, Some("event-123".to_string()));
-/// ```
-///
-/// # Use Cases
-///
-/// - **Resumable streams**: Client can reconnect and resume from last received event
-/// - **Deduplication**: Client can detect and skip duplicate events
-/// - **Ordering**: Client can detect out-of-order delivery
-pub fn with_event_meta(id: impl Into<String>) -> EventMeta {
-    EventMeta::with_id(id)
-}
 
 // =============================================================================
 // Subscription Context
@@ -1729,93 +1500,6 @@ impl<T: Clone + Send + 'static> ChannelPublisher<T> {
 impl<T: Clone + Send + 'static> Default for ChannelPublisher<T> {
     fn default() -> Self {
         Self::with_capacity(Capacity::Medium)
-    }
-}
-
-// =============================================================================
-// Subscription Event Types (for Tauri events)
-// =============================================================================
-
-/// Event sent to frontend via Tauri event system
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-#[non_exhaustive]
-pub enum SubscriptionEvent {
-    /// Data event
-    Data {
-        /// Event payload
-        payload: Event<serde_json::Value>,
-    },
-    /// Error event with optional retry hint
-    Error {
-        /// Error details
-        payload: crate::RpcError,
-        /// Suggested retry delay in milliseconds (None = don't retry)
-        #[serde(rename = "retryAfterMs", skip_serializing_if = "Option::is_none")]
-        retry_after_ms: Option<u64>,
-    },
-    /// Completion event
-    Completed,
-}
-
-impl SubscriptionEvent {
-    /// Create a data event
-    pub fn data(payload: Event<serde_json::Value>) -> Self {
-        Self::Data { payload }
-    }
-
-    /// Create an error event without retry hint (non-recoverable error)
-    pub fn error(err: crate::RpcError) -> Self {
-        Self::Error {
-            payload: err,
-            retry_after_ms: None,
-        }
-    }
-
-    /// Create an error event with retry metadata.
-    ///
-    /// Use this for recoverable errors where the client should retry after
-    /// the specified delay.
-    ///
-    /// # Arguments
-    /// * `err` - The error that occurred
-    /// * `retry_after_ms` - Suggested retry delay in milliseconds
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// let event = SubscriptionEvent::error_with_retry(
-    ///     RpcError::service_unavailable("Server busy"),
-    ///     5000, // Retry after 5 seconds
-    /// );
-    /// ```
-    pub fn error_with_retry(err: crate::RpcError, retry_after_ms: u64) -> Self {
-        Self::Error {
-            payload: err,
-            retry_after_ms: Some(retry_after_ms),
-        }
-    }
-
-    /// Create an error event without retry (non-recoverable).
-    ///
-    /// Use this for errors where retrying would not help, such as
-    /// authentication failures or validation errors.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// let event = SubscriptionEvent::error_no_retry(
-    ///     RpcError::unauthorized("Invalid token"),
-    /// );
-    /// ```
-    pub fn error_no_retry(err: crate::RpcError) -> Self {
-        Self::Error {
-            payload: err,
-            retry_after_ms: None,
-        }
-    }
-
-    /// Create a completion event
-    pub fn completed() -> Self {
-        Self::Completed
     }
 }
 
