@@ -582,6 +582,56 @@ impl Cache {
         }
     }
 
+    /// Invalidate multiple specific cache entries efficiently
+    ///
+    /// This method is more efficient than calling `invalidate()` multiple times
+    /// because it acquires the write lock only once for all invalidations.
+    ///
+    /// # Performance
+    ///
+    /// - Time complexity: O(n) where n is the number of entries to invalidate
+    /// - Lock acquisitions: 1 (regardless of batch size)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let entries = vec![
+    ///     ("user.profile".to_string(), json!({"id": 1})),
+    ///     ("user.settings".to_string(), json!({"id": 1})),
+    /// ];
+    /// cache.invalidate_batch(&entries).await;
+    /// ```
+    #[tracing::instrument(skip(self, entries), fields(count = entries.len()))]
+    pub async fn invalidate_batch(&self, entries: &[(String, serde_json::Value)]) {
+        if entries.is_empty() {
+            tracing::trace!("empty batch, nothing to invalidate");
+            return;
+        }
+
+        // Generate all keys before acquiring the lock
+        let keys: Vec<String> = entries
+            .iter()
+            .map(|(path, input)| generate_cache_key(path, input))
+            .collect();
+
+        // Single lock acquisition for all removals
+        let mut cache = self.entries.write().await;
+        let mut invalidated = 0u64;
+
+        for key in keys {
+            if cache.pop(&key).is_some() {
+                invalidated += 1;
+            }
+        }
+
+        if invalidated > 0 {
+            tracing::debug!(invalidated = %invalidated, total = %entries.len(), "batch invalidation complete");
+            self.metrics.record_invalidations(invalidated);
+        } else {
+            tracing::trace!("no entries found in batch");
+        }
+    }
+
     /// Get cache statistics
     pub async fn stats(&self) -> CacheStats {
         let entries = self.entries.read().await;
@@ -1406,6 +1456,136 @@ mod tests {
         // set() should not panic even with disabled cache
         cache.set("user.get", &input, value).await;
         // Test passes if we reach here without panicking
+    }
+
+    #[tokio::test]
+    async fn test_invalidate_batch_empty() {
+        let cache = Cache::new(CacheConfig::new());
+        let entries = vec![];
+
+        // Should handle empty batch gracefully
+        cache.invalidate_batch(&entries).await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 0);
+    }
+
+    #[tokio::test]
+    async fn test_invalidate_batch_single() {
+        let cache = Cache::new(CacheConfig::new());
+        let input = json!({"id": 1});
+
+        cache
+            .set("user.get", &input, json!({"name": "Alice"}))
+            .await;
+
+        let entries = vec![("user.get".to_string(), input)];
+        cache.invalidate_batch(&entries).await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 1);
+        assert!(cache.get("user.get", &json!({"id": 1})).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_invalidate_batch_multiple() {
+        let cache = Cache::new(CacheConfig::new());
+
+        // Set multiple entries
+        cache
+            .set("user.get", &json!({"id": 1}), json!({"name": "Alice"}))
+            .await;
+        cache
+            .set("user.profile", &json!({"id": 1}), json!({"bio": "Hello"}))
+            .await;
+        cache
+            .set("user.settings", &json!({"id": 1}), json!({"theme": "dark"}))
+            .await;
+        cache
+            .set("post.get", &json!({"id": 1}), json!({"title": "Test"}))
+            .await;
+
+        // Batch invalidate user entries
+        let entries = vec![
+            ("user.get".to_string(), json!({"id": 1})),
+            ("user.profile".to_string(), json!({"id": 1})),
+            ("user.settings".to_string(), json!({"id": 1})),
+        ];
+        cache.invalidate_batch(&entries).await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 3);
+
+        // User entries should be gone
+        assert!(cache.get("user.get", &json!({"id": 1})).await.is_none());
+        assert!(cache.get("user.profile", &json!({"id": 1})).await.is_none());
+        assert!(
+            cache
+                .get("user.settings", &json!({"id": 1}))
+                .await
+                .is_none()
+        );
+
+        // Post entry should remain
+        assert!(cache.get("post.get", &json!({"id": 1})).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_invalidate_batch_nonexistent() {
+        let cache = Cache::new(CacheConfig::new());
+
+        // Try to invalidate entries that don't exist
+        let entries = vec![
+            ("user.get".to_string(), json!({"id": 999})),
+            ("user.profile".to_string(), json!({"id": 999})),
+        ];
+        cache.invalidate_batch(&entries).await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 0);
+    }
+
+    #[tokio::test]
+    async fn test_invalidate_batch_mixed() {
+        let cache = Cache::new(CacheConfig::new());
+
+        // Set one entry
+        cache
+            .set("user.get", &json!({"id": 1}), json!({"name": "Alice"}))
+            .await;
+
+        // Batch with one existing and one non-existing entry
+        let entries = vec![
+            ("user.get".to_string(), json!({"id": 1})),
+            ("user.profile".to_string(), json!({"id": 999})),
+        ];
+        cache.invalidate_batch(&entries).await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 1);
+    }
+
+    #[tokio::test]
+    async fn test_invalidate_batch_performance() {
+        let cache = Cache::new(CacheConfig::new());
+
+        // Set many entries
+        for i in 0..100 {
+            cache
+                .set(&format!("item.{}", i), &json!({}), json!(i))
+                .await;
+        }
+
+        // Batch invalidate all at once
+        let entries: Vec<_> = (0..100)
+            .map(|i| (format!("item.{}", i), json!({})))
+            .collect();
+
+        cache.invalidate_batch(&entries).await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 100);
+        assert_eq!(stats.total_entries, 0);
     }
 }
 
