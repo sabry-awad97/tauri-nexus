@@ -879,32 +879,38 @@ where
 {
     from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let cache = cache.clone();
-        let path = req.path.clone();
-        let input = req.input.clone();
 
         async move {
+            // Optimization: Use references for cache lookup to avoid unnecessary cloning.
+            // We only clone when we need to store values in the cache.
+
             // Only cache queries (check procedure type if available)
             // For now, we cache all procedures - mutations should use invalidation
-            if !cache.config.should_cache(&path) {
-                tracing::trace!(path = %path, "Cache bypass: path excluded");
+            if !cache.config.should_cache(&req.path) {
+                tracing::trace!(path = %req.path, "Cache bypass: path excluded");
                 return next(ctx, req).await;
             }
 
-            // Check cache first
-            if let Some(cached) = cache.get(&path, &input).await {
+            // Check cache first using references (no cloning needed for lookup)
+            if let Some(cached) = cache.get(&req.path, &req.input).await {
                 tracing::debug!(
-                    path = %path,
+                    path = %req.path,
                     "Cache hit"
                 );
                 return Ok(cached);
             }
 
-            tracing::debug!(path = %path, "Cache miss");
+            tracing::debug!(path = %req.path, "Cache miss");
+
+            // Clone path and input only when we need to store them
+            // This happens after the handler executes successfully
+            let path = req.path.clone();
+            let input = req.input.clone();
 
             // Execute handler
             let result = next(ctx, req).await?;
 
-            // Cache successful result
+            // Cache successful result (now we use the cloned values)
             let ttl = cache.config.get_ttl(&path);
             cache.set(&path, &input, result.clone()).await;
 

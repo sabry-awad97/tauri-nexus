@@ -150,10 +150,91 @@ fn bench_concurrent_access(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_middleware_optimization(c: &mut Criterion) {
+    let mut group = c.benchmark_group("middleware_optimization");
+    
+    // Simulate the old approach: clone early
+    group.bench_function("clone_early", |b| {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let cache = Cache::new(CacheConfig::new());
+        
+        // Pre-populate cache for hits
+        rt.block_on(async {
+            cache.set("user.get", &json!({"id": 1}), json!({"name": "Alice"})).await;
+        });
+        
+        b.iter(|| {
+            rt.block_on(async {
+                // Old approach: clone immediately
+                let path = black_box("user.get".to_string());
+                let input = black_box(json!({"id": 1}));
+                
+                // Check cache (hit case - clones were unnecessary)
+                let result = cache.get(&path, &input).await;
+                black_box(result);
+            });
+        });
+    });
+    
+    // Simulate the new approach: use references, clone only when needed
+    group.bench_function("clone_deferred", |b| {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let cache = Cache::new(CacheConfig::new());
+        
+        // Pre-populate cache for hits
+        rt.block_on(async {
+            cache.set("user.get", &json!({"id": 1}), json!({"name": "Alice"})).await;
+        });
+        
+        b.iter(|| {
+            rt.block_on(async {
+                // New approach: use references
+                let path = black_box("user.get");
+                let input = black_box(json!({"id": 1}));
+                
+                // Check cache (hit case - no clones needed)
+                let result = cache.get(path, &input).await;
+                black_box(result);
+                
+                // In real middleware, we'd only clone if we need to store
+                // (which doesn't happen on cache hit)
+            });
+        });
+    });
+    
+    // Benchmark cache miss scenario (where cloning is necessary)
+    group.bench_function("clone_on_miss", |b| {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let cache = Cache::new(CacheConfig::new());
+        let mut counter = 0;
+        
+        b.iter(|| {
+            rt.block_on(async {
+                let path = black_box("user.get");
+                let input = black_box(json!({"id": counter}));
+                
+                // Check cache (miss)
+                let result = cache.get(path, &input).await;
+                
+                if result.is_none() {
+                    // Clone only when we need to store
+                    let path_owned = path.to_string();
+                    let input_owned = input.clone();
+                    cache.set(&path_owned, &input_owned, json!({"name": "Alice"})).await;
+                }
+            });
+            counter += 1;
+        });
+    });
+    
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_pattern_matching,
     bench_cache_operations,
-    bench_concurrent_access
+    bench_concurrent_access,
+    bench_middleware_optimization
 );
 criterion_main!(benches);
