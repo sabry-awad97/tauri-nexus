@@ -650,8 +650,17 @@ impl Cache {
         }
     }
 
-    /// Remove expired entries
-    pub async fn cleanup_expired(&self) {
+    /// Remove expired entries and return the count of removed entries
+    ///
+    /// This method scans all cache entries and removes those that have expired.
+    /// It returns the number of entries that were removed.
+    ///
+    /// # Performance
+    ///
+    /// - Time complexity: O(n) where n is the total number of cache entries
+    /// - Acquires a write lock for the duration of the operation
+    #[tracing::instrument(skip(self))]
+    pub async fn cleanup_expired(&self) -> usize {
         let mut entries = self.entries.write().await;
 
         let expired_keys: Vec<String> = entries
@@ -665,9 +674,69 @@ impl Cache {
             })
             .collect();
 
+        let count = expired_keys.len();
         for key in expired_keys {
             entries.pop(&key);
         }
+
+        if count > 0 {
+            tracing::debug!(removed = %count, "expired entries cleaned up");
+        } else {
+            tracing::trace!("no expired entries to clean up");
+        }
+
+        count
+    }
+
+    /// Start a background task to periodically clean up expired entries
+    ///
+    /// Returns a `JoinHandle` that can be used to manage the cleanup task lifecycle.
+    /// The task will run indefinitely until the handle is dropped or aborted.
+    ///
+    /// # Arguments
+    ///
+    /// * `interval` - Duration between cleanup runs
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use std::time::Duration;
+    ///
+    /// let cache = Cache::new(CacheConfig::new());
+    ///
+    /// // Start cleanup task that runs every 60 seconds
+    /// let cleanup_handle = cache.start_cleanup_task(Duration::from_secs(60));
+    ///
+    /// // Later, stop the cleanup task
+    /// cleanup_handle.abort();
+    /// ```
+    ///
+    /// # Task Lifecycle
+    ///
+    /// - The task runs in the background using `tokio::spawn`
+    /// - It will continue running until explicitly aborted
+    /// - Dropping the handle does NOT stop the task
+    /// - Use `JoinHandle::abort()` to stop the task
+    pub fn start_cleanup_task(&self, interval: Duration) -> tokio::task::JoinHandle<()> {
+        let cache = self.clone();
+
+        tokio::spawn(async move {
+            let mut interval_timer = tokio::time::interval(interval);
+
+            loop {
+                interval_timer.tick().await;
+
+                let removed = cache.cleanup_expired().await;
+
+                if removed > 0 {
+                    tracing::info!(
+                        removed = %removed,
+                        interval_ms = %interval.as_millis(),
+                        "background cleanup completed"
+                    );
+                }
+            }
+        })
     }
 
     /// Check if a value is cached (without retrieving it)
@@ -689,6 +758,29 @@ impl Cache {
     /// Reset all metrics counters to zero
     pub fn reset_metrics(&self) {
         self.metrics.reset();
+    }
+
+    /// Get the current cache hit ratio
+    ///
+    /// Returns a value between 0.0 and 1.0 representing the ratio of cache hits
+    /// to total cache accesses (hits + misses). Returns 0.0 if no accesses have
+    /// been made.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let cache = Cache::new(CacheConfig::new());
+    ///
+    /// // Make some cache accesses
+    /// cache.set("key", &json!({}), json!("value")).await;
+    /// cache.get("key", &json!({})).await; // hit
+    /// cache.get("other", &json!({})).await; // miss
+    ///
+    /// let hit_ratio = cache.get_hit_ratio();
+    /// assert_eq!(hit_ratio, 0.5); // 1 hit out of 2 accesses
+    /// ```
+    pub fn get_hit_ratio(&self) -> f64 {
+        self.metrics.calculate_hit_ratio()
     }
 }
 
@@ -1122,7 +1214,8 @@ mod tests {
         assert_eq!(stats_before.total_entries, 2);
         assert_eq!(stats_before.expired_entries, 2);
 
-        cache.cleanup_expired().await;
+        let removed = cache.cleanup_expired().await;
+        assert_eq!(removed, 2);
 
         let stats_after = cache.stats().await;
         assert_eq!(stats_after.total_entries, 0);
@@ -1341,6 +1434,32 @@ mod tests {
         let stats = cache.stats().await;
         assert_eq!(stats.hits, 0);
         assert_eq!(stats.misses, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_hit_ratio_convenience_method() {
+        let cache = Cache::new(CacheConfig::new());
+        let input = json!({"id": 1});
+
+        // Initial hit ratio should be 0.0
+        assert_eq!(cache.get_hit_ratio(), 0.0);
+
+        // Cache miss
+        cache.get("user.get", &input).await;
+        assert_eq!(cache.get_hit_ratio(), 0.0);
+
+        // Set value
+        cache
+            .set("user.get", &input, json!({"name": "Alice"}))
+            .await;
+
+        // Cache hit
+        cache.get("user.get", &input).await;
+        assert_eq!(cache.get_hit_ratio(), 0.5);
+
+        // Another hit
+        cache.get("user.get", &input).await;
+        assert!((cache.get_hit_ratio() - 0.666666).abs() < 0.001);
     }
 
     #[tokio::test]
@@ -1586,6 +1705,105 @@ mod tests {
         let stats = cache.stats().await;
         assert_eq!(stats.invalidations, 100);
         assert_eq!(stats.total_entries, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired_returns_count() {
+        use test_constants::*;
+
+        let config = CacheConfig::new().with_default_ttl(SHORT_TTL);
+        let cache = Cache::new(config);
+
+        // Set entries
+        cache.set("a", &json!({}), json!(1)).await;
+        cache.set("b", &json!({}), json!(2)).await;
+        cache.set("c", &json!({}), json!(3)).await;
+
+        // Wait for expiration
+        tokio::time::sleep(CLEANUP_WAIT).await;
+
+        // Cleanup should return count of removed entries
+        let removed = cache.cleanup_expired().await;
+        assert_eq!(removed, 3);
+
+        // Second cleanup should return 0
+        let removed = cache.cleanup_expired().await;
+        assert_eq!(removed, 0);
+    }
+
+    #[tokio::test]
+    async fn test_start_cleanup_task() {
+        use test_constants::*;
+
+        let config = CacheConfig::new().with_default_ttl(SHORT_TTL);
+        let cache = Cache::new(config);
+
+        // Start cleanup task with short interval
+        let cleanup_handle = cache.start_cleanup_task(Duration::from_millis(50));
+
+        // Set entries
+        cache.set("a", &json!({}), json!(1)).await;
+        cache.set("b", &json!({}), json!(2)).await;
+
+        // Wait for entries to expire
+        tokio::time::sleep(CLEANUP_WAIT).await;
+
+        // Wait for cleanup task to run
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Entries should be cleaned up by background task
+        let stats = cache.stats().await;
+        assert_eq!(stats.total_entries, 0);
+
+        // Stop the cleanup task
+        cleanup_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_task_lifecycle() {
+        let cache = Cache::new(CacheConfig::new());
+
+        // Start cleanup task
+        let cleanup_handle = cache.start_cleanup_task(Duration::from_millis(50));
+
+        // Task should be running
+        assert!(!cleanup_handle.is_finished());
+
+        // Abort the task
+        cleanup_handle.abort();
+
+        // Wait a bit for abort to complete
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Task should be finished after abort
+        assert!(cleanup_handle.is_finished());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_task_multiple_runs() {
+        use test_constants::*;
+
+        let config = CacheConfig::new().with_default_ttl(SHORT_TTL);
+        let cache = Cache::new(config);
+
+        // Start cleanup task
+        let cleanup_handle = cache.start_cleanup_task(Duration::from_millis(50));
+
+        // Add entries in multiple batches
+        for batch in 0..3 {
+            cache
+                .set(&format!("item_{}", batch), &json!({}), json!(batch))
+                .await;
+            tokio::time::sleep(CLEANUP_WAIT).await;
+            // Wait for cleanup to run
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        // All expired entries should have been cleaned up
+        let stats = cache.stats().await;
+        assert_eq!(stats.total_entries, 0);
+
+        cleanup_handle.abort();
     }
 }
 
