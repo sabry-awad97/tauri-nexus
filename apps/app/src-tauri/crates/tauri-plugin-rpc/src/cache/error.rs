@@ -74,14 +74,22 @@ mod tests {
 
     #[test]
     fn test_cache_result_ok() {
-        let result: CacheResult<i32> = Ok(42);
+        // Test that CacheResult<T> works correctly with Ok values
+        fn returns_ok() -> CacheResult<i32> {
+            Ok(42)
+        }
+        let result = returns_ok();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
     }
 
     #[test]
     fn test_cache_result_err() {
-        let result: CacheResult<i32> = Err(CacheError::CacheDisabled);
+        // Test that CacheResult<T> works correctly with Err values
+        fn returns_err() -> CacheResult<i32> {
+            Err(CacheError::CacheDisabled)
+        }
+        let result = returns_err();
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CacheError::CacheDisabled));
     }
