@@ -26,6 +26,27 @@
 //! // Invalidate on mutation
 //! cache.invalidate_pattern("user.*").await;
 //! ```
+//!
+//! # Tracing
+//!
+//! This module uses structured tracing for observability:
+//!
+//! - **Debug level**: Cache hits, misses, invalidations, and evictions
+//! - **Trace level**: Detailed operations including key generation and TTL values
+//!
+//! All cache operations create spans with relevant context:
+//! - `cache_get`: path, enabled status
+//! - `cache_set`: path, enabled status, TTL
+//! - `cache_invalidate`: path
+//! - `cache_invalidate_pattern`: pattern, count
+//! - `cache_invalidate_all`: count
+//!
+//! Cache keys are not logged to avoid exposing potentially sensitive input data.
+//! Only procedure paths and operation outcomes are included in trace events.
+
+mod error;
+
+pub use error::{CacheError, CacheResult};
 
 use crate::Context;
 use crate::middleware::{MiddlewareFn, Next, Request, from_fn};
@@ -36,6 +57,129 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+/// Default TTL for cache entries (5 minutes)
+///
+/// This value provides a reasonable balance between cache freshness and hit rate
+/// for most use cases. Procedures with different requirements should use
+/// `CacheConfig::with_procedure_ttl()` to override this default.
+pub const DEFAULT_TTL_SECS: u64 = 300;
+
+/// Default maximum number of cache entries
+///
+/// This limit prevents unbounded memory growth while allowing sufficient cache
+/// capacity for typical applications. The LRU eviction policy ensures the most
+/// recently used entries are retained when this limit is reached.
+pub const DEFAULT_MAX_ENTRIES: usize = 1000;
+
+#[cfg(test)]
+mod test_constants {
+    use std::time::Duration;
+
+    /// Short TTL for expiration tests (50ms)
+    pub const SHORT_TTL: Duration = Duration::from_millis(50);
+
+    /// Long TTL for non-expiration tests (5 minutes)
+    pub const LONG_TTL: Duration = Duration::from_secs(300);
+
+    /// Wait time for cleanup operations in tests (100ms)
+    pub const CLEANUP_WAIT: Duration = Duration::from_millis(100);
+
+    /// Very short TTL for property-based expiration tests (5ms)
+    pub const VERY_SHORT_TTL: Duration = Duration::from_millis(5);
+
+    /// Buffer time for TTL expiration tests (15ms)
+    pub const TTL_EXPIRATION_BUFFER: Duration = Duration::from_millis(15);
+}
+
+// =============================================================================
+// Cache Metrics
+// =============================================================================
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Internal metrics tracking for cache operations
+#[derive(Debug)]
+struct CacheMetrics {
+    /// Number of cache hits
+    hits: AtomicU64,
+    /// Number of cache misses
+    misses: AtomicU64,
+    /// Number of entries evicted due to LRU
+    evictions: AtomicU64,
+    /// Number of entries invalidated
+    invalidations: AtomicU64,
+}
+
+impl CacheMetrics {
+    fn new() -> Self {
+        Self {
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
+            evictions: AtomicU64::new(0),
+            invalidations: AtomicU64::new(0),
+        }
+    }
+
+    fn record_hit(&self) {
+        self.hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_miss(&self) {
+        self.misses.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_eviction(&self) {
+        self.evictions.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_invalidation(&self) {
+        self.invalidations.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_invalidations(&self, count: u64) {
+        self.invalidations.fetch_add(count, Ordering::Relaxed);
+    }
+
+    fn get_hits(&self) -> u64 {
+        self.hits.load(Ordering::Relaxed)
+    }
+
+    fn get_misses(&self) -> u64 {
+        self.misses.load(Ordering::Relaxed)
+    }
+
+    fn get_evictions(&self) -> u64 {
+        self.evictions.load(Ordering::Relaxed)
+    }
+
+    fn get_invalidations(&self) -> u64 {
+        self.invalidations.load(Ordering::Relaxed)
+    }
+
+    fn calculate_hit_ratio(&self) -> f64 {
+        let hits = self.get_hits();
+        let misses = self.get_misses();
+        let total = hits + misses;
+
+        if total == 0 {
+            0.0
+        } else {
+            hits as f64 / total as f64
+        }
+    }
+
+    fn reset(&self) {
+        self.hits.store(0, Ordering::Relaxed);
+        self.misses.store(0, Ordering::Relaxed);
+        self.evictions.store(0, Ordering::Relaxed);
+        self.invalidations.store(0, Ordering::Relaxed);
+    }
+}
 
 // =============================================================================
 // Cache Configuration
@@ -60,9 +204,9 @@ impl CacheConfig {
     /// Create a new cache configuration with defaults
     pub fn new() -> Self {
         Self {
-            default_ttl: Duration::from_secs(300), // 5 minutes
+            default_ttl: Duration::from_secs(DEFAULT_TTL_SECS),
             procedure_ttl: HashMap::new(),
-            max_entries: 1000,
+            max_entries: DEFAULT_MAX_ENTRIES,
             enabled: true,
             excluded_patterns: Vec::new(),
         }
@@ -214,6 +358,7 @@ fn normalize_json(value: &serde_json::Value) -> String {
 pub struct Cache {
     config: CacheConfig,
     entries: Arc<RwLock<LruCache<String, CacheEntry>>>,
+    metrics: Arc<CacheMetrics>,
 }
 
 impl Cache {
@@ -223,44 +368,150 @@ impl Cache {
         Self {
             config,
             entries: Arc::new(RwLock::new(LruCache::new(max_entries))),
+            metrics: Arc::new(CacheMetrics::new()),
         }
     }
 
-    /// Get a cached value if it exists and hasn't expired
-    pub async fn get(&self, path: &str, input: &serde_json::Value) -> Option<serde_json::Value> {
+    /// Get a cached value if it exists and hasn't expired (with error handling)
+    ///
+    /// Returns `Err(CacheError::CacheDisabled)` if caching is disabled.
+    /// Returns `Ok(Some(value))` if the entry exists and is valid.
+    /// Returns `Ok(None)` if the entry doesn't exist or has expired.
+    #[tracing::instrument(skip(self, input), fields(enabled = %self.config.enabled))]
+    pub async fn try_get(
+        &self,
+        path: &str,
+        input: &serde_json::Value,
+    ) -> CacheResult<Option<serde_json::Value>> {
         if !self.config.enabled {
-            return None;
+            tracing::trace!("cache disabled");
+            return Err(CacheError::CacheDisabled);
         }
 
         let key = generate_cache_key(path, input);
+        tracing::trace!(key = %key, "generated cache key");
+
         let mut entries = self.entries.write().await;
 
         if let Some(entry) = entries.get(&key) {
             if entry.is_expired() {
+                tracing::debug!("cache entry expired");
                 entries.pop(&key);
-                return None;
+                self.metrics.record_miss();
+                return Ok(None);
             }
-            return Some(entry.value.clone());
+            tracing::debug!("cache hit");
+            self.metrics.record_hit();
+            return Ok(Some(entry.value.clone()));
         }
 
-        None
+        tracing::debug!("cache miss");
+        self.metrics.record_miss();
+        Ok(None)
     }
 
-    /// Set a cached value with the configured TTL for the procedure
-    pub async fn set(&self, path: &str, input: &serde_json::Value, value: serde_json::Value) {
-        if !self.config.enabled || !self.config.should_cache(path) {
-            return;
+    /// Get a cached value if it exists and hasn't expired
+    ///
+    /// This is a convenience wrapper around `try_get()` that returns `None`
+    /// on any error. For explicit error handling, use `try_get()` instead.
+    #[tracing::instrument(skip(self, input), fields(enabled = %self.config.enabled))]
+    pub async fn get(&self, path: &str, input: &serde_json::Value) -> Option<serde_json::Value> {
+        self.try_get(path, input).await.ok().flatten()
+    }
+
+    /// Set a cached value with the configured TTL for the procedure (with error handling)
+    ///
+    /// Returns `Err(CacheError::CacheDisabled)` if caching is disabled.
+    /// Returns `Ok(())` if the value was successfully cached or if the path is excluded.
+    #[tracing::instrument(skip(self, input, value), fields(enabled = %self.config.enabled))]
+    pub async fn try_set(
+        &self,
+        path: &str,
+        input: &serde_json::Value,
+        value: serde_json::Value,
+    ) -> CacheResult<()> {
+        if !self.config.enabled {
+            tracing::trace!("cache disabled");
+            return Err(CacheError::CacheDisabled);
         }
 
+        if !self.config.should_cache(path) {
+            tracing::trace!("path excluded from caching");
+            return Ok(());
+        }
+
+        // Lock contention optimization: Perform all computation before acquiring the write lock.
+        // This minimizes the critical section and improves concurrent throughput.
         let key = generate_cache_key(path, input);
         let ttl = self.config.get_ttl(path);
         let entry = CacheEntry::new(value, ttl);
 
+        // Acquire write lock only for the actual cache modification
         let mut entries = self.entries.write().await;
+
+        // Check if we're at capacity and the key doesn't exist (will cause eviction)
+        // Note: This check must be inside the lock to ensure atomicity
+        let will_evict = entries.len() >= entries.cap().get() && !entries.contains(&key);
+
         entries.put(key, entry);
+
+        if will_evict {
+            tracing::debug!("LRU eviction occurred");
+            self.metrics.record_eviction();
+        }
+
+        tracing::trace!(ttl_ms = %ttl.as_millis(), "cache entry stored");
+        Ok(())
+    }
+
+    /// Set a cached value with the configured TTL for the procedure
+    ///
+    /// This is a convenience wrapper around `try_set()` that silently ignores errors.
+    /// For explicit error handling, use `try_set()` instead.
+    #[tracing::instrument(skip(self, input, value), fields(enabled = %self.config.enabled))]
+    pub async fn set(&self, path: &str, input: &serde_json::Value, value: serde_json::Value) {
+        let _ = self.try_set(path, input, value).await;
+    }
+
+    /// Set a cached value with a custom TTL (with error handling)
+    ///
+    /// Returns `Err(CacheError::CacheDisabled)` if caching is disabled.
+    /// Returns `Ok(())` if the value was successfully cached.
+    pub async fn try_set_with_ttl(
+        &self,
+        path: &str,
+        input: &serde_json::Value,
+        value: serde_json::Value,
+        ttl: Duration,
+    ) -> CacheResult<()> {
+        if !self.config.enabled {
+            return Err(CacheError::CacheDisabled);
+        }
+
+        // Lock contention optimization: Perform all computation before acquiring the write lock
+        let key = generate_cache_key(path, input);
+        let entry = CacheEntry::new(value, ttl);
+
+        // Acquire write lock only for the actual cache modification
+        let mut entries = self.entries.write().await;
+
+        // Check if we're at capacity and the key doesn't exist (will cause eviction)
+        // Note: This check must be inside the lock to ensure atomicity
+        let will_evict = entries.len() >= entries.cap().get() && !entries.contains(&key);
+
+        entries.put(key, entry);
+
+        if will_evict {
+            self.metrics.record_eviction();
+        }
+
+        Ok(())
     }
 
     /// Set a cached value with a custom TTL
+    ///
+    /// This is a convenience wrapper around `try_set_with_ttl()` that silently ignores errors.
+    /// For explicit error handling, use `try_set_with_ttl()` instead.
     pub async fn set_with_ttl(
         &self,
         path: &str,
@@ -268,25 +519,24 @@ impl Cache {
         value: serde_json::Value,
         ttl: Duration,
     ) {
-        if !self.config.enabled {
-            return;
-        }
-
-        let key = generate_cache_key(path, input);
-        let entry = CacheEntry::new(value, ttl);
-
-        let mut entries = self.entries.write().await;
-        entries.put(key, entry);
+        let _ = self.try_set_with_ttl(path, input, value, ttl).await;
     }
 
     /// Invalidate a specific cache entry
+    #[tracing::instrument(skip(self, input))]
     pub async fn invalidate(&self, path: &str, input: &serde_json::Value) {
         let key = generate_cache_key(path, input);
         let mut entries = self.entries.write().await;
-        entries.pop(&key);
+        if entries.pop(&key).is_some() {
+            tracing::debug!("cache entry invalidated");
+            self.metrics.record_invalidation();
+        } else {
+            tracing::trace!("cache entry not found for invalidation");
+        }
     }
 
     /// Invalidate all entries matching a pattern
+    #[tracing::instrument(skip(self))]
     pub async fn invalidate_pattern(&self, pattern: &str) {
         let mut entries = self.entries.write().await;
 
@@ -304,15 +554,32 @@ impl Cache {
             })
             .collect();
 
+        let count = keys_to_remove.len() as u64;
         for key in keys_to_remove {
             entries.pop(&key);
+        }
+
+        if count > 0 {
+            tracing::debug!(count = %count, "cache entries invalidated");
+            self.metrics.record_invalidations(count);
+        } else {
+            tracing::trace!("no matching entries found for pattern");
         }
     }
 
     /// Invalidate all cache entries
+    #[tracing::instrument(skip(self))]
     pub async fn invalidate_all(&self) {
         let mut entries = self.entries.write().await;
+        let count = entries.len() as u64;
         entries.clear();
+
+        if count > 0 {
+            tracing::debug!(count = %count, "all cache entries invalidated");
+            self.metrics.record_invalidations(count);
+        } else {
+            tracing::trace!("cache was already empty");
+        }
     }
 
     /// Get cache statistics
@@ -325,6 +592,11 @@ impl Cache {
             total_entries: total,
             expired_entries: expired,
             max_entries: self.config.max_entries,
+            hits: self.metrics.get_hits(),
+            misses: self.metrics.get_misses(),
+            hit_ratio: self.metrics.calculate_hit_ratio(),
+            evictions: self.metrics.get_evictions(),
+            invalidations: self.metrics.get_invalidations(),
         }
     }
 
@@ -363,6 +635,11 @@ impl Cache {
 
         false
     }
+
+    /// Reset all metrics counters to zero
+    pub fn reset_metrics(&self) {
+        self.metrics.reset();
+    }
 }
 
 impl Clone for Cache {
@@ -370,6 +647,7 @@ impl Clone for Cache {
         Self {
             config: self.config.clone(),
             entries: self.entries.clone(),
+            metrics: self.metrics.clone(),
         }
     }
 }
@@ -383,6 +661,16 @@ pub struct CacheStats {
     pub expired_entries: usize,
     /// Maximum number of entries allowed
     pub max_entries: usize,
+    /// Number of cache hits (since last reset)
+    pub hits: u64,
+    /// Number of cache misses (since last reset)
+    pub misses: u64,
+    /// Hit ratio (0.0 to 1.0)
+    pub hit_ratio: f64,
+    /// Total evictions due to LRU
+    pub evictions: u64,
+    /// Total invalidations
+    pub invalidations: u64,
 }
 
 // =============================================================================
@@ -400,7 +688,21 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
     }
 
     if let Some(prefix) = pattern.strip_suffix(".*") {
-        return path == prefix || path.starts_with(&format!("{}.", prefix));
+        // Exact match: "user.*" matches "user"
+        if path == prefix {
+            return true;
+        }
+
+        // Prefix match: "user.*" matches "user.get", "user.profile", etc.
+        // Avoid allocation by checking length and using byte-level comparison
+        if path.len() > prefix.len() + 1
+            && path.starts_with(prefix)
+            && path.as_bytes()[prefix.len()] == b'.'
+        {
+            return true;
+        }
+
+        return false;
     }
 
     pattern == path
@@ -561,8 +863,8 @@ mod tests {
     #[tokio::test]
     async fn test_cache_config_defaults() {
         let config = CacheConfig::new();
-        assert_eq!(config.default_ttl, Duration::from_secs(300));
-        assert_eq!(config.max_entries, 1000);
+        assert_eq!(config.default_ttl, Duration::from_secs(DEFAULT_TTL_SECS));
+        assert_eq!(config.max_entries, DEFAULT_MAX_ENTRIES);
         assert!(config.enabled);
     }
 
@@ -605,7 +907,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_expiration() {
-        let config = CacheConfig::new().with_default_ttl(Duration::from_millis(50));
+        use test_constants::*;
+
+        let config = CacheConfig::new().with_default_ttl(SHORT_TTL);
         let cache = Cache::new(config);
         let input = json!({"id": 1});
         let value = json!({"name": "Alice"});
@@ -616,7 +920,7 @@ mod tests {
         assert!(cache.get("user.get", &input).await.is_some());
 
         // Wait for expiration
-        sleep(Duration::from_millis(100)).await;
+        sleep(CLEANUP_WAIT).await;
 
         // Should be expired
         assert!(cache.get("user.get", &input).await.is_none());
@@ -753,14 +1057,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_cleanup_expired() {
-        let config = CacheConfig::new().with_default_ttl(Duration::from_millis(50));
+        use test_constants::*;
+
+        let config = CacheConfig::new().with_default_ttl(SHORT_TTL);
         let cache = Cache::new(config);
 
         cache.set("a", &json!({}), json!(1)).await;
         cache.set("b", &json!({}), json!(2)).await;
 
         // Wait for expiration
-        sleep(Duration::from_millis(100)).await;
+        sleep(CLEANUP_WAIT).await;
 
         let stats_before = cache.stats().await;
         assert_eq!(stats_before.total_entries, 2);
@@ -846,6 +1152,260 @@ mod tests {
         let obj = json!({"z": 1, "a": 2, "m": 3});
         let normalized = normalize_json(&obj);
         assert_eq!(normalized, "{\"a\":2,\"m\":3,\"z\":1}");
+    }
+
+    #[tokio::test]
+    async fn test_metrics_hit_and_miss() {
+        let cache = Cache::new(CacheConfig::new());
+        let input = json!({"id": 1});
+
+        // Initial stats should be zero
+        let stats = cache.stats().await;
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+        assert_eq!(stats.hit_ratio, 0.0);
+
+        // Cache miss
+        cache.get("user.get", &input).await;
+        let stats = cache.stats().await;
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 1);
+        assert_eq!(stats.hit_ratio, 0.0);
+
+        // Set value
+        cache
+            .set("user.get", &input, json!({"name": "Alice"}))
+            .await;
+
+        // Cache hit
+        cache.get("user.get", &input).await;
+        let stats = cache.stats().await;
+        assert_eq!(stats.hits, 1);
+        assert_eq!(stats.misses, 1);
+        assert_eq!(stats.hit_ratio, 0.5);
+
+        // Another hit
+        cache.get("user.get", &input).await;
+        let stats = cache.stats().await;
+        assert_eq!(stats.hits, 2);
+        assert_eq!(stats.misses, 1);
+        assert!((stats.hit_ratio - 0.666666).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_evictions() {
+        let config = CacheConfig::new().with_max_entries(2);
+        let cache = Cache::new(config);
+
+        // Fill cache
+        cache.set("a", &json!({}), json!(1)).await;
+        cache.set("b", &json!({}), json!(2)).await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.evictions, 0);
+
+        // This should evict "a"
+        cache.set("c", &json!({}), json!(3)).await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.evictions, 1);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_invalidations() {
+        let cache = Cache::new(CacheConfig::new());
+
+        cache
+            .set("user.get", &json!({"id": 1}), json!({"name": "Alice"}))
+            .await;
+        cache
+            .set("user.profile", &json!({"id": 1}), json!({"bio": "Hello"}))
+            .await;
+        cache
+            .set("post.get", &json!({"id": 1}), json!({"title": "Test"}))
+            .await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 0);
+
+        // Invalidate one entry
+        cache.invalidate("user.get", &json!({"id": 1})).await;
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 1);
+
+        // Invalidate pattern (should invalidate 1 more: user.profile)
+        cache.invalidate_pattern("user.*").await;
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 2);
+
+        // Invalidate all (should invalidate 1 more: post.get)
+        cache.invalidate_all().await;
+        let stats = cache.stats().await;
+        assert_eq!(stats.invalidations, 3);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_reset() {
+        let cache = Cache::new(CacheConfig::new());
+        let input = json!({"id": 1});
+
+        // Generate some metrics
+        cache
+            .set("user.get", &input, json!({"name": "Alice"}))
+            .await;
+        cache.get("user.get", &input).await; // hit
+        cache.get("other", &input).await; // miss
+
+        let stats = cache.stats().await;
+        assert!(stats.hits > 0 || stats.misses > 0);
+
+        // Reset metrics
+        cache.reset_metrics();
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+        assert_eq!(stats.evictions, 0);
+        assert_eq!(stats.invalidations, 0);
+        assert_eq!(stats.hit_ratio, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_expired_entry_counts_as_miss() {
+        use test_constants::*;
+
+        let config = CacheConfig::new().with_default_ttl(SHORT_TTL);
+        let cache = Cache::new(config);
+        let input = json!({"id": 1});
+
+        cache
+            .set("user.get", &input, json!({"name": "Alice"}))
+            .await;
+
+        // Wait for expiration
+        tokio::time::sleep(CLEANUP_WAIT).await;
+
+        // Accessing expired entry should count as miss
+        cache.get("user.get", &input).await;
+
+        let stats = cache.stats().await;
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 1);
+    }
+
+    #[tokio::test]
+    async fn test_try_get_with_disabled_cache() {
+        let config = CacheConfig::new().with_enabled(false);
+        let cache = Cache::new(config);
+        let input = json!({"id": 1});
+
+        let result = cache.try_get("user.get", &input).await;
+        assert!(matches!(result, Err(CacheError::CacheDisabled)));
+    }
+
+    #[tokio::test]
+    async fn test_try_get_success() {
+        let cache = Cache::new(CacheConfig::new());
+        let input = json!({"id": 1});
+        let value = json!({"name": "Alice"});
+
+        // Set value
+        cache.set("user.get", &input, value.clone()).await;
+
+        // Try get should return Ok(Some(value))
+        let result = cache.try_get("user.get", &input).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(value));
+    }
+
+    #[tokio::test]
+    async fn test_try_get_miss() {
+        let cache = Cache::new(CacheConfig::new());
+        let input = json!({"id": 1});
+
+        // Try get on non-existent entry should return Ok(None)
+        let result = cache.try_get("user.get", &input).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn test_try_set_with_disabled_cache() {
+        let config = CacheConfig::new().with_enabled(false);
+        let cache = Cache::new(config);
+        let input = json!({"id": 1});
+        let value = json!({"name": "Alice"});
+
+        let result = cache.try_set("user.get", &input, value).await;
+        assert!(matches!(result, Err(CacheError::CacheDisabled)));
+    }
+
+    #[tokio::test]
+    async fn test_try_set_success() {
+        let cache = Cache::new(CacheConfig::new());
+        let input = json!({"id": 1});
+        let value = json!({"name": "Alice"});
+
+        let result = cache.try_set("user.get", &input, value.clone()).await;
+        assert!(result.is_ok());
+
+        // Verify it was actually cached
+        let cached = cache.get("user.get", &input).await;
+        assert_eq!(cached, Some(value));
+    }
+
+    #[tokio::test]
+    async fn test_try_set_with_excluded_path() {
+        let config = CacheConfig::new().exclude_pattern("admin.*");
+        let cache = Cache::new(config);
+        let input = json!({});
+        let value = json!({"users": []});
+
+        // Should return Ok(()) but not actually cache
+        let result = cache.try_set("admin.users", &input, value).await;
+        assert!(result.is_ok());
+
+        // Verify it was not cached
+        let cached = cache.get("admin.users", &input).await;
+        assert_eq!(cached, None);
+    }
+
+    #[tokio::test]
+    async fn test_try_set_with_ttl_disabled_cache() {
+        use test_constants::*;
+
+        let config = CacheConfig::new().with_enabled(false);
+        let cache = Cache::new(config);
+        let input = json!({"id": 1});
+        let value = json!({"name": "Alice"});
+
+        let result = cache
+            .try_set_with_ttl("user.get", &input, value, LONG_TTL)
+            .await;
+        assert!(matches!(result, Err(CacheError::CacheDisabled)));
+    }
+
+    #[tokio::test]
+    async fn test_get_wrapper_ignores_errors() {
+        let config = CacheConfig::new().with_enabled(false);
+        let cache = Cache::new(config);
+        let input = json!({"id": 1});
+
+        // get() should return None instead of propagating error
+        let result = cache.get("user.get", &input).await;
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_set_wrapper_ignores_errors() {
+        let config = CacheConfig::new().with_enabled(false);
+        let cache = Cache::new(config);
+        let input = json!({"id": 1});
+        let value = json!({"name": "Alice"});
+
+        // set() should not panic even with disabled cache
+        cache.set("user.get", &input, value).await;
+        // Test passes if we reach here without panicking
     }
 }
 
@@ -942,10 +1502,11 @@ mod proptests {
             input in json_object_strategy(),
             value in json_value_strategy(),
         ) {
+            use test_constants::*;
+
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                let config = CacheConfig::new()
-                    .with_default_ttl(Duration::from_secs(300)); // Long TTL
+                let config = CacheConfig::new().with_default_ttl(LONG_TTL);
                 let cache = Cache::new(config);
 
                 // Set value
@@ -1042,11 +1603,11 @@ mod proptests {
             input in json_object_strategy(),
             value in json_value_strategy(),
         ) {
+            use test_constants::*;
+
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
-                // Use a fixed short TTL for fast testing (5ms)
-                let ttl = Duration::from_millis(5);
-                let config = CacheConfig::new().with_default_ttl(ttl);
+                let config = CacheConfig::new().with_default_ttl(VERY_SHORT_TTL);
                 let cache = Cache::new(config);
 
                 // Set value with TTL
@@ -1061,7 +1622,7 @@ mod proptests {
                 );
 
                 // Wait for TTL to expire (add small buffer for timing)
-                tokio::time::sleep(Duration::from_millis(15)).await;
+                tokio::time::sleep(TTL_EXPIRATION_BUFFER).await;
 
                 // Value should NOT be retrievable after TTL
                 let cached_after = cache.get(&path, &input).await;

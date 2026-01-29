@@ -31,5 +31,9 @@ harness = false
 name = "router_bench"
 harness = false
 
+[[bench]]
+name = "cache_bench"
+harness = false
+
 [build-dependencies]
 tauri-plugin.workspace = true
