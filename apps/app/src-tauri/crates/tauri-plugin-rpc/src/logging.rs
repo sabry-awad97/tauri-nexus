@@ -46,28 +46,54 @@ use crate::{Context, Next};
 ///
 /// Uses UUID v7 for time-ordered, sortable identifiers that are ideal
 /// for distributed tracing and log correlation.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct RequestId(String);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RequestId(uuid::Uuid);
 
 impl RequestId {
     /// Creates a new unique request ID using UUID v7.
     pub fn new() -> Self {
-        Self(uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string())
+        Self(uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)))
+    }
+
+    /// Creates a request ID from an existing UUID.
+    pub fn from_uuid(uuid: uuid::Uuid) -> Self {
+        Self(uuid)
     }
 
     /// Creates a request ID from an existing string.
-    pub fn from_string(id: impl Into<String>) -> Self {
-        Self(id.into())
+    ///
+    /// # Panics
+    /// Panics if the string is not a valid UUID.
+    pub fn from_string(id: impl AsRef<str>) -> Self {
+        Self(uuid::Uuid::parse_str(id.as_ref()).expect("Invalid UUID string"))
     }
 
-    /// Returns the request ID as a string slice.
-    pub fn as_str(&self) -> &str {
+    /// Tries to create a request ID from a string.
+    ///
+    /// Returns None if the string is not a valid UUID.
+    pub fn try_from_string(id: impl AsRef<str>) -> Option<Self> {
+        uuid::Uuid::parse_str(id.as_ref()).ok().map(Self)
+    }
+
+    /// Returns the request ID as a UUID reference.
+    pub fn as_uuid(&self) -> &uuid::Uuid {
         &self.0
     }
 
+    /// Returns the request ID as a string.
+    pub fn as_str(&self) -> String {
+        self.0.to_string()
+    }
+
     /// Returns the short form of the request ID (first 8 characters).
-    pub fn short(&self) -> &str {
-        &self.0[..8.min(self.0.len())]
+    pub fn short(&self) -> String {
+        self.0.to_string()[..8].to_string()
+    }
+
+    /// Returns the inner UUID.
+    pub fn into_uuid(self) -> uuid::Uuid {
+        self.0
     }
 }
 
@@ -80,6 +106,18 @@ impl Default for RequestId {
 impl std::fmt::Display for RequestId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl From<uuid::Uuid> for RequestId {
+    fn from(uuid: uuid::Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+impl From<RequestId> for uuid::Uuid {
+    fn from(id: RequestId) -> Self {
+        id.0
     }
 }
 
@@ -677,7 +715,7 @@ pub struct TracingLogger;
 
 impl Logger for TracingLogger {
     fn log(&self, entry: &LogEntry, level: LogLevel) {
-        let request_id = entry.meta.request_id.as_str();
+        let request_id = entry.meta.request_id.to_string();
         let path = &entry.meta.path;
         let procedure_type = format!("{}", entry.meta.procedure_type);
         let duration_ms = entry.duration_ms.unwrap_or(0);
@@ -897,7 +935,7 @@ where
 
             // Create request metadata
             let meta = RequestMeta::new(&req.path, req.procedure_type);
-            let request_id = meta.request_id.clone();
+            let request_id = meta.request_id;
             let effective_level = config.get_level_for_path(&req.path);
 
             // Log request start at debug level
@@ -1272,25 +1310,25 @@ mod tests {
     #[test]
     fn test_request_id_uniqueness() {
         let ids: Vec<RequestId> = (0..100).map(|_| RequestId::new()).collect();
-        let unique: HashSet<_> = ids.iter().map(|id| id.as_str()).collect();
+        let unique: HashSet<_> = ids.iter().map(|id| id.to_string()).collect();
         assert_eq!(ids.len(), unique.len());
     }
 
     #[test]
     fn test_request_id_from_string() {
-        let id = RequestId::from_string("test-id-123");
-        assert_eq!(id.as_str(), "test-id-123");
+        let id = RequestId::from_string("550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(id.to_string(), "550e8400-e29b-41d4-a716-446655440000");
     }
 
     #[test]
     fn test_request_id_display() {
-        let id = RequestId::from_string("display-test");
-        assert_eq!(format!("{}", id), "display-test");
+        let id = RequestId::from_string("550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(format!("{}", id), "550e8400-e29b-41d4-a716-446655440000");
     }
 
     #[test]
     fn test_request_id_short() {
-        let id = RequestId::from_string("12345678-abcd-efgh");
+        let id = RequestId::from_string("12345678-1234-4567-89ab-123456789abc");
         assert_eq!(id.short(), "12345678");
     }
 
@@ -1324,9 +1362,8 @@ mod tests {
 
     #[test]
     fn test_request_meta_with_parent_id() {
-        let parent = RequestId::from_string("parent-id");
-        let meta =
-            RequestMeta::new("test", ProcedureType::Query).with_parent_request_id(parent.clone());
+        let parent = RequestId::from_string("550e8400-e29b-41d4-a716-446655440000");
+        let meta = RequestMeta::new("test", ProcedureType::Query).with_parent_request_id(parent);
         assert_eq!(meta.parent_request_id, Some(parent));
     }
 
@@ -1552,7 +1589,7 @@ mod proptests {
         #[test]
         fn prop_request_id_uniqueness(count in 10usize..100) {
             let ids: Vec<RequestId> = (0..count).map(|_| RequestId::new()).collect();
-            let unique: std::collections::HashSet<_> = ids.iter().map(|id| id.as_str()).collect();
+            let unique: std::collections::HashSet<_> = ids.iter().copied().collect();
             prop_assert_eq!(ids.len(), unique.len());
         }
 
@@ -1560,7 +1597,9 @@ mod proptests {
         #[test]
         fn prop_request_id_is_valid_uuid(_seed in 0u64..1000) {
             let id = RequestId::new();
-            let parsed = uuid::Uuid::parse_str(id.as_str());
+            // The UUID is already valid internally, just verify it can be converted to string
+            let uuid_str = id.to_string();
+            let parsed = uuid::Uuid::parse_str(&uuid_str);
             prop_assert!(parsed.is_ok(), "Request ID should be a valid UUID");
         }
 

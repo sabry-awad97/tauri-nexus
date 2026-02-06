@@ -1,7 +1,7 @@
 //! Tauri plugin integration
 
 use crate::RpcError;
-use crate::batch::{execute_batch, BatchRequest, BatchResponse};
+use crate::batch::{BatchRequest, BatchResponse, execute_batch};
 use crate::config::{PluginConfig, RpcConfig};
 use crate::subscription::{
     Event, SubscriptionContext, SubscriptionEvent, SubscriptionManager, generate_subscription_id,
@@ -48,8 +48,8 @@ pub type SubscriptionFuture<'a> = Pin<
 /// - **Sortability**: Natural chronological ordering without additional fields
 /// - **Uniqueness**: Combines timestamp with random bits for collision resistance
 /// - **Compatibility**: Standard UUID format works with existing systems
-fn generate_request_id() -> String {
-    uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
+fn generate_request_id() -> uuid::Uuid {
+    uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext))
 }
 
 // =============================================================================
@@ -208,12 +208,14 @@ async fn rpc_subscribe<R: Runtime>(
         last_event_id,
     } = request;
 
-    validate_rpc_input(&path, &input, &config.0).map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+    validate_rpc_input(&path, &input, &config.0)
+        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
 
     let subscription_id = if id.is_empty() {
         generate_subscription_id()
     } else {
-        validate_subscription_id(&id).map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?
+        validate_subscription_id(&id)
+            .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?
     };
 
     if !router_state.0.is_subscription(&path) {
@@ -222,10 +224,7 @@ async fn rpc_subscribe<R: Runtime>(
             path = %path,
             "Attempted to subscribe to non-subscription procedure"
         );
-        let error = RpcError::bad_request(format!(
-            "'{}' is not a subscription procedure",
-            path
-        ));
+        let error = RpcError::bad_request(format!("'{}' is not a subscription procedure", path));
         return Err(serde_json::to_string(&error).unwrap_or_else(|_| error.to_string()));
     }
 
@@ -243,7 +242,8 @@ async fn rpc_subscribe<R: Runtime>(
     sub_state.0.subscribe(handle);
 
     // Use the new subscription_event_name function from subscription_lifecycle
-    let event_name = subscription_event_name(&plugin_config.0.subscription_event_prefix, &subscription_id);
+    let event_name =
+        subscription_event_name(&plugin_config.0.subscription_event_prefix, &subscription_id);
     let router = router_state.0.clone();
     let sub_manager = sub_state.0.clone();
     let path_clone = path.clone();
@@ -289,7 +289,8 @@ async fn rpc_unsubscribe(
     id: String,
     sub_state: State<'_, SubscriptionState>,
 ) -> Result<bool, String> {
-    let subscription_id = validate_subscription_id(&id).map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+    let subscription_id = validate_subscription_id(&id)
+        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
 
     let result = sub_state.0.unsubscribe(&subscription_id);
 
@@ -445,15 +446,15 @@ where
         })
         .on_drop(move |_app| {
             info!("RPC plugin shutting down");
-            
+
             let manager = shutdown_manager.clone();
-            
+
             // Try to use current runtime handle first
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn(async move {
                     // Use the shutdown method on SubscriptionManager
                     let result = manager.shutdown_plugin(shutdown_timeout).await;
-                    
+
                     if result.is_success() {
                         debug!(
                             cancelled = result.cancelled_count,
@@ -477,7 +478,7 @@ where
                         Ok(rt) => {
                             rt.block_on(async {
                                 let result = manager.shutdown_plugin(shutdown_timeout).await;
-                                
+
                                 if result.is_success() {
                                     debug!(
                                         cancelled = result.cancelled_count,
