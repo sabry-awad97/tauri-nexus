@@ -23,3 +23,6 @@ pub mod config_tests;
 
 #[cfg(test)]
 pub mod batch_tests;
+
+#[cfg(test)]
+pub mod plugin_helpers_tests;

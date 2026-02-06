@@ -19,6 +19,21 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 // =============================================================================
+// Configuration Constants
+// =============================================================================
+
+/// Default timeout for subscription shutdown operations.
+///
+/// This timeout prevents the application from hanging during shutdown
+/// if subscriptions don't clean up promptly.
+const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+
+/// Prefix for subscription event names in Tauri event system.
+///
+/// Format: "rpc:subscription:{subscription_id}"
+const SUBSCRIPTION_EVENT_PREFIX: &str = "rpc:subscription:";
+
+// =============================================================================
 // Type Aliases
 // =============================================================================
 
@@ -28,6 +43,28 @@ pub type SubscriptionFuture<'a> = Pin<
         dyn Future<Output = Result<mpsc::Receiver<Event<serde_json::Value>>, RpcError>> + Send + 'a,
     >,
 >;
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/// Convert RpcError to String for Tauri command responses.
+///
+/// Attempts to serialize as JSON first, falls back to Display trait.
+/// This ensures consistent error formatting across all commands.
+fn serialize_error(error: &RpcError) -> String {
+    serde_json::to_string(error).unwrap_or_else(|_| error.to_string())
+}
+
+/// Generate a unique request ID using UUID v7 (time-ordered).
+///
+/// UUID v7 provides:
+/// - Time-based ordering for better database indexing
+/// - Monotonic sorting within the same millisecond
+/// - Compatibility with standard UUID format
+fn generate_request_id() -> String {
+    uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string()
+}
 
 // =============================================================================
 // Input Validation
@@ -48,26 +85,64 @@ pub fn validate_path(path: &str) -> Result<(), RpcError> {
             "Procedure path cannot contain consecutive dots",
         ));
     }
-    for ch in path.chars() {
-        if !ch.is_ascii_alphanumeric() && ch != '_' && ch != '.' {
-            return Err(RpcError::validation(format!(
-                "Procedure path contains invalid character: '{}'",
-                ch
-            )));
-        }
+
+    // Use iterator methods for cleaner validation
+    if let Some(invalid_char) = path
+        .chars()
+        .find(|&ch| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '.')
+    {
+        return Err(RpcError::validation(format!(
+            "Procedure path contains invalid character: '{}'",
+            invalid_char
+        )));
     }
+
     Ok(())
 }
 
 /// Validate input size against configuration limit.
+///
+/// Uses heuristics to avoid unnecessary serialization for small inputs:
+/// - Null: 4 bytes
+/// - Boolean: 5 bytes  
+/// - Number: ~20 bytes (conservative estimate)
+/// - String: length + 2 (quotes)
+/// - Small arrays/objects: skip serialization if obviously small
 pub fn validate_input_size(input: &serde_json::Value, config: &RpcConfig) -> Result<(), RpcError> {
-    let size = serde_json::to_vec(input).map(|v| v.len()).unwrap_or(0);
-    if size > config.max_input_size {
+    use serde_json::Value;
+    
+    // Fast path: estimate size for simple types
+    let estimated_size = match input {
+        Value::Null => 4,
+        Value::Bool(_) => 5,
+        Value::Number(_) => 20, // Conservative estimate
+        Value::String(s) => s.len() + 2, // Add quotes
+        Value::Array(arr) if arr.is_empty() => 2, // "[]"
+        Value::Object(obj) if obj.is_empty() => 2, // "{}"
+        _ => {
+            // Complex type: need actual serialization
+            let size = serde_json::to_vec(input)
+                .map(|v| v.len())
+                .unwrap_or(0);
+            
+            if size > config.max_input_size {
+                return Err(RpcError::payload_too_large(format!(
+                    "Input size {} bytes exceeds maximum {} bytes",
+                    size, config.max_input_size
+                )));
+            }
+            return Ok(());
+        }
+    };
+    
+    // Early return for small inputs
+    if estimated_size > config.max_input_size {
         return Err(RpcError::payload_too_large(format!(
-            "Input size {} bytes exceeds maximum {} bytes",
-            size, config.max_input_size
+            "Input size ~{} bytes exceeds maximum {} bytes",
+            estimated_size, config.max_input_size
         )));
     }
+    
     Ok(())
 }
 
@@ -152,6 +227,67 @@ pub struct SubscribeRequest {
 }
 
 // =============================================================================
+// Subscription Event Handling
+// =============================================================================
+
+/// Handle subscription event stream and emit events to frontend.
+///
+/// This function manages the event loop for a subscription:
+/// - Receives events from the stream
+/// - Checks for cancellation
+/// - Emits events to the frontend via Tauri event system
+/// - Handles completion and errors
+///
+/// Returns the total number of events processed.
+async fn handle_subscription_events<R: Runtime>(
+    app: AppHandle<R>,
+    subscription_id: SubscriptionId,
+    path: String,
+    event_name: String,
+    mut stream: mpsc::Receiver<Event<serde_json::Value>>,
+    signal: Arc<crate::subscription::CancellationSignal>,
+) -> u64 {
+    let mut event_count = 0u64;
+
+    while let Some(event) = stream.recv().await {
+        if signal.is_cancelled() {
+            debug!(
+                subscription_id = %subscription_id,
+                path = %path,
+                event_count = %event_count,
+                "Subscription cancelled"
+            );
+            break;
+        }
+
+        event_count += 1;
+        let sub_event = SubscriptionEvent::data(event);
+
+        if app.emit(&event_name, &sub_event).is_err() {
+            debug!(
+                subscription_id = %subscription_id,
+                path = %path,
+                "Subscription emit failed, closing"
+            );
+            break;
+        }
+    }
+
+    // Send completion event if not cancelled
+    if !signal.is_cancelled() {
+        info!(
+            subscription_id = %subscription_id,
+            path = %path,
+            event_count = %event_count,
+            "Subscription completed"
+        );
+        let _ = app.emit(&event_name, &SubscriptionEvent::completed());
+    }
+
+    event_count
+}
+
+// =============================================================================
 // Tauri Commands
 // =============================================================================
 
@@ -162,7 +298,7 @@ async fn rpc_call(
     state: State<'_, RouterState>,
     config: State<'_, ConfigState>,
 ) -> Result<serde_json::Value, String> {
-    let request_id = uuid::Uuid::new_v7(uuid::Timestamp::now(uuid::NoContext)).to_string();
+    let request_id = generate_request_id();
     let start = std::time::Instant::now();
 
     debug!(
@@ -178,7 +314,7 @@ async fn rpc_call(
             error = %e,
             "RPC input validation failed"
         );
-        serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())
+        serialize_error(&e)
     })?;
 
     let result = state.0.call(&path, input).await.map_err(|e| {
@@ -191,7 +327,7 @@ async fn rpc_call(
             duration_ms = %duration.as_millis(),
             "RPC call failed"
         );
-        serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())
+        serialize_error(&e)
     });
 
     if result.is_ok() {
@@ -219,7 +355,7 @@ async fn rpc_call_batch(
     // Validate batch
     if let Err(e) = batch.validate(batch_config) {
         warn!(error = %e, "Batch validation failed");
-        return Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()));
+        return Err(serialize_error(&e));
     }
 
     // Validate each request's path and input
@@ -231,7 +367,7 @@ async fn rpc_call_batch(
                 error = %e,
                 "Batch request validation failed"
             );
-            return Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()));
+            return Err(serialize_error(&e));
         }
     }
 
@@ -299,14 +435,12 @@ async fn rpc_subscribe<R: Runtime>(
         last_event_id,
     } = request;
 
-    validate_rpc_input(&path, &input, &config.0)
-        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+    validate_rpc_input(&path, &input, &config.0).map_err(|e| serialize_error(&e))?;
 
     let subscription_id = if id.is_empty() {
         generate_subscription_id()
     } else {
-        validate_subscription_id(&id)
-            .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?
+        validate_subscription_id(&id).map_err(|e| serialize_error(&e))?
     };
 
     if !router_state.0.is_subscription(&path) {
@@ -315,11 +449,10 @@ async fn rpc_subscribe<R: Runtime>(
             path = %path,
             "Attempted to subscribe to non-subscription procedure"
         );
-        return Err(serde_json::to_string(&RpcError::bad_request(format!(
+        return Err(serialize_error(&RpcError::bad_request(format!(
             "'{}' is not a subscription procedure",
             path
-        )))
-        .unwrap());
+        ))));
     }
 
     info!(
@@ -335,10 +468,11 @@ async fn rpc_subscribe<R: Runtime>(
         crate::subscription::SubscriptionHandle::new(subscription_id, path.clone(), signal.clone());
     sub_state.0.subscribe(handle);
 
-    let event_name = format!("rpc:subscription:{}", subscription_id);
+    let event_name = format!("{}{}", SUBSCRIPTION_EVENT_PREFIX, subscription_id);
     let router = router_state.0.clone();
     let sub_manager = sub_state.0.clone();
     let path_clone = path.clone();
+    let app_clone = app.clone();
 
     // Use spawn_subscription for tracked task management instead of tokio::spawn
     // This ensures proper cleanup during shutdown
@@ -346,38 +480,16 @@ async fn rpc_subscribe<R: Runtime>(
         .0
         .spawn_subscription(subscription_id, async move {
             match router.subscribe(&path_clone, input, sub_ctx).await {
-                Ok(mut stream) => {
-                    let mut event_count = 0u64;
-                    while let Some(event) = stream.recv().await {
-                        if signal.is_cancelled() {
-                            debug!(
-                                subscription_id = %subscription_id,
-                                path = %path_clone,
-                                event_count = %event_count,
-                                "Subscription cancelled"
-                            );
-                            break;
-                        }
-                        event_count += 1;
-                        let sub_event = SubscriptionEvent::data(event);
-                        if app.emit(&event_name, &sub_event).is_err() {
-                            debug!(
-                                subscription_id = %subscription_id,
-                                path = %path_clone,
-                                "Subscription emit failed, closing"
-                            );
-                            break;
-                        }
-                    }
-                    if !signal.is_cancelled() {
-                        info!(
-                            subscription_id = %subscription_id,
-                            path = %path_clone,
-                            event_count = %event_count,
-                            "Subscription completed"
-                        );
-                        let _ = app.emit(&event_name, &SubscriptionEvent::completed());
-                    }
+                Ok(stream) => {
+                    handle_subscription_events(
+                        app_clone,
+                        subscription_id,
+                        path_clone,
+                        event_name,
+                        stream,
+                        signal,
+                    )
+                    .await;
                 }
                 Err(err) => {
                     warn!(
@@ -387,7 +499,7 @@ async fn rpc_subscribe<R: Runtime>(
                         error_message = %err.message,
                         "Subscription error"
                     );
-                    let _ = app.emit(&event_name, &SubscriptionEvent::error(err));
+                    let _ = app_clone.emit(&event_name, &SubscriptionEvent::error(err));
                 }
             }
             sub_manager.unsubscribe(&subscription_id);
@@ -402,8 +514,7 @@ async fn rpc_unsubscribe(
     id: String,
     sub_state: State<'_, SubscriptionState>,
 ) -> Result<bool, String> {
-    let subscription_id = validate_subscription_id(&id)
-        .map_err(|e| serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))?;
+    let subscription_id = validate_subscription_id(&id).map_err(|e| serialize_error(&e))?;
 
     let result = sub_state.0.unsubscribe(&subscription_id);
 
@@ -510,26 +621,49 @@ where
             Ok(())
         })
         .on_drop(move |_app| {
-            // Spawn blocking task to run async shutdown
-            let manager = shutdown_manager.clone();
             info!("RPC plugin shutting down");
-            std::thread::spawn(move || {
-                // Create a new tokio runtime for the shutdown task
-                if let Ok(rt) = tokio::runtime::Runtime::new() {
-                    rt.block_on(async {
-                        // Add 5-second timeout for shutdown to prevent hanging
-                        let shutdown_timeout = std::time::Duration::from_secs(5);
-                        if tokio::time::timeout(shutdown_timeout, manager.shutdown())
-                            .await
-                            .is_err()
-                        {
-                            warn!("Subscription shutdown timed out after 5 seconds");
-                        } else {
-                            debug!("Subscription shutdown completed successfully");
+            
+            let manager = shutdown_manager.clone();
+            
+            // Try to use current runtime handle first
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    let timeout = std::time::Duration::from_secs(SHUTDOWN_TIMEOUT_SECS);
+                    if tokio::time::timeout(timeout, manager.shutdown()).await.is_err() {
+                        warn!(
+                            timeout_secs = SHUTDOWN_TIMEOUT_SECS,
+                            "Subscription shutdown timed out"
+                        );
+                    } else {
+                        debug!("Subscription shutdown completed successfully");
+                    }
+                });
+            } else {
+                // Fallback: create new runtime
+                std::thread::spawn(move || {
+                    match tokio::runtime::Runtime::new() {
+                        Ok(rt) => {
+                            rt.block_on(async {
+                                let timeout = std::time::Duration::from_secs(SHUTDOWN_TIMEOUT_SECS);
+                                if tokio::time::timeout(timeout, manager.shutdown()).await.is_err() {
+                                    warn!(
+                                        timeout_secs = SHUTDOWN_TIMEOUT_SECS,
+                                        "Subscription shutdown timed out"
+                                    );
+                                } else {
+                                    debug!("Subscription shutdown completed successfully");
+                                }
+                            });
                         }
-                    });
-                }
-            });
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                "Failed to create runtime for shutdown, subscriptions may not clean up properly"
+                            );
+                        }
+                    }
+                });
+            }
         })
         .build()
 }
