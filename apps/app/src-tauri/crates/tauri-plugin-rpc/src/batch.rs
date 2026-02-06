@@ -3,10 +3,17 @@
 //! This module provides types and utilities for processing multiple RPC calls
 //! in a single request, reducing IPC overhead.
 //!
+//! # Features
+//!
+//! - **Streaming execution**: Uses `FuturesUnordered` for efficient parallel processing
+//! - **Fail-fast validation**: Validates batch before executing any requests
+//! - **Metrics tracking**: Collects success/error counts and execution duration
+//! - **Error context preservation**: Maintains full error information in results
+//!
 //! # Example
 //!
 //! ```rust,ignore
-//! use tauri_plugin_rpc::batch::{BatchRequest, SingleRequest, BatchConfig};
+//! use tauri_plugin_rpc::batch::{BatchRequest, SingleRequest, BatchConfig, execute_batch};
 //!
 //! let batch = BatchRequest {
 //!     requests: vec![
@@ -15,12 +22,14 @@
 //!     ],
 //! };
 //!
-//! let config = BatchConfig::default();
-//! let results = router.call_batch(batch, &config).await;
+//! let (response, metrics) = execute_batch(batch, router, &config).await?;
+//! println!("Processed {} requests in {}ms", metrics.total_requests, metrics.duration_ms);
 //! ```
 
-use crate::RpcError;
+use crate::{RpcConfig, RpcError, plugin::DynRouter};
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
 // =============================================================================
@@ -323,6 +332,427 @@ impl BatchResponse {
     /// Get result by request ID.
     pub fn get(&self, id: &str) -> Option<&BatchResult> {
         self.results.iter().find(|r| r.id == id)
+    }
+}
+
+// =============================================================================
+// Batch Execution
+// =============================================================================
+
+/// Metrics collected during batch execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchMetrics {
+    /// Total number of requests in the batch
+    pub total_requests: usize,
+    /// Number of successful requests
+    pub success_count: usize,
+    /// Number of failed requests
+    pub error_count: usize,
+    /// Total execution duration in milliseconds
+    pub duration_ms: u64,
+}
+
+impl BatchMetrics {
+    /// Create new metrics with default values.
+    pub fn new(total_requests: usize) -> Self {
+        Self {
+            total_requests,
+            success_count: 0,
+            error_count: 0,
+            duration_ms: 0,
+        }
+    }
+}
+
+/// Execute a batch of RPC requests with streaming and metrics collection.
+///
+/// This function:
+/// 1. Validates the batch size before execution (fail-fast)
+/// 2. Executes requests in parallel using `FuturesUnordered` for streaming
+/// 3. Tracks metrics (success/error counts, duration)
+/// 4. Preserves error context in results
+///
+/// # Arguments
+///
+/// * `batch` - The batch request to execute
+/// * `router` - The RPC router for executing procedures
+/// * `rpc_config` - RPC configuration for validation
+///
+/// # Returns
+///
+/// A tuple of `(BatchResponse, BatchMetrics)` containing the results and metrics.
+///
+/// # Errors
+///
+/// Returns an error if batch validation fails (size limits, empty batch, etc.).
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let (response, metrics) = execute_batch(batch, router, &config).await?;
+/// assert_eq!(metrics.total_requests, batch.len());
+/// ```
+pub async fn execute_batch(
+    batch: BatchRequest,
+    router: Arc<dyn DynRouter>,
+    rpc_config: &RpcConfig,
+) -> Result<(BatchResponse, BatchMetrics), RpcError> {
+    let start = std::time::Instant::now();
+    let batch_config = &rpc_config.batch_config;
+
+    // Fail-fast validation: Check batch size before individual request validation
+    if let Err(e) = batch.validate(batch_config) {
+        warn!(
+            batch_size = batch.len(),
+            max_size = batch_config.max_batch_size,
+            "Batch validation failed"
+        );
+        return Err(e);
+    }
+
+    debug!(
+        batch_size = batch.len(),
+        parallel = batch_config.parallel_execution,
+        "Executing batch request"
+    );
+
+    let total_requests = batch.len();
+    let mut metrics = BatchMetrics::new(total_requests);
+
+    // Execute batch using streaming for better performance
+    let results = if batch_config.parallel_execution {
+        execute_parallel(&batch, router).await
+    } else {
+        execute_sequential(&batch, router).await
+    };
+
+    // Update metrics
+    for result in &results {
+        if result.is_success() {
+            metrics.success_count += 1;
+        } else {
+            metrics.error_count += 1;
+        }
+    }
+
+    metrics.duration_ms = start.elapsed().as_millis() as u64;
+
+    debug!(
+        total = metrics.total_requests,
+        success = metrics.success_count,
+        errors = metrics.error_count,
+        duration_ms = metrics.duration_ms,
+        "Batch execution completed"
+    );
+
+    let response = BatchResponse::new(results);
+    Ok((response, metrics))
+}
+
+/// Execute batch requests in parallel using FuturesUnordered for streaming.
+async fn execute_parallel(batch: &BatchRequest, router: Arc<dyn DynRouter>) -> Vec<BatchResult> {
+    let mut futures = FuturesUnordered::new();
+
+    for req in &batch.requests {
+        let id = req.id.clone();
+        let path = req.path.clone();
+        let input = req.input.clone();
+        let router = router.clone();
+
+        futures.push(async move {
+            match router.call(&path, input).await {
+                Ok(data) => {
+                    debug!(request_id = %id, path = %path, "Batch request succeeded");
+                    BatchResult::success(id, data)
+                }
+                Err(error) => {
+                    warn!(
+                        request_id = %id,
+                        path = %path,
+                        error_code = %error.code,
+                        error_message = %error.message,
+                        "Batch request failed"
+                    );
+                    BatchResult::error(id, error)
+                }
+            }
+        });
+    }
+
+    let mut results = Vec::with_capacity(batch.len());
+    while let Some(result) = futures.next().await {
+        results.push(result);
+    }
+
+    // Preserve original order by sorting by request ID
+    let original_order: std::collections::HashMap<_, _> = batch
+        .requests
+        .iter()
+        .enumerate()
+        .map(|(i, req)| (req.id.clone(), i))
+        .collect();
+
+    results.sort_by_key(|r| original_order.get(&r.id).copied().unwrap_or(usize::MAX));
+    results
+}
+
+/// Execute batch requests sequentially.
+async fn execute_sequential(batch: &BatchRequest, router: Arc<dyn DynRouter>) -> Vec<BatchResult> {
+    let mut results = Vec::with_capacity(batch.len());
+
+    for req in &batch.requests {
+        let result = match router.call(&req.path, req.input.clone()).await {
+            Ok(data) => {
+                debug!(request_id = %req.id, path = %req.path, "Batch request succeeded");
+                BatchResult::success(&req.id, data)
+            }
+            Err(error) => {
+                warn!(
+                    request_id = %req.id,
+                    path = %req.path,
+                    error_code = %error.code,
+                    error_message = %error.message,
+                    "Batch request failed"
+                );
+                BatchResult::error(&req.id, error)
+            }
+        };
+        results.push(result);
+    }
+
+    results
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod execution_tests {
+    use super::*;
+    use crate::{Context, EmptyContext, Router, RpcResult};
+    use proptest::prelude::*;
+    use serde_json::json;
+
+    // Mock handler for testing
+    async fn mock_handler(
+        _ctx: Context<EmptyContext>,
+        input: serde_json::Value,
+    ) -> RpcResult<serde_json::Value> {
+        if input.get("fail").and_then(|v| v.as_bool()).unwrap_or(false) {
+            Err(RpcError::internal("Mock error"))
+        } else {
+            Ok(json!({"result": "success"}))
+        }
+    }
+
+    fn create_test_router() -> Router<EmptyContext> {
+        Router::new()
+            .context(EmptyContext)
+            .query("test.success", mock_handler)
+            .query("test.fail", mock_handler)
+    }
+
+    // Property 17: Batch streaming execution
+    proptest! {
+        #[test]
+        fn prop_batch_streaming_execution(
+            count in 1usize..20usize
+        ) {
+            tokio::runtime::Runtime::new().unwrap().block_on(async {
+                let router = create_test_router().compile();
+                let config = RpcConfig::default();
+
+                let mut batch = BatchRequest::new();
+                for i in 0..count {
+                    batch = batch.add(format!("req_{}", i), "test.success", json!({}));
+                }
+
+                let result = execute_batch(batch, Arc::new(router), &config).await;
+                assert!(result.is_ok());
+
+                let (response, metrics) = result.unwrap();
+                assert_eq!(metrics.total_requests, count);
+                assert_eq!(response.len(), count);
+            });
+        }
+    }
+
+    // Property 18: Batch validation fail-fast
+    #[test]
+    fn test_batch_validation_fail_fast() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let router = create_test_router().compile();
+            let config = RpcConfig::default()
+                .with_batch_config(BatchConfig::default().with_max_batch_size(2));
+
+            // Create oversized batch
+            let batch = BatchRequest::new()
+                .add("1", "test.success", json!({}))
+                .add("2", "test.success", json!({}))
+                .add("3", "test.success", json!({}));
+
+            let result = execute_batch(batch, Arc::new(router), &config).await;
+            assert!(result.is_err());
+
+            let err = result.unwrap_err();
+            assert_eq!(err.code.as_str(), "BAD_REQUEST");
+            assert!(err.message.contains("exceeds maximum"));
+        });
+    }
+
+    // Property 19: Batch metrics accuracy
+    proptest! {
+        #[test]
+        fn prop_batch_metrics_accuracy(
+            success_count in 1usize..10usize,
+            error_count in 0usize..10usize
+        ) {
+            tokio::runtime::Runtime::new().unwrap().block_on(async {
+                let router = create_test_router().compile();
+                let config = RpcConfig::default();
+
+                let mut batch = BatchRequest::new();
+                for i in 0..success_count {
+                    batch = batch.add(format!("success_{}", i), "test.success", json!({}));
+                }
+                for i in 0..error_count {
+                    batch = batch.add(format!("error_{}", i), "test.fail", json!({"fail": true}));
+                }
+
+                let result = execute_batch(batch, Arc::new(router), &config).await;
+                assert!(result.is_ok());
+
+                let (response, metrics) = result.unwrap();
+                assert_eq!(metrics.total_requests, success_count + error_count);
+                assert_eq!(metrics.success_count, success_count);
+                assert_eq!(metrics.error_count, error_count);
+                assert_eq!(response.success_count(), success_count);
+                assert_eq!(response.error_count(), error_count);
+            });
+        }
+    }
+
+    // Property 20: Batch size limit enforcement
+    #[test]
+    fn test_batch_size_limit_enforcement() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let router = Arc::new(create_test_router().compile());
+            let config = RpcConfig::default()
+                .with_batch_config(BatchConfig::default().with_max_batch_size(5));
+
+            // Exactly at limit - should succeed
+            let mut batch = BatchRequest::new();
+            for i in 0..5 {
+                batch = batch.add(format!("req_{}", i), "test.success", json!({}));
+            }
+            assert!(execute_batch(batch, router.clone(), &config).await.is_ok());
+
+            // Over limit - should fail
+            let mut batch = BatchRequest::new();
+            for i in 0..6 {
+                batch = batch.add(format!("req_{}", i), "test.success", json!({}));
+            }
+            assert!(execute_batch(batch, router, &config).await.is_err());
+        });
+    }
+
+    // Property 21: Batch size validation precedes request validation
+    #[test]
+    fn test_batch_size_validation_first() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let router = create_test_router().compile();
+            let config = RpcConfig::default()
+                .with_batch_config(BatchConfig::default().with_max_batch_size(1));
+
+            // Create batch with 2 requests (exceeds limit)
+            // Even if individual requests are invalid, batch size check should fail first
+            let batch = BatchRequest::new()
+                .add("1", "", json!({})) // Invalid path
+                .add("2", "", json!({})); // Invalid path
+
+            let result = execute_batch(batch, Arc::new(router), &config).await;
+            assert!(result.is_err());
+
+            let err = result.unwrap_err();
+            // Should be batch size error, not path validation error
+            assert!(err.message.contains("exceeds maximum") || err.message.contains("Batch"));
+        });
+    }
+
+    // Property 22: Batch failure context preservation
+    #[test]
+    fn test_batch_failure_context_preservation() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let router = create_test_router().compile();
+            let config = RpcConfig::default();
+
+            let batch = BatchRequest::new()
+                .add("req_1", "test.success", json!({}))
+                .add("req_2", "test.fail", json!({"fail": true}))
+                .add("req_3", "test.success", json!({}));
+
+            let result = execute_batch(batch, Arc::new(router), &config).await;
+            assert!(result.is_ok());
+
+            let (response, _) = result.unwrap();
+
+            // Check that error context is preserved
+            let error_result = response.get("req_2").unwrap();
+            assert!(error_result.is_error());
+
+            let error = error_result.get_error().unwrap();
+            assert_eq!(error.code.as_str(), "INTERNAL_ERROR");
+            assert_eq!(error.message, "Mock error");
+        });
+    }
+
+    // Unit tests for execution modes
+    #[test]
+    fn test_parallel_execution_mode() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let router = create_test_router().compile();
+            let config = RpcConfig::default()
+                .with_batch_config(BatchConfig::default().with_parallel_execution(true));
+
+            let batch = BatchRequest::new()
+                .add("1", "test.success", json!({}))
+                .add("2", "test.success", json!({}))
+                .add("3", "test.success", json!({}));
+
+            let result = execute_batch(batch, Arc::new(router), &config).await;
+            assert!(result.is_ok());
+
+            let (response, metrics) = result.unwrap();
+            assert_eq!(metrics.success_count, 3);
+            assert_eq!(response.len(), 3);
+        });
+    }
+
+    #[test]
+    fn test_sequential_execution_mode() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let router = create_test_router().compile();
+            let config = RpcConfig::default()
+                .with_batch_config(BatchConfig::default().with_parallel_execution(false));
+
+            let batch = BatchRequest::new()
+                .add("1", "test.success", json!({}))
+                .add("2", "test.success", json!({}))
+                .add("3", "test.success", json!({}));
+
+            let result = execute_batch(batch, Arc::new(router), &config).await;
+            assert!(result.is_ok());
+
+            let (response, metrics) = result.unwrap();
+            assert_eq!(metrics.success_count, 3);
+            assert_eq!(response.len(), 3);
+
+            // Verify order is preserved in sequential mode
+            assert_eq!(response.results[0].id, "1");
+            assert_eq!(response.results[1].id, "2");
+            assert_eq!(response.results[2].id, "3");
+        });
     }
 }
 

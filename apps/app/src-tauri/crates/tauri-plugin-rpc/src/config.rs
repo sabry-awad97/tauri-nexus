@@ -1,10 +1,12 @@
 //! Configuration module for the RPC plugin.
 //!
-//! This module provides the [`RpcConfig`] struct for customizing plugin behavior.
+//! This module provides the [`RpcConfig`] struct for customizing plugin behavior,
+//! as well as [`PluginConfig`] for plugin-level settings like shutdown and event naming.
 //!
 //! # Example
 //! ```rust,ignore
-//! use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy, BatchConfig};
+//! use tauri_plugin_rpc::{RpcConfig, BackpressureStrategy, BatchConfig, PluginConfig};
+//! use std::time::Duration;
 //!
 //! let config = RpcConfig {
 //!     max_input_size: 512 * 1024,  // 512KB
@@ -14,11 +16,16 @@
 //!     cleanup_interval_secs: 30,
 //!     batch_config: BatchConfig::default(),
 //! };
+//!
+//! let plugin_config = PluginConfig::default()
+//!     .with_shutdown_timeout(Duration::from_secs(10))
+//!     .with_event_prefix("custom:events:");
 //! ```
 
 use crate::batch::BatchConfig;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::time::Duration;
 
 /// Error type for configuration validation failures.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -280,5 +287,226 @@ impl RpcConfig {
     pub fn with_batch_config(mut self, config: BatchConfig) -> Self {
         self.batch_config = config;
         self
+    }
+}
+
+// =============================================================================
+// Plugin Configuration
+// =============================================================================
+
+/// Extended configuration for the RPC plugin.
+///
+/// This configuration extends the base `RpcConfig` with additional options
+/// for plugin-level behavior like shutdown and event naming.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use tauri_plugin_rpc::PluginConfig;
+/// use std::time::Duration;
+///
+/// let config = PluginConfig::default()
+///     .with_shutdown_timeout(Duration::from_secs(10))
+///     .with_event_prefix("custom:events:");
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginConfig {
+    /// Timeout for plugin shutdown operations.
+    ///
+    /// This timeout prevents the application from hanging during shutdown
+    /// if subscriptions don't clean up promptly.
+    ///
+    /// Default: 5 seconds
+    pub shutdown_timeout: Duration,
+
+    /// Prefix for subscription event names in Tauri event system.
+    ///
+    /// Format: "{prefix}{subscription_id}"
+    /// Example: "rpc:subscription:sub_01234567..."
+    ///
+    /// Default: "rpc:subscription:"
+    pub subscription_event_prefix: String,
+}
+
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self {
+            shutdown_timeout: Duration::from_secs(5),
+            subscription_event_prefix: "rpc:subscription:".to_string(),
+        }
+    }
+}
+
+impl PluginConfig {
+    /// Create a new plugin configuration with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the shutdown timeout.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - Maximum time to wait for shutdown
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let config = PluginConfig::new()
+    ///     .with_shutdown_timeout(Duration::from_secs(10));
+    /// ```
+    #[must_use = "This method returns a new PluginConfig and does not modify self"]
+    pub fn with_shutdown_timeout(mut self, timeout: Duration) -> Self {
+        self.shutdown_timeout = timeout;
+        self
+    }
+
+    /// Set the subscription event prefix.
+    ///
+    /// # Arguments
+    ///
+    /// * `prefix` - The event prefix string
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let config = PluginConfig::new()
+    ///     .with_event_prefix("custom:events:");
+    /// ```
+    #[must_use = "This method returns a new PluginConfig and does not modify self"]
+    pub fn with_event_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.subscription_event_prefix = prefix.into();
+        self
+    }
+
+    /// Validate the configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `shutdown_timeout` is zero
+    /// - `subscription_event_prefix` is empty
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let config = PluginConfig::new();
+    /// config.validate().expect("Config should be valid");
+    /// ```
+    pub fn validate(&self) -> Result<(), String> {
+        if self.shutdown_timeout.is_zero() {
+            return Err("shutdown_timeout must be greater than zero".to_string());
+        }
+        if self.subscription_event_prefix.is_empty() {
+            return Err("subscription_event_prefix cannot be empty".to_string());
+        }
+        Ok(())
+    }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod plugin_config_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    // Property 23: Configuration validation at initialization
+    proptest! {
+        #[test]
+        fn prop_configuration_validation(
+            timeout_secs in 1u64..3600u64,
+            prefix in "[a-z:]{1,50}"
+        ) {
+            let config = PluginConfig::new()
+                .with_shutdown_timeout(Duration::from_secs(timeout_secs))
+                .with_event_prefix(prefix);
+
+            assert!(config.validate().is_ok());
+        }
+
+        #[test]
+        fn prop_zero_timeout_invalid(
+            prefix in "[a-z:]{1,50}"
+        ) {
+            let config = PluginConfig {
+                shutdown_timeout: Duration::from_secs(0),
+                subscription_event_prefix: prefix,
+            };
+
+            assert!(config.validate().is_err());
+        }
+
+        #[test]
+        fn prop_empty_prefix_invalid(
+            timeout_secs in 1u64..3600u64
+        ) {
+            let config = PluginConfig {
+                shutdown_timeout: Duration::from_secs(timeout_secs),
+                subscription_event_prefix: String::new(),
+            };
+
+            assert!(config.validate().is_err());
+        }
+    }
+
+    // Unit tests for configuration builder
+    #[test]
+    fn test_with_shutdown_timeout() {
+        let config = PluginConfig::new().with_shutdown_timeout(Duration::from_secs(10));
+
+        assert_eq!(config.shutdown_timeout, Duration::from_secs(10));
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_with_event_prefix() {
+        let config = PluginConfig::new().with_event_prefix("custom:prefix:");
+
+        assert_eq!(config.subscription_event_prefix, "custom:prefix:");
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_default_configuration_values() {
+        let config = PluginConfig::default();
+
+        assert_eq!(config.shutdown_timeout, Duration::from_secs(5));
+        assert_eq!(config.subscription_event_prefix, "rpc:subscription:");
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_builder_chain() {
+        let config = PluginConfig::new()
+            .with_shutdown_timeout(Duration::from_secs(15))
+            .with_event_prefix("test:events:");
+
+        assert_eq!(config.shutdown_timeout, Duration::from_secs(15));
+        assert_eq!(config.subscription_event_prefix, "test:events:");
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validation_errors() {
+        // Zero timeout
+        let config = PluginConfig {
+            shutdown_timeout: Duration::from_secs(0),
+            subscription_event_prefix: "rpc:subscription:".to_string(),
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("shutdown_timeout"));
+
+        // Empty prefix
+        let config = PluginConfig {
+            shutdown_timeout: Duration::from_secs(5),
+            subscription_event_prefix: String::new(),
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("subscription_event_prefix"));
     }
 }

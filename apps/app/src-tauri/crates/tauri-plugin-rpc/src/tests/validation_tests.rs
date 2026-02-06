@@ -4,8 +4,8 @@
 //! - Property 6: Input Validation Rejection
 //! - Property 1: Validation Rules Correctness
 
-use crate::plugin::{validate_input_size, validate_path, validate_subscription_id};
 use crate::validation::{FieldError, ValidationRules};
+use crate::validation::{validate_input_size, validate_path, validate_subscription_id};
 use crate::{RpcConfig, RpcErrorCode};
 use proptest::prelude::*;
 

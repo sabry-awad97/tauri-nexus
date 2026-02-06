@@ -433,3 +433,373 @@ impl ValidationRules {
         }
     }
 }
+
+// =============================================================================
+// RPC-Specific Validation Functions
+// =============================================================================
+
+use crate::{RpcConfig, RpcError, subscription::SubscriptionId};
+
+/// Validate procedure path format.
+///
+/// A valid procedure path:
+/// - Cannot be empty
+/// - Cannot start or end with a dot
+/// - Cannot contain consecutive dots (..)
+/// - Can only contain alphanumeric characters, underscores, and dots
+///
+/// # Errors
+///
+/// Returns `RpcError::validation` if the path is invalid.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// validate_path("user.get")?;  // OK
+/// validate_path("user.list")?; // OK
+/// validate_path("")?;          // Error: empty
+/// validate_path(".user")?;     // Error: starts with dot
+/// validate_path("user..get")?; // Error: consecutive dots
+/// ```
+pub fn validate_path(path: &str) -> Result<(), RpcError> {
+    if path.is_empty() {
+        return Err(RpcError::validation(format!(
+            "Procedure path cannot be empty (got: '{}')",
+            path
+        )));
+    }
+    if path.starts_with('.') || path.ends_with('.') {
+        return Err(RpcError::validation(format!(
+            "Procedure path cannot start or end with a dot (got: '{}')",
+            path
+        )));
+    }
+    if path.contains("..") {
+        return Err(RpcError::validation(format!(
+            "Procedure path cannot contain consecutive dots (got: '{}')",
+            path
+        )));
+    }
+
+    // Use iterator methods for cleaner validation
+    if let Some(invalid_char) = path
+        .chars()
+        .find(|&ch| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '.')
+    {
+        return Err(RpcError::validation(format!(
+            "Procedure path contains invalid character: '{}' in path '{}'",
+            invalid_char, path
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validate input size against configuration limit.
+///
+/// Uses heuristics to avoid unnecessary serialization for small inputs:
+/// - Null: 4 bytes
+/// - Boolean: 5 bytes  
+/// - Number: ~20 bytes (conservative estimate)
+/// - String: length + 2 (quotes)
+/// - Small arrays/objects: skip serialization if obviously small
+///
+/// # Errors
+///
+/// Returns `RpcError::payload_too_large` if the input exceeds the configured maximum size.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let config = RpcConfig::default();
+/// validate_input_size(&json!({"name": "test"}), &config)?;  // OK
+/// validate_input_size(&json!(null), &config)?;              // OK (4 bytes)
+/// ```
+pub fn validate_input_size(input: &serde_json::Value, config: &RpcConfig) -> Result<(), RpcError> {
+    use serde_json::Value;
+
+    // Fast path: estimate size for simple types
+    let estimated_size = match input {
+        Value::Null => 4,
+        Value::Bool(_) => 5,
+        Value::Number(_) => 20,                    // Conservative estimate
+        Value::String(s) => s.len() + 2,           // Add quotes
+        Value::Array(arr) if arr.is_empty() => 2,  // "[]"
+        Value::Object(obj) if obj.is_empty() => 2, // "{}"
+        _ => {
+            // Complex type: need actual serialization
+            let size = serde_json::to_vec(input).map(|v| v.len()).unwrap_or(0);
+
+            if size > config.max_input_size {
+                return Err(RpcError::payload_too_large(format!(
+                    "Input size {} bytes exceeds maximum {} bytes",
+                    size, config.max_input_size
+                )));
+            }
+            return Ok(());
+        }
+    };
+
+    // Early return for small inputs
+    if estimated_size > config.max_input_size {
+        return Err(RpcError::payload_too_large(format!(
+            "Input size ~{} bytes exceeds maximum {} bytes",
+            estimated_size, config.max_input_size
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validate subscription ID format when provided by client.
+///
+/// This function accepts both formats for backward compatibility:
+/// - With prefix: "sub_01234567-89ab-7cde-8f01-234567890abc"
+/// - Without prefix: "01234567-89ab-7cde-8f01-234567890abc"
+///
+/// # Errors
+///
+/// Returns `RpcError::validation` if the ID is invalid.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// validate_subscription_id("sub_01234567-89ab-7cde-8f01-234567890abc")?;  // OK
+/// validate_subscription_id("01234567-89ab-7cde-8f01-234567890abc")?;      // OK
+/// validate_subscription_id("")?;                                           // Error
+/// validate_subscription_id("invalid")?;                                    // Error
+/// ```
+pub fn validate_subscription_id(id: &str) -> Result<SubscriptionId, RpcError> {
+    if id.is_empty() {
+        return Err(RpcError::validation(format!(
+            "Subscription ID cannot be empty (got: '{}')",
+            id
+        )));
+    }
+    SubscriptionId::parse_lenient(id)
+        .map_err(|e| RpcError::validation(format!("Invalid subscription ID '{}': {}", id, e)))
+}
+
+/// Validate all inputs for an RPC call.
+///
+/// This is a convenience function that combines path and input size validation.
+///
+/// # Errors
+///
+/// Returns an error if either the path or input size validation fails.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// let config = RpcConfig::default();
+/// validate_rpc_input("user.get", &json!({"id": 1}), &config)?;
+/// ```
+pub fn validate_rpc_input(
+    path: &str,
+    input: &serde_json::Value,
+    config: &RpcConfig,
+) -> Result<(), RpcError> {
+    validate_path(path)?;
+    validate_input_size(input, config)?;
+    Ok(())
+}
+
+// =============================================================================
+// Property-Based Tests
+// =============================================================================
+
+#[cfg(test)]
+mod rpc_validation_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use serde_json::json;
+
+    // Property 3: Path validation rejects invalid patterns
+    proptest! {
+        #[test]
+        fn prop_path_validation_rejects_invalid_patterns(
+            s in ".*[^a-zA-Z0-9_.].*"
+        ) {
+            // Paths with invalid characters should be rejected
+            if !s.is_empty() && (s.contains(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '.')) {
+                assert!(validate_path(&s).is_err());
+            }
+        }
+
+        #[test]
+        fn prop_path_validation_accepts_valid_patterns(
+            s in "[a-zA-Z0-9_]+([.][a-zA-Z0-9_]+)*"
+        ) {
+            // Valid paths should be accepted
+            assert!(validate_path(&s).is_ok());
+        }
+
+        #[test]
+        fn prop_path_validation_rejects_empty(
+            _unit in Just(())
+        ) {
+            assert!(validate_path("").is_err());
+        }
+
+        #[test]
+        fn prop_path_validation_rejects_leading_dot(
+            s in "[.][a-zA-Z0-9_.]+"
+        ) {
+            assert!(validate_path(&s).is_err());
+        }
+
+        #[test]
+        fn prop_path_validation_rejects_trailing_dot(
+            s in "[a-zA-Z0-9_.]+[.]"
+        ) {
+            assert!(validate_path(&s).is_err());
+        }
+
+        #[test]
+        fn prop_path_validation_rejects_consecutive_dots(
+            prefix in "[a-zA-Z0-9_]+",
+            suffix in "[a-zA-Z0-9_]+"
+        ) {
+            let path = format!("{}..{}", prefix, suffix);
+            assert!(validate_path(&path).is_err());
+        }
+    }
+
+    // Property 4: Input size validation rejects oversized inputs
+    proptest! {
+        #[test]
+        fn prop_input_size_validation_rejects_oversized(
+            size in 1000usize..10000usize
+        ) {
+            let config = RpcConfig::default().with_max_input_size(100);
+            let large_string = "a".repeat(size);
+            let input = json!(large_string);
+            assert!(validate_input_size(&input, &config).is_err());
+        }
+
+        #[test]
+        fn prop_input_size_validation_accepts_small_inputs(
+            size in 1usize..50usize
+        ) {
+            let config = RpcConfig::default().with_max_input_size(1000);
+            let small_string = "a".repeat(size);
+            let input = json!(small_string);
+            assert!(validate_input_size(&input, &config).is_ok());
+        }
+    }
+
+    // Property 5: Size validation error messages include sizes
+    #[test]
+    fn test_size_validation_error_includes_sizes() {
+        let config = RpcConfig::default().with_max_input_size(10);
+        let large_input = json!("a".repeat(100));
+        let result = validate_input_size(&large_input, &config);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("bytes"));
+        assert!(err.message.contains("exceeds"));
+    }
+
+    // Property 6: Subscription ID validation accepts both formats
+    proptest! {
+        #[test]
+        fn prop_subscription_id_accepts_uuid_format(
+            a in "[0-9a-f]{8}",
+            b in "[0-9a-f]{4}",
+            c in "[0-9a-f]{4}",
+            d in "[0-9a-f]{4}",
+            e in "[0-9a-f]{12}"
+        ) {
+            let uuid = format!("{}-{}-{}-{}-{}", a, b, c, d, e);
+            assert!(validate_subscription_id(&uuid).is_ok());
+        }
+
+        #[test]
+        fn prop_subscription_id_accepts_prefixed_format(
+            a in "[0-9a-f]{8}",
+            b in "[0-9a-f]{4}",
+            c in "[0-9a-f]{4}",
+            d in "[0-9a-f]{4}",
+            e in "[0-9a-f]{12}"
+        ) {
+            let uuid = format!("sub_{}-{}-{}-{}-{}", a, b, c, d, e);
+            assert!(validate_subscription_id(&uuid).is_ok());
+        }
+    }
+
+    // Property 7: Malformed UUIDs are rejected with descriptive errors
+    #[test]
+    fn test_malformed_uuid_rejected() {
+        let invalid_ids = vec![
+            "not-a-uuid",
+            "12345",
+            "sub_invalid",
+            "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        ];
+        for id in invalid_ids {
+            let result = validate_subscription_id(id);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.message.contains("Invalid subscription ID"));
+            assert!(err.message.contains(id));
+        }
+    }
+
+    // Property 8: Subscription ID normalization
+    #[test]
+    fn test_subscription_id_normalization() {
+        let uuid = "01234567-89ab-7cde-8f01-234567890abc";
+        let prefixed = format!("sub_{}", uuid);
+
+        let id1 = validate_subscription_id(uuid).unwrap();
+        let id2 = validate_subscription_id(&prefixed).unwrap();
+
+        // Both should parse successfully (normalization happens in SubscriptionId)
+        assert_eq!(id1.to_string(), id2.to_string());
+    }
+
+    // Property 2: Complete RPC request validation
+    proptest! {
+        #[test]
+        fn prop_complete_rpc_validation(
+            path in "[a-zA-Z0-9_]+([.][a-zA-Z0-9_]+)*",
+            value in prop::option::of("[a-zA-Z0-9 ]{1,50}")
+        ) {
+            let config = RpcConfig::default();
+            let input = json!(value);
+            let result = validate_rpc_input(&path, &input, &config);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn prop_complete_rpc_validation_rejects_invalid_path(
+            invalid_char in "[^a-zA-Z0-9_.]",
+            suffix in "[a-zA-Z0-9_]+"
+        ) {
+            let config = RpcConfig::default();
+            let path = format!("test{}path{}", invalid_char, suffix);
+            let input = json!(null);
+            let result = validate_rpc_input(&path, &input, &config);
+            assert!(result.is_err());
+        }
+    }
+
+    // Property 31: Validation error includes invalid value
+    #[test]
+    fn test_validation_error_includes_invalid_value() {
+        let invalid_path = "invalid..path";
+        let result = validate_path(invalid_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains(invalid_path) || err.message.contains("consecutive dots"));
+    }
+
+    #[test]
+    fn test_validation_error_includes_invalid_char() {
+        let invalid_path = "test@path";
+        let result = validate_path(invalid_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("@") || err.message.contains("invalid character"));
+    }
+}

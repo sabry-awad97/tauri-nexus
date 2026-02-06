@@ -3,6 +3,7 @@
 //! This module provides the `SubscriptionManager` which tracks all active subscriptions
 //! and their associated background tasks, enabling graceful cleanup and shutdown.
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -40,6 +41,63 @@ impl HealthStatus {
             "Active: {} subscriptions, {} tasks | Completed: {} tasks | Uptime: {}s",
             self.active_subscriptions, self.active_tasks, self.completed_tasks, self.uptime_seconds
         )
+    }
+}
+
+// =============================================================================
+// Shutdown Result
+// =============================================================================
+
+/// Result of plugin shutdown operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShutdownResult {
+    /// Number of active subscriptions at shutdown start
+    pub active_subscriptions: usize,
+    /// Number of subscriptions successfully cancelled
+    pub cancelled_count: usize,
+    /// Number of subscriptions that failed to cancel
+    pub failed_count: usize,
+    /// Whether the shutdown completed within the timeout
+    pub completed_within_timeout: bool,
+    /// Actual duration of shutdown in milliseconds
+    pub duration_ms: u64,
+}
+
+impl ShutdownResult {
+    /// Create a new shutdown result.
+    pub fn new(active_subscriptions: usize) -> Self {
+        Self {
+            active_subscriptions,
+            cancelled_count: 0,
+            failed_count: 0,
+            completed_within_timeout: true,
+            duration_ms: 0,
+        }
+    }
+
+    /// Check if shutdown was successful (all subscriptions cancelled).
+    pub fn is_success(&self) -> bool {
+        self.failed_count == 0 && self.completed_within_timeout
+    }
+
+    /// Get a human-readable status message.
+    pub fn status_message(&self) -> String {
+        if self.is_success() {
+            format!(
+                "Shutdown successful: {} subscriptions cancelled in {}ms",
+                self.cancelled_count, self.duration_ms
+            )
+        } else if !self.completed_within_timeout {
+            format!(
+                "Shutdown timed out: {}/{} subscriptions cancelled",
+                self.cancelled_count, self.active_subscriptions
+            )
+        } else {
+            format!(
+                "Shutdown completed with errors: {}/{} subscriptions cancelled, {} failed",
+                self.cancelled_count, self.active_subscriptions, self.failed_count
+            )
+        }
     }
 }
 
@@ -679,5 +737,237 @@ impl SubscriptionManager {
     /// ```
     pub fn metrics(&self) -> Arc<SubscriptionMetrics> {
         Arc::clone(&self.metrics)
+    }
+
+    /// Shutdown the plugin gracefully with timeout.
+    ///
+    /// This method:
+    /// 1. Tracks the number of active subscriptions at start
+    /// 2. Cancels all active subscriptions
+    /// 3. Tracks successful and failed cancellations
+    /// 4. Enforces a timeout to prevent hanging
+    /// 5. Returns detailed shutdown statistics
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - Maximum time to wait for shutdown
+    ///
+    /// # Returns
+    ///
+    /// A `ShutdownResult` containing detailed shutdown statistics.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let manager = Arc::new(SubscriptionManager::new());
+    /// let timeout = Duration::from_secs(5);
+    /// let result = manager.shutdown_plugin(timeout).await;
+    ///
+    /// if result.is_success() {
+    ///     println!("Shutdown successful");
+    /// } else {
+    ///     println!("Shutdown issues: {}", result.status_message());
+    /// }
+    /// ```
+    pub async fn shutdown_plugin(&self, timeout: Duration) -> ShutdownResult {
+        let start = std::time::Instant::now();
+        let active_subscriptions = self.count();
+
+        tracing::info!(
+            active_subscriptions = active_subscriptions,
+            timeout_secs = timeout.as_secs(),
+            "Starting plugin shutdown"
+        );
+
+        let mut result = ShutdownResult::new(active_subscriptions);
+
+        // Attempt shutdown with timeout
+        match tokio::time::timeout(timeout, self.shutdown()).await {
+            Ok(_) => {
+                // Shutdown completed within timeout
+                result.cancelled_count = active_subscriptions;
+                result.completed_within_timeout = true;
+
+                tracing::debug!(
+                    cancelled = result.cancelled_count,
+                    duration_ms = start.elapsed().as_millis(),
+                    "Shutdown completed successfully"
+                );
+            }
+            Err(_) => {
+                // Timeout exceeded
+                result.completed_within_timeout = false;
+                result.cancelled_count = active_subscriptions - self.count();
+                result.failed_count = self.count();
+
+                tracing::warn!(
+                    timeout_secs = timeout.as_secs(),
+                    cancelled = result.cancelled_count,
+                    remaining = result.failed_count,
+                    "Shutdown timed out"
+                );
+            }
+        }
+
+        result.duration_ms = start.elapsed().as_millis() as u64;
+
+        tracing::info!(
+            active = result.active_subscriptions,
+            cancelled = result.cancelled_count,
+            failed = result.failed_count,
+            duration_ms = result.duration_ms,
+            success = result.is_success(),
+            "Plugin shutdown completed"
+        );
+
+        result
+    }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::subscription::{SubscriptionHandle, SubscriptionId, SubscriptionManager};
+    use proptest::prelude::*;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    // Property 24: Shutdown cancels all subscriptions
+    proptest! {
+        #[test]
+        fn prop_shutdown_cancels_all_subscriptions(
+            count in 1usize..10usize
+        ) {
+            tokio::runtime::Runtime::new().unwrap().block_on(async {
+                let manager = Arc::new(SubscriptionManager::new());
+
+                // Create subscriptions
+                for i in 0..count {
+                    let id = SubscriptionId::parse_lenient(
+                        &format!("01234567-89ab-7cde-8f01-{:012}", i)
+                    ).unwrap();
+                    let handle = SubscriptionHandle::new(
+                        id,
+                        format!("test.sub_{}", i),
+                        Arc::new(crate::subscription::CancellationSignal::new()),
+                    );
+                    manager.subscribe(handle);
+                }
+
+                assert_eq!(manager.count(), count);
+
+                // Shutdown
+                let timeout = Duration::from_secs(5);
+                let result = manager.shutdown_plugin(timeout).await;
+
+                // Verify all cancelled
+                assert_eq!(result.active_subscriptions, count);
+                assert_eq!(result.cancelled_count, count);
+                assert_eq!(result.failed_count, 0);
+                assert!(result.is_success());
+                assert_eq!(manager.count(), 0);
+            });
+        }
+    }
+
+    // Property 25: Shutdown tracks cancellation statistics
+    #[test]
+    fn test_shutdown_tracks_statistics() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let manager = Arc::new(SubscriptionManager::new());
+
+            // Create 3 subscriptions
+            for i in 0..3 {
+                let id =
+                    SubscriptionId::parse_lenient(&format!("01234567-89ab-7cde-8f01-{:012}", i))
+                        .unwrap();
+                let handle = SubscriptionHandle::new(
+                    id,
+                    format!("test.sub_{}", i),
+                    Arc::new(crate::subscription::CancellationSignal::new()),
+                );
+                manager.subscribe(handle);
+            }
+
+            let timeout = Duration::from_secs(5);
+            let result = manager.shutdown_plugin(timeout).await;
+
+            assert_eq!(result.active_subscriptions, 3);
+            assert_eq!(result.cancelled_count, 3);
+            assert_eq!(result.failed_count, 0);
+            assert!(result.completed_within_timeout);
+        });
+    }
+
+    // Unit tests for shutdown timeout
+    #[test]
+    fn test_shutdown_within_timeout() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let manager = Arc::new(SubscriptionManager::new());
+
+            // Create a subscription
+            let id = SubscriptionId::parse_lenient("01234567-89ab-7cde-8f01-000000000000").unwrap();
+            let handle = SubscriptionHandle::new(
+                id,
+                "test.sub".to_string(),
+                Arc::new(crate::subscription::CancellationSignal::new()),
+            );
+            manager.subscribe(handle);
+
+            // Generous timeout
+            let timeout = Duration::from_secs(10);
+            let result = manager.shutdown_plugin(timeout).await;
+
+            assert!(result.completed_within_timeout);
+            assert!(result.is_success());
+            assert_eq!(result.cancelled_count, 1);
+        });
+    }
+
+    #[test]
+    fn test_shutdown_empty_manager() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let manager = Arc::new(SubscriptionManager::new());
+
+            let timeout = Duration::from_secs(1);
+            let result = manager.shutdown_plugin(timeout).await;
+
+            assert_eq!(result.active_subscriptions, 0);
+            assert_eq!(result.cancelled_count, 0);
+            assert_eq!(result.failed_count, 0);
+            assert!(result.is_success());
+        });
+    }
+
+    // Tests for ShutdownResult helper methods
+    #[test]
+    fn test_shutdown_result_status_messages() {
+        // Success case
+        let mut result = ShutdownResult::new(5);
+        result.cancelled_count = 5;
+        result.duration_ms = 100;
+        assert!(result.is_success());
+        assert!(result.status_message().contains("successful"));
+        assert!(result.status_message().contains("5"));
+
+        // Timeout case
+        let mut result = ShutdownResult::new(5);
+        result.cancelled_count = 3;
+        result.failed_count = 2;
+        result.completed_within_timeout = false;
+        assert!(!result.is_success());
+        assert!(result.status_message().contains("timed out"));
+
+        // Partial failure case
+        let mut result = ShutdownResult::new(5);
+        result.cancelled_count = 4;
+        result.failed_count = 1;
+        result.completed_within_timeout = true;
+        assert!(!result.is_success());
+        assert!(result.status_message().contains("errors"));
     }
 }

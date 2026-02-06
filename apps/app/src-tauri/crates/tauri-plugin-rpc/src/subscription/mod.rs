@@ -230,6 +230,7 @@ mod errors;
 mod event;
 mod handler;
 mod id;
+mod lifecycle;
 mod manager;
 mod metrics;
 mod publisher;
@@ -244,8 +245,13 @@ pub use handler::{
     BoxedSubscriptionHandler, SubscriptionHandler, SubscriptionResult, into_boxed_subscription,
 };
 pub use id::{SubscriptionId, generate_subscription_id};
+pub use lifecycle::{
+    CompletionReason, LifecycleMetrics, SubscriptionState, handle_subscription_events,
+    subscription_event_name,
+};
 pub use manager::{
-    HealthStatus, SubscriptionHandle, SubscriptionHandleBuilder, SubscriptionManager,
+    HealthStatus, ShutdownResult, SubscriptionHandle, SubscriptionHandleBuilder,
+    SubscriptionManager,
 };
 pub use metrics::{
     MetricsSnapshot, PublisherMetrics, PublisherMetricsSnapshot, SubscriberMetrics,

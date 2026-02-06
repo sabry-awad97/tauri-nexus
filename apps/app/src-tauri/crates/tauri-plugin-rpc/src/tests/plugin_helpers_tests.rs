@@ -2,12 +2,12 @@
 //!
 //! These tests validate the correctness of helper functions introduced
 //! in the plugin improvements:
-//! - serialize_error: Error serialization consistency
+//! - Error serialization consistency
 //! - generate_request_id: UUID v7 format validation
 //! - validate_input_size: Heuristic-based validation
 //! - validate_path: Iterator-based validation
 
-use crate::plugin::{validate_input_size, validate_path};
+use crate::validation::{validate_input_size, validate_path};
 use crate::{RpcConfig, RpcError, RpcErrorCode};
 use serde_json::json;
 
@@ -16,11 +16,10 @@ use serde_json::json;
 // =============================================================================
 
 #[cfg(test)]
-mod serialize_error_tests {
+mod error_serialization_tests {
     use super::*;
 
-    // Note: serialize_error is a private function, so we test it indirectly
-    // through the public API by verifying error serialization consistency
+    // Test error serialization consistency through the Serialize impl
 
     #[test]
     fn test_error_serialization_contains_code_and_message() {
@@ -420,7 +419,7 @@ mod integration_tests {
         let path = "user.get";
         let input = json!({"id": 123});
 
-        let result = crate::plugin::validate_rpc_input(path, &input, &config);
+        let result = crate::validate_rpc_input(path, &input, &config);
         assert!(result.is_ok());
     }
 
@@ -430,7 +429,7 @@ mod integration_tests {
         let path = "user-get"; // Invalid character
         let input = json!({"id": 123});
 
-        let result = crate::plugin::validate_rpc_input(path, &input, &config);
+        let result = crate::validate_rpc_input(path, &input, &config);
         assert!(result.is_err());
 
         let err = result.unwrap_err();
@@ -443,7 +442,7 @@ mod integration_tests {
         let path = "user.get";
         let input = json!({"data": "a".repeat(100)});
 
-        let result = crate::plugin::validate_rpc_input(path, &input, &config);
+        let result = crate::validate_rpc_input(path, &input, &config);
         assert!(result.is_err());
 
         let err = result.unwrap_err();

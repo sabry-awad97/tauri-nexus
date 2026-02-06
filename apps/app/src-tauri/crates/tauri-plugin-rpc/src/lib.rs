@@ -311,13 +311,14 @@ pub use auth::{
     NoAuthProvider, auth_middleware, auth_with_config, requires_roles,
 };
 pub use batch::{
-    BatchConfig, BatchRequest, BatchResponse, BatchResult, BatchResultData, SingleRequest,
+    BatchConfig, BatchMetrics, BatchRequest, BatchResponse, BatchResult, BatchResultData,
+    SingleRequest, execute_batch,
 };
 pub use cache::{
     Cache, CacheConfig, CacheEntry, CacheStats, cache_middleware, generate_cache_key,
     invalidation_middleware,
 };
-pub use config::{BackpressureStrategy, ConfigValidationError, RpcConfig};
+pub use config::{BackpressureStrategy, ConfigValidationError, PluginConfig, RpcConfig};
 pub use context::{Context, EmptyContext};
 pub use error::{
     ComposedTransformer, ErrorCodeMapper, ErrorConfig, ErrorTransformer, LoggingTransformer,
@@ -333,8 +334,7 @@ pub use logging::{
 };
 pub use middleware::{Middleware, MiddlewareFn, Next, ProcedureType, Request, from_fn};
 pub use plugin::{
-    DynRouter, SubscribeRequest, SubscriptionFuture, init, init_with_config, validate_input_size,
-    validate_path, validate_subscription_id,
+    DynRouter, SubscribeRequest, SubscriptionFuture, init, init_with_config, init_with_full_config,
 };
 pub use procedure::{
     ContextTransformedBuilder, ContextTransformedTypedBuilder, ContextTransformedValidatedBuilder,
@@ -355,13 +355,17 @@ pub use schema::{
     ProcedureTypeSchema, RouterSchema, SchemaBuilder, TypeSchema,
 };
 pub use subscription::{
-    CancellationSignal, ChannelPublisher, Event, EventMeta, EventPublisher, EventSender,
-    EventStream, EventSubscriber, SubscriptionContext, SubscriptionEvent, SubscriptionHandle,
-    SubscriptionHandler, SubscriptionId, SubscriptionManager, event_channel,
-    generate_subscription_id, with_event_meta,
+    CancellationSignal, ChannelPublisher, CompletionReason, Event, EventMeta, EventPublisher,
+    EventSender, EventStream, EventSubscriber, LifecycleMetrics, ShutdownResult,
+    SubscriptionContext, SubscriptionEvent, SubscriptionHandle, SubscriptionHandler,
+    SubscriptionId, SubscriptionManager, SubscriptionMetrics, SubscriptionState, event_channel,
+    generate_subscription_id, handle_subscription_events, subscription_event_name, with_event_meta,
 };
 pub use types::*;
-pub use validation::{FieldError, Validate, ValidationResult, ValidationRules};
+pub use validation::{
+    FieldError, Validate, ValidationResult, ValidationRules, validate_input_size, validate_path,
+    validate_rpc_input, validate_subscription_id,
+};
 
 /// Prelude for convenient imports
 ///
@@ -385,6 +389,7 @@ pub mod prelude {
         BackpressureStrategy,
         // Batch processing
         BatchConfig,
+        BatchMetrics,
         BatchRequest,
         BatchResponse,
         BatchResult,
@@ -398,6 +403,7 @@ pub mod prelude {
         ChannelPublisher,
         // Router
         CompiledRouter,
+        CompletionReason,
         ComposedTransformer,
         ConfigValidationError,
         // Context
@@ -441,6 +447,7 @@ pub mod prelude {
         OpenApiSchema,
         PaginatedResponse,
         PaginationInput,
+        PluginConfig,
         // Procedure Builder
         ProcedureBuilder,
         ProcedureChain,
@@ -467,6 +474,7 @@ pub mod prelude {
         RpcErrorCode,
         RpcResult,
         SchemaBuilder,
+        ShutdownResult,
         SingleRequest,
         SubscriptionContext,
         SubscriptionEvent,
@@ -474,6 +482,8 @@ pub mod prelude {
         SubscriptionId,
         SubscriptionLogEvent,
         SubscriptionManager,
+        SubscriptionMetrics,
+        SubscriptionState,
         SuccessResponse,
         TracingConfig,
         TracingLogger,
@@ -489,10 +499,13 @@ pub mod prelude {
         auth_with_config,
         cache_middleware,
         event_channel,
+        execute_batch,
         generate_cache_key,
         generate_subscription_id,
+        handle_subscription_events,
         init,
         init_with_config,
+        init_with_full_config,
         invalidation_middleware,
         log_auth_event,
         log_batch_request,
@@ -508,6 +521,11 @@ pub mod prelude {
         rate_limit_middleware,
         redact_value,
         requires_roles,
+        subscription_event_name,
+        validate_input_size,
+        validate_path,
+        validate_rpc_input,
+        validate_subscription_id,
         with_event_meta,
     };
 }

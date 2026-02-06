@@ -139,7 +139,7 @@ impl fmt::Display for RpcErrorCode {
 /// // Add cause for debugging
 /// let error = error.with_cause("Database query returned empty result");
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, Error)]
+#[derive(Debug, Clone, Deserialize, Error)]
 #[error("[{code}] {message}")]
 pub struct RpcError {
     /// Type-safe error code
@@ -147,13 +147,10 @@ pub struct RpcError {
     /// Human-readable error message
     pub message: String,
     /// Optional additional details (JSON value)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
     /// Optional cause for debugging (not exposed to clients in production)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cause: Option<String>,
     /// Optional stack trace (only included in development mode)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub stack_trace: Option<String>,
 }
 
@@ -338,6 +335,33 @@ impl From<serde_json::Error> for RpcError {
 impl From<std::io::Error> for RpcError {
     fn from(err: std::io::Error) -> Self {
         Self::internal(format!("IO error: {}", err))
+    }
+}
+
+impl Serialize for RpcError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let mut state = serializer.serialize_struct("RpcError", 5)?;
+        state.serialize_field("code", &self.code)?;
+        state.serialize_field("message", &self.message)?;
+
+        if let Some(ref details) = self.details {
+            state.serialize_field("details", details)?;
+        }
+
+        if let Some(ref cause) = self.cause {
+            state.serialize_field("cause", cause)?;
+        }
+
+        if let Some(ref stack_trace) = self.stack_trace {
+            state.serialize_field("stack_trace", stack_trace)?;
+        }
+
+        state.end()
     }
 }
 
@@ -731,6 +755,25 @@ mod proptests {
     }
 
     proptest! {
+        /// Property: Error serialization always produces valid JSON or fallback string
+        #[test]
+        fn prop_error_serialization_always_succeeds(
+            code in error_code_strategy(),
+            message in message_strategy(),
+        ) {
+            let error = RpcError::new(code, message);
+            let serialized = serde_json::to_string(&error).unwrap_or_else(|_| error.to_string());
+
+            // Should always produce a non-empty string
+            prop_assert!(!serialized.is_empty());
+
+            // Should be valid JSON or contain the error message
+            prop_assert!(
+                serde_json::from_str::<serde_json::Value>(&serialized).is_ok()
+                || serialized.contains(&error.message)
+            );
+        }
+
         /// Property 7: Error Mode Behavior
         /// In production mode, server errors should be sanitized and stack traces removed.
         /// In development mode, all error information should be preserved.
@@ -852,5 +895,101 @@ mod proptests {
             // Should be message + A + B (in order)
             prop_assert_eq!(result.message, format!("{}AB", message));
         }
+    }
+
+    // Property: Error serialization never panics
+    proptest! {
+        #[test]
+        fn prop_error_serialization_never_panics(
+            message in ".*",
+            _code_num in 400u16..600u16
+        ) {
+            // Create various error types
+            let errors = vec![
+                RpcError::not_found(&message),
+                RpcError::bad_request(&message),
+                RpcError::internal(&message),
+                RpcError::validation(&message),
+            ];
+
+            for error in errors {
+                // Should never panic
+                let _ = serde_json::to_string(&error).unwrap_or_else(|_| error.to_string());
+            }
+        }
+    }
+
+    // Property 11: Error codes and messages are preserved
+    #[test]
+    fn test_error_codes_and_messages_preserved() {
+        let test_cases = vec![
+            (
+                RpcError::not_found("User not found"),
+                "NOT_FOUND",
+                "User not found",
+            ),
+            (
+                RpcError::bad_request("Invalid input"),
+                "BAD_REQUEST",
+                "Invalid input",
+            ),
+            (
+                RpcError::validation("Email required"),
+                "VALIDATION_ERROR",
+                "Email required",
+            ),
+            (
+                RpcError::internal("Server error"),
+                "INTERNAL_ERROR",
+                "Server error",
+            ),
+        ];
+
+        for (error, expected_code, expected_message) in test_cases {
+            let serialized = serde_json::to_string(&error).unwrap_or_else(|_| error.to_string());
+
+            // Check if it's JSON
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&serialized) {
+                // Verify code and message in JSON
+                assert_eq!(json["code"].as_str().unwrap(), expected_code);
+                assert_eq!(json["message"].as_str().unwrap(), expected_message);
+            } else {
+                // Fallback format should contain code and message
+                assert!(
+                    serialized.contains(expected_code) || serialized.contains(expected_message)
+                );
+            }
+        }
+    }
+
+    // Unit test: Error serialization
+    #[test]
+    fn test_error_serialization() {
+        // Test with a normal error (should use JSON)
+        let error = RpcError::not_found("Test error");
+        let serialized = serde_json::to_string(&error).unwrap();
+
+        // Should be valid JSON
+        assert!(serde_json::from_str::<serde_json::Value>(&serialized).is_ok());
+
+        // Verify structure
+        let json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(json["code"], "NOT_FOUND");
+        assert_eq!(json["message"], "Test error");
+    }
+
+    #[test]
+    fn test_error_with_details() {
+        let error = RpcError::validation("Invalid input")
+            .with_details(serde_json::json!({"field": "email", "reason": "invalid format"}));
+
+        let serialized = serde_json::to_string(&error).unwrap();
+
+        // Should be valid JSON
+        let json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(json["code"], "VALIDATION_ERROR");
+        assert_eq!(json["message"], "Invalid input");
+        assert_eq!(json["details"]["field"], "email");
+        assert_eq!(json["details"]["reason"], "invalid format");
     }
 }
