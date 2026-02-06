@@ -31,7 +31,7 @@ pub fn cache_middleware<Ctx>(cache: Cache) -> MiddlewareFn<Ctx>
 where
     Ctx: Clone + Send + Sync + 'static,
 {
-    from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
+    let middleware = move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let cache = cache.clone();
 
         async move {
@@ -76,7 +76,8 @@ where
 
             Ok(result)
         }
-    })
+    };
+    from_fn(middleware)
 }
 
 /// Create a cache invalidation middleware for mutation procedures
@@ -119,7 +120,7 @@ where
         .collect();
     let rules = Arc::new(rules);
 
-    from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
+    let middleware = move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let cache = cache.clone();
         let rules = Arc::clone(&rules);
         let path = req.path.clone();
@@ -148,5 +149,6 @@ where
 
             Ok(result)
         }
-    })
+    };
+    from_fn(middleware)
 }

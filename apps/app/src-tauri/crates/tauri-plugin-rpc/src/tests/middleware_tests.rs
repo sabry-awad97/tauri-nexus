@@ -393,6 +393,120 @@ async fn test_no_middleware_direct_handler_call() {
     assert_eq!(log.as_slice(), &["handler"]);
 }
 
+#[tokio::test]
+async fn test_async_closure_as_middleware() {
+    let test_ctx = TestContext::default();
+    let captured_value = "captured_data".to_string();
+
+    // Create an async closure that captures a value
+    let closure_middleware = move |ctx: Context<TestContext>,
+                                   req: crate::middleware::Request,
+                                   next: Next<TestContext>| {
+        let captured = captured_value.clone();
+        async move {
+            // Log entry with captured value
+            {
+                let mut log = ctx.inner().execution_log.lock().await;
+                log.push(format!("closure_enter_{}", captured));
+            }
+
+            // Call next
+            let result = next(ctx.clone(), req).await;
+
+            // Log exit
+            {
+                let mut log = ctx.inner().execution_log.lock().await;
+                log.push(format!("closure_exit_{}", captured));
+            }
+
+            result
+        }
+    };
+
+    // Use the closure directly as middleware - it implements Middleware trait automatically
+    let router = Router::new()
+        .context(test_ctx.clone())
+        .middleware(closure_middleware)
+        .query("test", test_handler)
+        .compile();
+
+    let result = router.call("test", serde_json::json!(null)).await;
+    assert!(result.is_ok());
+
+    let log = test_ctx.execution_log.lock().await;
+    let expected = vec![
+        "closure_enter_captured_data",
+        "handler",
+        "closure_exit_captured_data",
+    ];
+    assert_eq!(log.as_slice(), expected.as_slice());
+}
+
+#[tokio::test]
+async fn test_multiple_async_closures_as_middleware() {
+    let test_ctx = TestContext::default();
+
+    // Create multiple async closures with different captured values
+    let prefix1 = "first".to_string();
+    let closure1 = move |ctx: Context<TestContext>,
+                         req: crate::middleware::Request,
+                         next: Next<TestContext>| {
+        let prefix = prefix1.clone();
+        async move {
+            {
+                let mut log = ctx.inner().execution_log.lock().await;
+                log.push(format!("{}_enter", prefix));
+            }
+            let result = next(ctx.clone(), req).await;
+            {
+                let mut log = ctx.inner().execution_log.lock().await;
+                log.push(format!("{}_exit", prefix));
+            }
+            result
+        }
+    };
+
+    let prefix2 = "second".to_string();
+    let closure2 = move |ctx: Context<TestContext>,
+                         req: crate::middleware::Request,
+                         next: Next<TestContext>| {
+        let prefix = prefix2.clone();
+        async move {
+            {
+                let mut log = ctx.inner().execution_log.lock().await;
+                log.push(format!("{}_enter", prefix));
+            }
+            let result = next(ctx.clone(), req).await;
+            {
+                let mut log = ctx.inner().execution_log.lock().await;
+                log.push(format!("{}_exit", prefix));
+            }
+            result
+        }
+    };
+
+    // Use both closures directly as middleware - they implement Middleware trait automatically
+    let router = Router::new()
+        .context(test_ctx.clone())
+        .middleware(closure1)
+        .middleware(closure2)
+        .query("test", test_handler)
+        .compile();
+
+    let result = router.call("test", serde_json::json!(null)).await;
+    assert!(result.is_ok());
+
+    let log = test_ctx.execution_log.lock().await;
+    let expected = vec![
+        "first_enter",
+        "second_enter",
+        "handler",
+        "second_exit",
+        "first_exit",
+    ];
+    assert_eq!(log.as_slice(), expected.as_slice());
+}
+
 // =============================================================================
 // Property Tests for build_middleware_chain Helper
 // =============================================================================

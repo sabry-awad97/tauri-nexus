@@ -923,7 +923,7 @@ where
     let config = Arc::new(config);
     let logger = Arc::new(logger);
 
-    from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
+    let middleware = move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let config = Arc::clone(&config);
         let logger = Arc::clone(&logger);
 
@@ -1024,7 +1024,8 @@ where
 
             result
         }
-    })
+    };
+    from_fn(middleware)
 }
 
 // =============================================================================

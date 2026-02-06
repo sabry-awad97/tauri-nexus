@@ -549,7 +549,7 @@ where
     Ctx: Clone + Send + Sync + 'static,
     F: Fn(&Request) -> String + Clone + Send + Sync + 'static,
 {
-    from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
+    let middleware = move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let limiter = limiter.clone();
         let client_id_fn = client_id_fn.clone();
         let path = req.path.clone();
@@ -584,7 +584,8 @@ where
             // Proceed with request
             next(ctx, req).await
         }
-    })
+    };
+    from_fn(middleware)
 }
 
 // =============================================================================

@@ -39,7 +39,7 @@ where
     Ctx: Clone + Send + Sync + 'static,
     P: AuthProvider + Clone + 'static,
 {
-    from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
+    let middleware = move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let provider = provider.clone();
         let path = req.path.clone();
         async move {
@@ -65,7 +65,8 @@ where
 
             next(ctx, req).await
         }
-    })
+    };
+    from_fn(middleware)
 }
 
 /// Create an authorization middleware with configuration.
@@ -103,7 +104,7 @@ where
     P: AuthProvider + Clone + 'static,
 {
     let config = Arc::new(config);
-    from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
+    let middleware = move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let provider = provider.clone();
         let config = Arc::clone(&config);
         let path = req.path.clone();
@@ -152,7 +153,8 @@ where
                 }
             }
         }
-    })
+    };
+    from_fn(middleware)
 }
 
 /// Create a simple role-checking middleware.
@@ -187,7 +189,7 @@ where
     P: AuthProvider + Clone + 'static,
 {
     let roles = Arc::new(roles);
-    from_fn(move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
+    let middleware = move |ctx: Context<Ctx>, req: Request, next: Next<Ctx>| {
         let provider = provider.clone();
         let roles = Arc::clone(&roles);
         let path = req.path.clone();
@@ -230,5 +232,6 @@ where
 
             next(ctx, req).await
         }
-    })
+    };
+    from_fn(middleware)
 }
