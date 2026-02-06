@@ -384,9 +384,9 @@ impl<Ctx: Clone + Send + Sync + 'static, Input: DeserializeOwned + Validate + Se
                         "Validation failed for procedure '{}'",
                         path
                     ))
-                    .with_details(
-                        serde_json::to_value(&validation_result.errors).unwrap_or_default(),
-                    ));
+                    .with_details(serde_json::json!({
+                        "errors": validation_result.errors
+                    })));
                 }
 
                 // Call handler

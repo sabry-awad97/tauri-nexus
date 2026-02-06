@@ -9,14 +9,13 @@ use super::{
 use crate::{
     Context, EmptyContext, RpcError, RpcResult,
     batch::{BatchConfig, BatchRequest, BatchResponse, BatchResult},
-    handler::{BoxedHandler, Handler, into_boxed, into_boxed_validated},
+    handler::{BoxedHandler, Handler, into_boxed},
     middleware::{MiddlewareFn, Next, ProcedureType, Request},
     procedure::RegisteredProcedure,
     subscription::{
         BoxedSubscriptionHandler, Event, SubscriptionContext, SubscriptionHandler,
         into_boxed_subscription,
     },
-    validation::Validate,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
@@ -374,100 +373,6 @@ impl<Ctx: Clone + Send + Sync + 'static> Router<Ctx> {
             full_path,
             Procedure::Handler {
                 handler: into_boxed(handler),
-                procedure_type: ProcedureType::Mutation,
-            },
-        );
-        self
-    }
-
-    /// Add a query procedure with automatic input validation.
-    ///
-    /// The input type must implement the `Validate` trait. Validation is
-    /// performed automatically before the handler is called. If validation
-    /// fails, a `VALIDATION_ERROR` is returned with field-level details.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// use tauri_plugin_rpc::prelude::*;
-    ///
-    /// #[derive(Deserialize)]
-    /// struct GetUserInput {
-    ///     id: String,
-    /// }
-    ///
-    /// impl Validate for GetUserInput {
-    ///     fn validate(&self) -> ValidationResult {
-    ///         ValidationRules::new()
-    ///             .required("id", &self.id)
-    ///             .build()
-    ///     }
-    /// }
-    ///
-    /// let router = Router::new()
-    ///     .context(AppContext::new())
-    ///     .query_validated("get_user", get_user_handler);
-    /// ```
-    #[must_use = "This method returns a new Router and does not modify self"]
-    pub fn query_validated<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
-    where
-        N: Into<String>,
-        Input: DeserializeOwned + Validate + Send + 'static,
-        Output: Serialize + Send + 'static,
-        H: Handler<Ctx, Input, Output>,
-    {
-        let full_path = self.make_path(&name.into());
-        self.procedures.insert(
-            full_path,
-            Procedure::Handler {
-                handler: into_boxed_validated(handler),
-                procedure_type: ProcedureType::Query,
-            },
-        );
-        self
-    }
-
-    /// Add a mutation procedure with automatic input validation.
-    ///
-    /// The input type must implement the `Validate` trait. Validation is
-    /// performed automatically before the handler is called. If validation
-    /// fails, a `VALIDATION_ERROR` is returned with field-level details.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// use tauri_plugin_rpc::prelude::*;
-    ///
-    /// #[derive(Deserialize)]
-    /// struct CreateUserInput {
-    ///     name: String,
-    ///     email: String,
-    /// }
-    ///
-    /// impl Validate for CreateUserInput {
-    ///     fn validate(&self) -> ValidationResult {
-    ///         ValidationRules::new()
-    ///             .required("name", &self.name)
-    ///             .email("email", &self.email)
-    ///             .build()
-    ///     }
-    /// }
-    ///
-    /// let router = Router::new()
-    ///     .context(AppContext::new())
-    ///     .mutation_validated("create_user", create_user_handler);
-    /// ```
-    #[must_use = "This method returns a new Router and does not modify self"]
-    pub fn mutation_validated<N, Input, Output, H>(mut self, name: N, handler: H) -> Self
-    where
-        N: Into<String>,
-        Input: DeserializeOwned + Validate + Send + 'static,
-        Output: Serialize + Send + 'static,
-        H: Handler<Ctx, Input, Output>,
-    {
-        let full_path = self.make_path(&name.into());
-        self.procedures.insert(
-            full_path,
-            Procedure::Handler {
-                handler: into_boxed_validated(handler),
                 procedure_type: ProcedureType::Mutation,
             },
         );

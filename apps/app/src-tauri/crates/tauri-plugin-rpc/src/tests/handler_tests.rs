@@ -395,7 +395,9 @@ mod validation_execution_unit_tests {
     async fn test_router_with_validated_handler_valid_input() {
         let router = Router::new()
             .context(EmptyContext)
-            .query_validated("test", validated_handler)
+            .procedure("test")
+            .input_validated::<ValidatedInput>()
+            .query(validated_handler)
             .compile();
 
         let input = json!({
@@ -413,7 +415,9 @@ mod validation_execution_unit_tests {
     async fn test_router_with_validated_handler_invalid_input() {
         let router = Router::new()
             .context(EmptyContext)
-            .query_validated("test", validated_handler)
+            .procedure("test")
+            .input_validated::<ValidatedInput>()
+            .query(validated_handler)
             .compile();
 
         let input = json!({
@@ -460,7 +464,9 @@ mod validation_execution_unit_tests {
     async fn test_validation_error_contains_field_details() {
         let router = Router::new()
             .context(EmptyContext)
-            .mutation_validated("create", validated_handler)
+            .procedure("create")
+            .input_validated::<ValidatedInput>()
+            .mutation(validated_handler)
             .compile();
 
         let input = json!({
