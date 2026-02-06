@@ -247,7 +247,7 @@ pub use handler::{
 pub use id::{SubscriptionId, generate_subscription_id};
 pub use lifecycle::{
     CompletionReason, LifecycleMetrics, SubscriptionState, handle_subscription_events,
-    subscription_event_name,
+    handle_subscription_events_buffered, subscription_event_name,
 };
 pub use manager::{
     HealthStatus, ShutdownResult, SubscriptionHandle, SubscriptionHandleBuilder,

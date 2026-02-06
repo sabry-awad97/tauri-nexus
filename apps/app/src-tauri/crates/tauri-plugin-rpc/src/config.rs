@@ -297,7 +297,7 @@ impl RpcConfig {
 /// Extended configuration for the RPC plugin.
 ///
 /// This configuration extends the base `RpcConfig` with additional options
-/// for plugin-level behavior like shutdown and event naming.
+/// for plugin-level behavior like shutdown, event naming, and event buffering.
 ///
 /// # Example
 ///
@@ -307,7 +307,8 @@ impl RpcConfig {
 ///
 /// let config = PluginConfig::default()
 ///     .with_shutdown_timeout(Duration::from_secs(10))
-///     .with_event_prefix("custom:events:");
+///     .with_event_prefix("custom:events:")
+///     .with_event_buffering(100, Duration::from_millis(50));
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginConfig {
@@ -326,6 +327,24 @@ pub struct PluginConfig {
     ///
     /// Default: "rpc:subscription:"
     pub subscription_event_prefix: String,
+
+    /// Event buffer size for subscriptions.
+    ///
+    /// When set to a value > 1, events are buffered and flushed in batches
+    /// to reduce the number of IPC calls to the frontend.
+    ///
+    /// Set to 1 to disable buffering (immediate emission).
+    ///
+    /// Default: 1 (disabled)
+    pub event_buffer_size: usize,
+
+    /// Event buffer flush interval.
+    ///
+    /// When buffering is enabled, events are flushed either when the buffer
+    /// is full or after this interval, whichever comes first.
+    ///
+    /// Default: 50ms
+    pub event_buffer_flush_interval: Duration,
 }
 
 impl Default for PluginConfig {
@@ -333,6 +352,8 @@ impl Default for PluginConfig {
         Self {
             shutdown_timeout: Duration::from_secs(5),
             subscription_event_prefix: "rpc:subscription:".to_string(),
+            event_buffer_size: 1, // Disabled by default
+            event_buffer_flush_interval: Duration::from_millis(50),
         }
     }
 }
@@ -379,6 +400,54 @@ impl PluginConfig {
         self
     }
 
+    /// Enable event buffering with specified buffer size and flush interval.
+    ///
+    /// When buffering is enabled, events are collected in a buffer and flushed
+    /// either when the buffer reaches capacity or after the flush interval,
+    /// whichever comes first. This reduces IPC overhead for high-frequency events.
+    ///
+    /// # Arguments
+    ///
+    /// * `buffer_size` - Number of events to buffer before flushing (must be > 1)
+    /// * `flush_interval` - Maximum time to wait before flushing buffered events
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// // Buffer up to 100 events, flush every 50ms
+    /// let config = PluginConfig::new()
+    ///     .with_event_buffering(100, Duration::from_millis(50));
+    /// ```
+    #[must_use = "This method returns a new PluginConfig and does not modify self"]
+    pub fn with_event_buffering(mut self, buffer_size: usize, flush_interval: Duration) -> Self {
+        self.event_buffer_size = buffer_size;
+        self.event_buffer_flush_interval = flush_interval;
+        self
+    }
+
+    /// Disable event buffering (immediate emission).
+    ///
+    /// This is the default behavior. Events are emitted immediately as they arrive.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let config = PluginConfig::new()
+    ///     .without_event_buffering();
+    /// ```
+    #[must_use = "This method returns a new PluginConfig and does not modify self"]
+    pub fn without_event_buffering(mut self) -> Self {
+        self.event_buffer_size = 1;
+        self
+    }
+
+    /// Check if event buffering is enabled.
+    ///
+    /// Returns `true` if buffer size is greater than 1.
+    pub fn is_buffering_enabled(&self) -> bool {
+        self.event_buffer_size > 1
+    }
+
     /// Validate the configuration.
     ///
     /// # Errors
@@ -386,6 +455,8 @@ impl PluginConfig {
     /// Returns an error if:
     /// - `shutdown_timeout` is zero
     /// - `subscription_event_prefix` is empty
+    /// - `event_buffer_size` is zero
+    /// - `event_buffer_flush_interval` is zero (when buffering is enabled)
     ///
     /// # Examples
     ///
@@ -399,6 +470,15 @@ impl PluginConfig {
         }
         if self.subscription_event_prefix.is_empty() {
             return Err("subscription_event_prefix cannot be empty".to_string());
+        }
+        if self.event_buffer_size == 0 {
+            return Err("event_buffer_size must be greater than zero".to_string());
+        }
+        if self.is_buffering_enabled() && self.event_buffer_flush_interval.is_zero() {
+            return Err(
+                "event_buffer_flush_interval must be greater than zero when buffering is enabled"
+                    .to_string(),
+            );
         }
         Ok(())
     }
@@ -418,22 +498,29 @@ mod plugin_config_tests {
         #[test]
         fn prop_configuration_validation(
             timeout_secs in 1u64..3600u64,
-            prefix in "[a-z:]{1,50}"
+            prefix in "[a-z:]{1,50}",
+            buffer_size in 1usize..1000usize,
+            flush_ms in 1u64..1000u64
         ) {
             let config = PluginConfig::new()
                 .with_shutdown_timeout(Duration::from_secs(timeout_secs))
-                .with_event_prefix(prefix);
+                .with_event_prefix(prefix)
+                .with_event_buffering(buffer_size, Duration::from_millis(flush_ms));
 
             assert!(config.validate().is_ok());
         }
 
         #[test]
         fn prop_zero_timeout_invalid(
-            prefix in "[a-z:]{1,50}"
+            prefix in "[a-z:]{1,50}",
+            buffer_size in 1usize..100usize,
+            flush_ms in 1u64..100u64
         ) {
             let config = PluginConfig {
                 shutdown_timeout: Duration::from_secs(0),
                 subscription_event_prefix: prefix,
+                event_buffer_size: buffer_size,
+                event_buffer_flush_interval: Duration::from_millis(flush_ms),
             };
 
             assert!(config.validate().is_err());
@@ -441,11 +528,15 @@ mod plugin_config_tests {
 
         #[test]
         fn prop_empty_prefix_invalid(
-            timeout_secs in 1u64..3600u64
+            timeout_secs in 1u64..3600u64,
+            buffer_size in 1usize..100usize,
+            flush_ms in 1u64..100u64
         ) {
             let config = PluginConfig {
                 shutdown_timeout: Duration::from_secs(timeout_secs),
                 subscription_event_prefix: String::new(),
+                event_buffer_size: buffer_size,
+                event_buffer_flush_interval: Duration::from_millis(flush_ms),
             };
 
             assert!(config.validate().is_err());
@@ -495,6 +586,8 @@ mod plugin_config_tests {
         let config = PluginConfig {
             shutdown_timeout: Duration::from_secs(0),
             subscription_event_prefix: "rpc:subscription:".to_string(),
+            event_buffer_size: 1,
+            event_buffer_flush_interval: Duration::from_millis(50),
         };
         let result = config.validate();
         assert!(result.is_err());
@@ -504,9 +597,86 @@ mod plugin_config_tests {
         let config = PluginConfig {
             shutdown_timeout: Duration::from_secs(5),
             subscription_event_prefix: String::new(),
+            event_buffer_size: 1,
+            event_buffer_flush_interval: Duration::from_millis(50),
         };
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("subscription_event_prefix"));
     }
+}
+
+// Task 10.2: Unit tests for buffer configuration
+#[test]
+fn test_with_event_buffering() {
+    let config = PluginConfig::new().with_event_buffering(100, Duration::from_millis(50));
+
+    assert_eq!(config.event_buffer_size, 100);
+    assert_eq!(
+        config.event_buffer_flush_interval,
+        Duration::from_millis(50)
+    );
+    assert!(config.is_buffering_enabled());
+    assert!(config.validate().is_ok());
+}
+
+#[test]
+fn test_without_event_buffering() {
+    let config = PluginConfig::new()
+        .with_event_buffering(100, Duration::from_millis(50))
+        .without_event_buffering();
+
+    assert_eq!(config.event_buffer_size, 1);
+    assert!(!config.is_buffering_enabled());
+    assert!(config.validate().is_ok());
+}
+
+#[test]
+fn test_buffering_disabled_by_default() {
+    let config = PluginConfig::default();
+
+    assert_eq!(config.event_buffer_size, 1);
+    assert!(!config.is_buffering_enabled());
+}
+
+#[test]
+fn test_buffering_validation_zero_buffer_size() {
+    let config = PluginConfig {
+        shutdown_timeout: Duration::from_secs(5),
+        subscription_event_prefix: "rpc:subscription:".to_string(),
+        event_buffer_size: 0,
+        event_buffer_flush_interval: Duration::from_millis(50),
+    };
+
+    let result = config.validate();
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("event_buffer_size"));
+}
+
+#[test]
+fn test_buffering_validation_zero_flush_interval() {
+    let config = PluginConfig {
+        shutdown_timeout: Duration::from_secs(5),
+        subscription_event_prefix: "rpc:subscription:".to_string(),
+        event_buffer_size: 100,
+        event_buffer_flush_interval: Duration::from_secs(0),
+    };
+
+    let result = config.validate();
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("event_buffer_flush_interval"));
+}
+
+#[test]
+fn test_buffering_size_one_is_valid() {
+    // Buffer size of 1 means immediate emission (no buffering)
+    let config = PluginConfig {
+        shutdown_timeout: Duration::from_secs(5),
+        subscription_event_prefix: "rpc:subscription:".to_string(),
+        event_buffer_size: 1,
+        event_buffer_flush_interval: Duration::from_secs(0), // Can be zero when buffering disabled
+    };
+
+    assert!(config.validate().is_ok());
+    assert!(!config.is_buffering_enabled());
 }

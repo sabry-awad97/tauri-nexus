@@ -5,7 +5,7 @@ use crate::batch::{BatchRequest, BatchResponse, execute_batch};
 use crate::config::{PluginConfig, RpcConfig};
 use crate::subscription::{
     Event, SubscriptionContext, SubscriptionEvent, SubscriptionManager, generate_subscription_id,
-    handle_subscription_events, subscription_event_name,
+    handle_subscription_events, handle_subscription_events_buffered, subscription_event_name,
 };
 use crate::validation::{validate_rpc_input, validate_subscription_id};
 use serde::{Deserialize, Serialize};
@@ -248,6 +248,7 @@ async fn rpc_subscribe<R: Runtime>(
     let sub_manager = sub_state.0.clone();
     let path_clone = path.clone();
     let app_clone = app.clone();
+    let plugin_config_clone = plugin_config.0.clone();
 
     // Use spawn_subscription for tracked task management
     sub_state
@@ -255,16 +256,29 @@ async fn rpc_subscribe<R: Runtime>(
         .spawn_subscription(subscription_id, async move {
             match router.subscribe(&path_clone, input, sub_ctx).await {
                 Ok(stream) => {
-                    // Use the new handle_subscription_events from subscription_lifecycle
-                    let _metrics = handle_subscription_events(
-                        app_clone,
-                        subscription_id,
-                        path_clone,
-                        event_name,
-                        stream,
-                        signal,
-                    )
-                    .await;
+                    // Use buffered handler if buffering is enabled
+                    let _metrics = if plugin_config_clone.is_buffering_enabled() {
+                        handle_subscription_events_buffered(
+                            app_clone,
+                            subscription_id,
+                            path_clone,
+                            event_name,
+                            stream,
+                            signal,
+                            &plugin_config_clone,
+                        )
+                        .await
+                    } else {
+                        handle_subscription_events(
+                            app_clone,
+                            subscription_id,
+                            path_clone,
+                            event_name,
+                            stream,
+                            signal,
+                        )
+                        .await
+                    };
                 }
                 Err(err) => {
                     warn!(
