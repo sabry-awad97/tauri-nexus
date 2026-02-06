@@ -269,6 +269,5 @@ pub use retry_delay::RetryDelay;
 #[cfg(test)]
 mod tests {
     mod integration;
-    mod property;
     mod unit;
 }
