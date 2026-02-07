@@ -69,6 +69,268 @@ pub type ContextTransformer<FromCtx, ToCtx> = Arc<
         + Sync,
 >;
 
+/// Helper macro to generate the handler logic with optional validation and context transformation.
+///
+/// This macro eliminates code duplication across the four builder types while maintaining
+/// type safety and avoiding unsafe code.
+macro_rules! build_handler_impl {
+    // Simple handler: no validation, no context transformation
+    (
+        simple,
+        $handler:expr,
+        $output_transformer:expr,
+        $ctx:ident,
+        $input_value:ident,
+        $Input:ty,
+        $Ctx:ty
+    ) => {{
+        let handler = $handler.clone();
+        let output_transformer = $output_transformer.clone();
+
+        Box::pin(async move {
+            // Deserialize input
+            trace!("Deserializing procedure input");
+            let input: $Input = serde_json::from_value($input_value).map_err(|e| {
+                warn!(error = %e, "Failed to deserialize input");
+                RpcError::bad_request(format!("Invalid input: {}", e))
+            })?;
+
+            // Call handler
+            trace!("Executing procedure handler");
+            let output = handler($ctx, input).await.inspect_err(|e| {
+                debug!(error_code = %e.code, "Procedure handler returned error");
+            })?;
+
+            // Serialize output
+            trace!("Serializing procedure output");
+            let mut output_value = serde_json::to_value(output).map_err(|e| {
+                warn!(error = %e, "Failed to serialize output");
+                RpcError::internal(format!("Failed to serialize output: {}", e))
+            })?;
+
+            // Apply output transformer if present
+            if let Some(transformer) = output_transformer {
+                trace!("Applying output transformer");
+                output_value = transformer(output_value);
+            }
+
+            trace!("Procedure completed successfully");
+            Ok(output_value)
+        })
+    }};
+
+    // Validated handler: with validation, no context transformation
+    (
+        validated,
+        $handler:expr,
+        $output_transformer:expr,
+        $ctx:ident,
+        $input_value:ident,
+        $Input:ty,
+        $Ctx:ty
+    ) => {{
+        let handler = $handler.clone();
+        let output_transformer = $output_transformer.clone();
+
+        Box::pin(async move {
+            // Deserialize input
+            trace!("Deserializing procedure input");
+            let input: $Input = serde_json::from_value($input_value).map_err(|e| {
+                warn!(error = %e, "Failed to deserialize input");
+                RpcError::bad_request(format!("Invalid input: {}", e))
+            })?;
+
+            // Validate input
+            trace!("Validating procedure input");
+            let validation_result = input.validate();
+            if !validation_result.is_valid() {
+                let error_count = validation_result.errors.len();
+                let field_names: Vec<_> = validation_result
+                    .errors
+                    .iter()
+                    .map(|e| e.field.as_str())
+                    .collect();
+                warn!(
+                    error_count = error_count,
+                    fields = ?field_names,
+                    "Input validation failed"
+                );
+
+                let details = match serde_json::to_value(&validation_result.errors) {
+                    Ok(details) => details,
+                    Err(e) => {
+                        warn!(error = %e, "Failed to serialize validation errors");
+                        serde_json::json!({ "error": "Failed to serialize validation details" })
+                    }
+                };
+
+                return Err(RpcError::validation("Validation failed").with_details(details));
+            }
+            trace!("Input validation passed");
+
+            // Call handler
+            trace!("Executing procedure handler");
+            let output = handler($ctx, input).await.inspect_err(|e| {
+                debug!(error_code = %e.code, "Procedure handler returned error");
+            })?;
+
+            // Serialize output
+            trace!("Serializing procedure output");
+            let mut output_value = serde_json::to_value(output).map_err(|e| {
+                warn!(error = %e, "Failed to serialize output");
+                RpcError::internal(format!("Failed to serialize output: {}", e))
+            })?;
+
+            // Apply output transformer if present
+            if let Some(transformer) = output_transformer {
+                trace!("Applying output transformer");
+                output_value = transformer(output_value);
+            }
+
+            trace!("Procedure completed successfully");
+            Ok(output_value)
+        })
+    }};
+
+    // Context-transformed handler: with context transformation, no validation
+    (
+        context_transformed,
+        $handler:expr,
+        $output_transformer:expr,
+        $context_transformer:expr,
+        $ctx:ident,
+        $input_value:ident,
+        $Input:ty,
+        $OrigCtx:ty,
+        $NewCtx:ty
+    ) => {{
+        let handler = $handler.clone();
+        let output_transformer = $output_transformer.clone();
+        let context_transformer = $context_transformer.clone();
+
+        Box::pin(async move {
+            // Transform context
+            trace!("Transforming procedure context");
+            let new_ctx_state = (context_transformer)($ctx).await.inspect_err(|e| {
+                debug!(error_code = %e.code, "Context transformation failed");
+            })?;
+            let new_ctx = Context::new(new_ctx_state);
+
+            // Deserialize input
+            trace!("Deserializing procedure input");
+            let input: $Input = serde_json::from_value($input_value).map_err(|e| {
+                warn!(error = %e, "Failed to deserialize input");
+                RpcError::bad_request(format!("Invalid input: {}", e))
+            })?;
+
+            // Call handler
+            trace!("Executing procedure handler");
+            let output = handler(new_ctx, input).await.inspect_err(|e| {
+                debug!(error_code = %e.code, "Procedure handler returned error");
+            })?;
+
+            // Serialize output
+            trace!("Serializing procedure output");
+            let mut output_value = serde_json::to_value(output).map_err(|e| {
+                warn!(error = %e, "Failed to serialize output");
+                RpcError::internal(format!("Failed to serialize output: {}", e))
+            })?;
+
+            // Apply output transformer if present
+            if let Some(transformer) = output_transformer {
+                trace!("Applying output transformer");
+                output_value = transformer(output_value);
+            }
+
+            trace!("Procedure completed successfully");
+            Ok(output_value)
+        })
+    }};
+
+    // Context-transformed validated handler: with both context transformation and validation
+    (
+        context_transformed_validated,
+        $handler:expr,
+        $output_transformer:expr,
+        $context_transformer:expr,
+        $ctx:ident,
+        $input_value:ident,
+        $Input:ty,
+        $OrigCtx:ty,
+        $NewCtx:ty
+    ) => {{
+        let handler = $handler.clone();
+        let output_transformer = $output_transformer.clone();
+        let context_transformer = $context_transformer.clone();
+
+        Box::pin(async move {
+            // Transform context
+            trace!("Transforming procedure context");
+            let new_ctx_state = (context_transformer)($ctx).await.inspect_err(|e| {
+                debug!(error_code = %e.code, "Context transformation failed");
+            })?;
+            let new_ctx = Context::new(new_ctx_state);
+
+            // Deserialize input
+            trace!("Deserializing procedure input");
+            let input: $Input = serde_json::from_value($input_value).map_err(|e| {
+                warn!(error = %e, "Failed to deserialize input");
+                RpcError::bad_request(format!("Invalid input: {}", e))
+            })?;
+
+            // Validate input
+            trace!("Validating procedure input");
+            let validation_result = input.validate();
+            if !validation_result.is_valid() {
+                let error_count = validation_result.errors.len();
+                let field_names: Vec<_> = validation_result
+                    .errors
+                    .iter()
+                    .map(|e| e.field.as_str())
+                    .collect();
+                warn!(
+                    error_count = error_count,
+                    fields = ?field_names,
+                    "Input validation failed"
+                );
+
+                let details = match serde_json::to_value(&validation_result.errors) {
+                    Ok(details) => details,
+                    Err(e) => {
+                        warn!(error = %e, "Failed to serialize validation errors");
+                        serde_json::json!({ "error": "Failed to serialize validation details" })
+                    }
+                };
+
+                return Err(RpcError::validation("Validation failed").with_details(details));
+            }
+            trace!("Input validation passed");
+
+            // Call handler
+            trace!("Executing procedure handler");
+            let output = handler(new_ctx, input).await.inspect_err(|e| {
+                debug!(error_code = %e.code, "Procedure handler returned error");
+            })?;
+
+            // Serialize output
+            trace!("Serializing procedure output");
+            let mut output_value = serde_json::to_value(output).map_err(|e| {
+                warn!(error = %e, "Failed to serialize output");
+                RpcError::internal(format!("Failed to serialize output: {}", e))
+            })?;
+
+            // Apply output transformer if present
+            if let Some(transformer) = output_transformer {
+                trace!("Applying output transformer");
+                output_value = transformer(output_value);
+            }
+
+            trace!("Procedure completed successfully");
+            Ok(output_value)
+        })
+    }};
+}
+
 /// A registered procedure ready to be added to a router.
 pub struct RegisteredProcedure<Ctx>
 where
@@ -393,39 +655,15 @@ where
         );
 
         let boxed_handler: BoxedHandler<Ctx> = Arc::new(move |ctx, input_value| {
-            let handler = handler.clone();
-            let output_transformer = output_transformer.clone();
-
-            Box::pin(async move {
-                // Deserialize input
-                trace!("Deserializing procedure input");
-                let input: Input = serde_json::from_value(input_value).map_err(|e| {
-                    warn!(error = %e, "Procedure input deserialization failed");
-                    RpcError::bad_request(format!("Invalid input: {}", e))
-                })?;
-
-                // Call handler
-                trace!("Executing procedure handler");
-                let output = handler(ctx, input).await.inspect_err(|e| {
-                    debug!(error_code = %e.code, "Procedure handler returned error");
-                })?;
-
-                // Serialize output
-                trace!("Serializing procedure output");
-                let mut output_value = serde_json::to_value(output).map_err(|e| {
-                    warn!(error = %e, "Procedure output serialization failed");
-                    RpcError::internal(format!("Failed to serialize output: {}", e))
-                })?;
-
-                // Apply output transformer if present
-                if let Some(transformer) = output_transformer {
-                    trace!("Applying output transformer");
-                    output_value = transformer(output_value);
-                }
-
-                trace!("Procedure completed successfully");
-                Ok(output_value)
-            })
+            build_handler_impl!(
+                simple,
+                handler,
+                output_transformer,
+                ctx,
+                input_value,
+                Input,
+                Ctx
+            )
         });
 
         RegisteredProcedure {
@@ -537,60 +775,15 @@ where
         );
 
         let boxed_handler: BoxedHandler<Ctx> = Arc::new(move |ctx, input_value| {
-            let handler = handler.clone();
-            let output_transformer = output_transformer.clone();
-
-            Box::pin(async move {
-                // Deserialize input
-                trace!("Deserializing validated procedure input");
-                let input: Input = serde_json::from_value(input_value).map_err(|e| {
-                    warn!(error = %e, "Validated procedure input deserialization failed");
-                    RpcError::bad_request(format!("Invalid input: {}", e))
-                })?;
-
-                // Validate input
-                trace!("Validating procedure input");
-                let validation_result = input.validate();
-                if !validation_result.is_valid() {
-                    let error_count = validation_result.errors.len();
-                    let field_names: Vec<_> = validation_result
-                        .errors
-                        .iter()
-                        .map(|e| e.field.as_str())
-                        .collect();
-                    warn!(
-                        error_count = error_count,
-                        fields = ?field_names,
-                        "Procedure input validation failed"
-                    );
-                    return Err(RpcError::validation("Validation failed").with_details(
-                        serde_json::to_value(&validation_result.errors).unwrap_or_default(),
-                    ));
-                }
-                trace!("Input validation passed");
-
-                // Call handler
-                trace!("Executing validated procedure handler");
-                let output = handler(ctx, input).await.inspect_err(|e| {
-                    debug!(error_code = %e.code, "Validated procedure handler returned error");
-                })?;
-
-                // Serialize output
-                trace!("Serializing validated procedure output");
-                let mut output_value = serde_json::to_value(output).map_err(|e| {
-                    warn!(error = %e, "Validated procedure output serialization failed");
-                    RpcError::internal(format!("Failed to serialize output: {}", e))
-                })?;
-
-                // Apply output transformer if present
-                if let Some(transformer) = output_transformer {
-                    trace!("Applying output transformer");
-                    output_value = transformer(output_value);
-                }
-
-                trace!("Validated procedure completed successfully");
-                Ok(output_value)
-            })
+            build_handler_impl!(
+                validated,
+                handler,
+                output_transformer,
+                ctx,
+                input_value,
+                Input,
+                Ctx
+            )
         });
 
         RegisteredProcedure {
@@ -651,6 +844,8 @@ where
     }
 
     /// Adds a middleware function (already wrapped as MiddlewareFn).
+    ///
+    /// Note: Middleware operates on the original context type, before transformation.
     pub fn use_middleware_fn(mut self, middleware: MiddlewareFn<OrigCtx>) -> Self {
         self.middleware.push(middleware);
         self
@@ -795,48 +990,17 @@ where
         );
 
         let boxed_handler: BoxedHandler<OrigCtx> = Arc::new(move |ctx, input_value| {
-            let handler = handler.clone();
-            let output_transformer = output_transformer.clone();
-            let context_transformer = context_transformer.clone();
-
-            Box::pin(async move {
-                // Transform context
-                trace!("Transforming procedure context");
-                let new_ctx_state = (context_transformer)(ctx).await.inspect_err(|e| {
-                    debug!(error_code = %e.code, "Context transformation failed");
-                })?;
-                let new_ctx = Context::new(new_ctx_state);
-                trace!("Context transformation successful");
-
-                // Deserialize input
-                trace!("Deserializing context-transformed procedure input");
-                let input: Input = serde_json::from_value(input_value).map_err(|e| {
-                    warn!(error = %e, "Context-transformed procedure input deserialization failed");
-                    RpcError::bad_request(format!("Invalid input: {}", e))
-                })?;
-
-                // Call handler with transformed context
-                trace!("Executing context-transformed procedure handler");
-                let output = handler(new_ctx, input).await.inspect_err(|e| {
-                    debug!(error_code = %e.code, "Context-transformed procedure handler returned error");
-                })?;
-
-                // Serialize output
-                trace!("Serializing context-transformed procedure output");
-                let mut output_value = serde_json::to_value(output).map_err(|e| {
-                    warn!(error = %e, "Context-transformed procedure output serialization failed");
-                    RpcError::internal(format!("Failed to serialize output: {}", e))
-                })?;
-
-                // Apply output transformer if present
-                if let Some(transformer) = output_transformer {
-                    trace!("Applying output transformer");
-                    output_value = transformer(output_value);
-                }
-
-                trace!("Context-transformed procedure completed successfully");
-                Ok(output_value)
-            })
+            build_handler_impl!(
+                context_transformed,
+                handler,
+                output_transformer,
+                context_transformer,
+                ctx,
+                input_value,
+                Input,
+                OrigCtx,
+                NewCtx
+            )
         });
 
         RegisteredProcedure {
@@ -850,6 +1014,41 @@ where
 }
 
 /// A context-transformed procedure builder with validated input.
+///
+/// This builder is created when using `.context()` followed by `.input_validated()`
+/// and combines both context transformation and input validation capabilities.
+///
+/// # Type Parameters
+///
+/// - `OrigCtx`: The original context type from the router
+/// - `NewCtx`: The transformed context type that the handler will receive
+/// - `Input`: The input type that will be validated before the handler executes
+///
+/// # Example
+///
+/// ```rust,ignore
+/// #[derive(Clone)]
+/// struct AppContext { db: Database }
+///
+/// #[derive(Clone)]
+/// struct AuthContext { app: AppContext, user: User }
+///
+/// #[derive(Deserialize, Validate)]
+/// struct CreatePostInput {
+///     #[validate(length(min = 1, max = 200))]
+///     title: String,
+///     #[validate(length(min = 1))]
+///     content: String,
+/// }
+///
+/// let procedure = ProcedureBuilder::<AppContext>::new("posts.create")
+///     .context(|ctx: Context<AppContext>| async move {
+///         let user = authenticate(&ctx).await?;
+///         Ok(AuthContext { app: ctx.inner().clone(), user })
+///     })
+///     .input_validated::<CreatePostInput>()
+///     .mutation(create_post); // Handler receives Context<AuthContext> and validated input
+/// ```
 pub struct ContextTransformedValidatedBuilder<OrigCtx, NewCtx, Input>
 where
     OrigCtx: Clone + Send + Sync + 'static,
@@ -876,6 +1075,18 @@ where
     }
 
     /// Adds middleware to this procedure.
+    ///
+    /// Note: Middleware operates on the original context type, before transformation.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let procedure = ProcedureBuilder::<AppContext>::new("posts.create")
+    ///     .context(auth_transform)
+    ///     .use_middleware(logging)  // Operates on AppContext
+    ///     .input_validated::<CreatePostInput>()
+    ///     .mutation(create_post);   // Handler receives AuthContext
+    /// ```
     pub fn use_middleware<F, Fut>(mut self, middleware: F) -> Self
     where
         F: Fn(Context<OrigCtx>, Request, Next<OrigCtx>) -> Fut + Send + Sync + 'static,
@@ -887,7 +1098,29 @@ where
         self
     }
 
+    /// Adds a middleware function (already wrapped as MiddlewareFn).
+    ///
+    /// Note: Middleware operates on the original context type, before transformation.
+    pub fn use_middleware_fn(mut self, middleware: MiddlewareFn<OrigCtx>) -> Self {
+        self.middleware.push(middleware);
+        self
+    }
+
     /// Sets an output transformer for this procedure.
+    ///
+    /// The transformer is applied to the handler's output before returning.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let procedure = ProcedureBuilder::<AppContext>::new("posts.create")
+    ///     .context(auth_transform)
+    ///     .input_validated::<CreatePostInput>()
+    ///     .output(|value| {
+    ///         json!({ "data": value, "timestamp": Utc::now().to_rfc3339() })
+    ///     })
+    ///     .mutation(create_post);
+    /// ```
     pub fn output<F>(mut self, transformer: F) -> Self
     where
         F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
@@ -943,69 +1176,17 @@ where
         );
 
         let boxed_handler: BoxedHandler<OrigCtx> = Arc::new(move |ctx, input_value| {
-            let handler = handler.clone();
-            let output_transformer = output_transformer.clone();
-            let context_transformer = context_transformer.clone();
-
-            Box::pin(async move {
-                // Transform context
-                trace!("Transforming procedure context");
-                let new_ctx_state = (context_transformer)(ctx).await.inspect_err(|e| {
-                    debug!(error_code = %e.code, "Context transformation failed");
-                })?;
-                let new_ctx = Context::new(new_ctx_state);
-                trace!("Context transformation successful");
-
-                // Deserialize input
-                trace!("Deserializing context-transformed validated procedure input");
-                let input: Input = serde_json::from_value(input_value).map_err(|e| {
-                    warn!(error = %e, "Context-transformed validated procedure input deserialization failed");
-                    RpcError::bad_request(format!("Invalid input: {}", e))
-                })?;
-
-                // Validate input
-                trace!("Validating procedure input");
-                let validation_result = input.validate();
-                if !validation_result.is_valid() {
-                    let error_count = validation_result.errors.len();
-                    let field_names: Vec<_> = validation_result
-                        .errors
-                        .iter()
-                        .map(|e| e.field.as_str())
-                        .collect();
-                    warn!(
-                        error_count = error_count,
-                        fields = ?field_names,
-                        "Context-transformed procedure input validation failed"
-                    );
-                    return Err(RpcError::validation("Validation failed").with_details(
-                        serde_json::to_value(&validation_result.errors).unwrap_or_default(),
-                    ));
-                }
-                trace!("Input validation passed");
-
-                // Call handler with transformed context
-                trace!("Executing context-transformed validated procedure handler");
-                let output = handler(new_ctx, input).await.inspect_err(|e| {
-                    debug!(error_code = %e.code, "Context-transformed validated procedure handler returned error");
-                })?;
-
-                // Serialize output
-                trace!("Serializing context-transformed validated procedure output");
-                let mut output_value = serde_json::to_value(output).map_err(|e| {
-                    warn!(error = %e, "Context-transformed validated procedure output serialization failed");
-                    RpcError::internal(format!("Failed to serialize output: {}", e))
-                })?;
-
-                // Apply output transformer if present
-                if let Some(transformer) = output_transformer {
-                    trace!("Applying output transformer");
-                    output_value = transformer(output_value);
-                }
-
-                trace!("Context-transformed validated procedure completed successfully");
-                Ok(output_value)
-            })
+            build_handler_impl!(
+                context_transformed_validated,
+                handler,
+                output_transformer,
+                context_transformer,
+                ctx,
+                input_value,
+                Input,
+                OrigCtx,
+                NewCtx
+            )
         });
 
         RegisteredProcedure {
