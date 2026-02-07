@@ -4078,6 +4078,7 @@ dependencies = [
 name = "tauri-plugin-rpc"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "criterion",
  "dashmap",
  "futures",

@@ -29,3 +29,6 @@ pub mod plugin_helpers_tests;
 
 #[cfg(test)]
 pub mod logging_tests;
+
+#[cfg(test)]
+pub mod procedure_tests;
