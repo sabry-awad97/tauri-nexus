@@ -15,7 +15,7 @@ import type {
   GetOutputAtPath,
   TypedBatchResult,
 } from "../core/inference";
-import { EffectBatchBuilder, executeBatchEffect } from "../client";
+import { executeBatchEffect } from "../client";
 import { toRpcError, parseEffectError } from "../internal";
 
 // =============================================================================
@@ -45,11 +45,7 @@ export class TypedBatchBuilder<
   TContract,
   TOutputMap extends OutputTypeMap = Record<string, never>,
 > {
-  private readonly effectBuilder: EffectBatchBuilder<TContract, TOutputMap>;
-
-  constructor() {
-    this.effectBuilder = new EffectBatchBuilder<TContract, TOutputMap>();
-  }
+  private requests: SingleRequest[] = [];
 
   /**
    * Add a type-safe request to the batch.
@@ -62,36 +58,30 @@ export class TypedBatchBuilder<
     TContract,
     TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
   > {
-    this.effectBuilder.add(id, path, input);
-    return this as unknown as TypedBatchBuilder<
-      TContract,
-      TOutputMap & Record<TId, GetOutputAtPath<TContract, TPath>>
-    >;
+    this.requests.push({ id: id as string, path: path as string, input });
+    return this as any;
   }
 
   /**
    * Get the current requests in the batch.
    */
   getRequests(): SingleRequest[] {
-    return this.effectBuilder.getRequests();
+    return [...this.requests];
   }
 
   /**
    * Get the number of requests in the batch.
    */
   size(): number {
-    return this.effectBuilder.size();
+    return this.requests.length;
   }
 
   /**
    * Clear all requests from the batch.
    */
   clear(): TypedBatchBuilder<TContract, Record<string, never>> {
-    this.effectBuilder.clear();
-    return this as unknown as TypedBatchBuilder<
-      TContract,
-      Record<string, never>
-    >;
+    this.requests = [];
+    return this as any;
   }
 
   /**
@@ -102,18 +92,11 @@ export class TypedBatchBuilder<
   ): Promise<TypedBatchResponse<TOutputMap>> {
     try {
       const response = await Effect.runPromise(
-        executeBatchEffect(this.getRequests(), options),
+        executeBatchEffect(this.requests, options),
       );
       return new TypedBatchResponse<TOutputMap>(response);
     } catch (error) {
-      const rpcError = toRpcError(
-        parseEffectError(error, "batch", options?.timeout),
-      );
-      console.warn(
-        `[RPC] Batch request failed: ${rpcError.code} - ${rpcError.message}`,
-        rpcError.details,
-      );
-      throw rpcError;
+      throw toRpcError(parseEffectError(error, "batch", options?.timeout));
     }
   }
 }
